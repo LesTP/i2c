@@ -23,6 +23,11 @@ Subcommands:
         decisions.json). Validates the resulting array against the registered
         schema; atomic write.
 
+    update-record FILE --match KEY=VALUE [field=value ...]
+        Update fields on one record in a JSON-array file. Matches by a
+        single KEY=VALUE pair; errors on no-match or multi-match. Validates
+        the resulting array against the registered schema; atomic write.
+
     append-gotcha FILE 'TEXT'
         Push a string onto project.json.gotchas.
 
@@ -305,6 +310,83 @@ def cmd_append_record(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_update_record(args: argparse.Namespace) -> int:
+    """Update fields on one record in a JSON-array file.
+
+    Match KEY=VALUE selects exactly one record by a top-level field. The
+    field/value pairs in `updates` are applied to that record. The full
+    array is validated against the registered schema before atomic write.
+    """
+    path = Path(args.file)
+    if not path.exists():
+        sys.stderr.write(f"ERROR: {path} does not exist.\n")
+        return 2
+
+    if "=" not in args.match:
+        sys.stderr.write(f"ERROR: --match expects KEY=VALUE, got: {args.match!r}\n")
+        return 2
+    match_key, _, match_raw = args.match.partition("=")
+    if not match_key:
+        sys.stderr.write("ERROR: --match key is empty.\n")
+        return 2
+    match_val = parse_value(match_raw)
+
+    try:
+        updates = parse_kv_pairs(args.updates)
+    except ValueError as e:
+        sys.stderr.write(f"ERROR: {e}\n")
+        return 2
+    if not updates:
+        sys.stderr.write("ERROR: at least one field=value update is required.\n")
+        return 2
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        sys.stderr.write(
+            f"ERROR: `update-record` requires a JSON array file; "
+            f"{path} contains {type(data).__name__}.\n"
+        )
+        return 2
+
+    schema_name = v.SCHEMA_BY_FILENAME.get(path.name)
+    if schema_name is None:
+        sys.stderr.write(
+            f"ERROR: no schema registered for {path.name}. Known: "
+            f"{sorted(v.SCHEMA_BY_FILENAME)}\n"
+        )
+        return 2
+
+    matches = [i for i, r in enumerate(data) if r.get(match_key) == match_val]
+    if not matches:
+        sys.stderr.write(
+            f"ERROR: no record in {path} matches {match_key}={match_val!r}.\n"
+        )
+        return 1
+    if len(matches) > 1:
+        sys.stderr.write(
+            f"ERROR: {len(matches)} records in {path} match {match_key}={match_val!r}; "
+            f"--match must be unique.\n"
+        )
+        return 1
+
+    idx = matches[0]
+    data[idx].update(updates)
+
+    schema = v.load_schema(schema_name)
+    try:
+        v.validate_json_schema(data, schema, label=str(path))
+    except ValueError as e:
+        sys.stderr.write(f"VALIDATION FAILED: {e}\n")
+        return 1
+
+    atomic_write_json(path, data)
+    print(
+        f"OK: {path} {match_key}={match_val!r} updated "
+        f"({', '.join(updates)})"
+    )
+    return 0
+
+
 def cmd_append_gotcha(args: argparse.Namespace) -> int:
     """Push a string onto project.json's gotchas array."""
     path = Path(args.file)
@@ -385,6 +467,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_append_record.add_argument("file")
     p_append_record.add_argument("record", help="JSON object as a string")
     p_append_record.set_defaults(func=cmd_append_record)
+
+    p_update_record = sub.add_parser(
+        "update-record",
+        help="Update fields on one record in a JSON-array file (matched by KEY=VALUE).",
+    )
+    p_update_record.add_argument("file")
+    p_update_record.add_argument(
+        "--match", required=True,
+        help="KEY=VALUE selecting exactly one record",
+    )
+    p_update_record.add_argument(
+        "updates", nargs="+", help="field=value pairs to apply",
+    )
+    p_update_record.set_defaults(func=cmd_update_record)
 
     p_gotcha = sub.add_parser(
         "append-gotcha", help="Append a string to project.json.gotchas."

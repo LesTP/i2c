@@ -397,6 +397,142 @@ class TestAppendRecord(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# `update-record` subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateRecord(unittest.TestCase):
+    def test_update_decision_status(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "decisions.json"
+            path.write_text(json.dumps([
+                {"id": "D-1", "title": "Storage", "status": "open",
+                 "decision": "TBD"},
+            ]))
+            rc, out, err = run_state(
+                "update-record", str(path),
+                "--match", "id=D-1",
+                "status=closed",
+                "decision=Use local FS",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(path.read_text())
+            self.assertEqual(data[0]["status"], "closed")
+            self.assertEqual(data[0]["decision"], "Use local FS")
+
+    def test_update_phase_status(self):
+        with TempStateDir() as t:
+            # FU-13 scenario: flip phase from pending to in_progress
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=2",
+                "status=in_progress",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "phases.json").read_text())
+            phase2 = next(p for p in data if p["id"] == 2)
+            self.assertEqual(phase2["status"], "in_progress")
+
+    def test_update_step_notes(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "steps.json"),
+                "--match", "step=2",
+                "notes=Reordered after dep-probe.",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "steps.json").read_text())
+            step2 = next(s for s in data if s["step"] == 2)
+            self.assertEqual(step2["notes"], "Reordered after dep-probe.")
+
+    def test_no_match(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=999",
+                "status=complete",
+            )
+            self.assertEqual(rc, 1)
+            self.assertIn("no record", err)
+
+    def test_multi_match_rejected(self):
+        with TempStateDir() as t:
+            # Inject a duplicate id to trigger multi-match.
+            path = t.state_dir / "phases.json"
+            data = json.loads(path.read_text())
+            data.append({"id": 1, "title": "Dup", "regime": "build",
+                         "dependencies": [], "status": "pending"})
+            path.write_text(json.dumps(data))
+            rc, out, err = run_state(
+                "update-record", str(path),
+                "--match", "id=1",
+                "status=complete",
+            )
+            self.assertEqual(rc, 1)
+            self.assertIn("match must be unique", err)
+
+    def test_schema_rejection_preserves_file(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "phases.json"
+            before = path.read_text()
+            rc, out, err = run_state(
+                "update-record", str(path),
+                "--match", "id=1",
+                "status=bogus",
+            )
+            self.assertEqual(rc, 1)
+            self.assertIn("VALIDATION FAILED", err)
+            self.assertEqual(path.read_text(), before)
+
+    def test_match_value_type_coerced(self):
+        # phase ids are integers; --match must coerce "1" to 1 for equality.
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=1",
+                "status=complete",
+            )
+            self.assertEqual(rc, 0, msg=err)
+
+    def test_missing_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "missing.json"),
+                "--match", "id=1",
+                "status=closed",
+            )
+            self.assertEqual(rc, 2)
+
+    def test_missing_match_flag(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "status=complete",
+            )
+            # argparse exits 2 when required flag missing
+            self.assertEqual(rc, 2)
+
+    def test_no_updates(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=1",
+            )
+            # argparse: 'updates' is nargs="+" so missing → exit 2
+            self.assertEqual(rc, 2)
+
+    def test_rejects_non_array_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "project.json"),
+                "--match", "phase=1",
+                "blocked=true",
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("JSON array file", err)
+
+
+# ---------------------------------------------------------------------------
 # `append-gotcha` subcommand
 # ---------------------------------------------------------------------------
 
