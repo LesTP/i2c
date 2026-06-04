@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/decisions.schema.json",
+  "title": "Decisions",
+  "description": "Array of decision records. Lives at .state/decisions.json. Replaces e2e DECISIONS.md.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "title", "status", "decision"],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^D-\\d+$",
+        "description": "Decision ID like 'D-12'."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1
+      },
+      "status": {
+        "type": "string",
+        "enum": ["open", "closed", "superseded"],
+        "description": "Decision lifecycle status."
+      },
+      "priority": {
+        "type": "string",
+        "enum": ["critical", "high", "medium", "low"]
+      },
+      "decision": {
+        "type": "string",
+        "minLength": 1,
+        "description": "What was decided, in one short sentence."
+      },
+      "rationale": {
+        "type": "string",
+        "description": "Why this was the choice."
+      },
+      "revisit_if": {
+        "type": "string",
+        "description": "Conditions that would warrant re-opening this decision."
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  }
+}

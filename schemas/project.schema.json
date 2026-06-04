@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/project.schema.json",
+  "title": "Project State",
+  "description": "Top-level state for an i2c project. Read on every worker invocation; written at state transitions and phase boundaries. Lives at .state/project.json.",
+  "type": "object",
+  "required": ["phase", "state", "blocked"],
+  "additionalProperties": false,
+  "properties": {
+    "phase": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Current phase number. 0 means project not yet started."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["plan", "execute", "review", "close"],
+      "description": "Current state within the phase lifecycle. Catches typos that would silently misroute the state machine."
+    },
+    "blocked": {
+      "type": "boolean",
+      "description": "True when worker is waiting on human input (phase boundary, escalation, contract change)."
+    },
+    "steps_remaining": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Step budget remaining for the current invocation. Decremented by state_machine.sh."
+    },
+    "gotchas": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Short operational reminders learned at phase close. Read on every worker invocation. Promoted from devlog learnings."
+    },
+    "budget_type": {
+      "type": "string",
+      "enum": ["steps", "time"],
+      "description": "Active phase's budget mode. 'steps' uses steps_remaining (Build regime); 'time' uses time_budget_seconds + time_started_at (Refine regime). Inferred from the current phase's regime when omitted."
+    },
+    "time_budget_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total wall-clock budget for the current phase in seconds. Used when budget_type='time' (Refine regime). The state machine compares (now - time_started_at) against this value."
+    },
+    "time_started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the current time-budgeted phase started. Set when transitioning to execute under Refine regime; cleared at phase close."
+    }
+  }
+}

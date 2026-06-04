@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/exit_signal.schema.json",
+  "title": "Worker Exit Signal",
+  "description": "Schema for the exit signal a worker emits at end of invocation. Parsed by run-iteration.sh. Permissive for now; will tighten once autonomous mode (Phase 3) defines the full contract.",
+  "type": "object",
+  "required": ["exit_code"],
+  "additionalProperties": true,
+  "properties": {
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1, 2],
+      "description": "0 = continue (more work to do), 1 = phase complete (blocked=true), 2 = escalate (worker needs human input or health-check tripped)."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Short human-readable reason for the exit, especially for code 1 and 2."
+    },
+    "next_action": {
+      "type": "string",
+      "enum": ["plan", "execute", "review", "close"],
+      "description": "Action the next invocation should take, when known."
+    }
+  }
+}

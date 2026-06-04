@@ -1,0 +1,21 @@
+[
+  {
+    "id": "D-1",
+    "title": "JSON over YAML for state",
+    "status": "closed",
+    "priority": "high",
+    "decision": "All structured state lives in JSON / JSONL files under .state/",
+    "rationale": "jq is universal; JSONL is natural for append-only logs; no indentation ambiguity",
+    "timestamp": "2026-05-28T12:00:00Z"
+  },
+  {
+    "id": "D-2",
+    "title": "Storage backend",
+    "status": "open",
+    "priority": "medium",
+    "decision": "Default to local filesystem; pluggable for object storage later",
+    "rationale": "Filesystem is simplest for pilot; abstraction can come when a second backend is needed",
+    "revisit_if": "Multi-node deployment becomes a requirement",
+    "timestamp": "2026-06-02T09:00:00Z"
+  }
+]

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/phases.schema.json",
+  "title": "Phases",
+  "description": "Array of phase records. One entry per phase across the project's lifetime. Lives at .state/phases.json.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "title", "status", "regime"],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Phase number. Unique within the file."
+      },
+      "module": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Module this phase belongs to (e.g., 'event_store', 'orchestrator')."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Short human-readable phase name."
+      },
+      "regime": {
+        "type": "string",
+        "enum": ["build", "refine", "explore"],
+        "description": "Work regime. 'build' uses step-budget execution; 'refine' uses time-budget (see project.json budget_type); 'explore' is open-ended investigation."
+      },
+      "dependencies": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "Names of other modules this phase's module depends on. Empty array means leaf module. Non-empty triggers dependency-probe (in plan) and integration-check (in close) conditional sections."
+      },
+      "status": {
+        "type": "string",
+        "enum": ["pending", "in_progress", "complete"],
+        "description": "Phase status. Catches typos that would make the phase invisible to summary queries."
+      }
+    }
+  }
+}

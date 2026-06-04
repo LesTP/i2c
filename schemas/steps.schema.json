@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/steps.schema.json",
+  "title": "Steps",
+  "description": "Array of step records. All steps across all phases. The state machine counts entries with status='pending' for the current phase. Lives at .state/steps.json.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["phase", "step", "title", "status"],
+    "additionalProperties": false,
+    "properties": {
+      "phase": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Phase this step belongs to."
+      },
+      "step": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Step number within the phase. (phase, step) is the natural key."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Short human-readable step description."
+      },
+      "status": {
+        "type": "string",
+        "enum": ["pending", "in_progress", "complete"],
+        "description": "Step status. Replaces e2e checkbox parsing — catches the 'missing checkbox' bug class by construction."
+      },
+      "commit": {
+        "type": "string",
+        "pattern": "^[0-9a-fA-F]{4,40}$",
+        "description": "Git commit hash for this step's work, if applicable. 4-40 hex chars (allows short hashes)."
+      },
+      "notes": {
+        "type": "string",
+        "description": "Free-form notes about the step (intent, constraints, links)."
+      }
+    }
+  }
+}

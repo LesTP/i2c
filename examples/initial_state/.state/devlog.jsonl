@@ -1,0 +1,4 @@
+{"phase": 1, "step": 1, "action": "execute", "outcome": "complete", "contracts": [], "summary": "Repo layout created; pyproject.toml and tests/ scaffolded.", "commit": "a1b2c3d", "timestamp": "2026-06-01T14:00:00Z"}
+{"phase": 1, "step": 2, "action": "execute", "outcome": "complete", "contracts": [], "summary": "Test harness via stdlib unittest. CI smoke check green.", "commit": "d4e5f6a", "timestamp": "2026-06-01T15:30:00Z"}
+{"phase": 1, "step": null, "action": "close", "outcome": "complete", "contracts": ["ARCH_bootstrap.md"], "summary": "Phase 1 closed. Bootstrap module ready for consumers.", "timestamp": "2026-06-01T17:00:00Z"}
+{"phase": 2, "step": 1, "action": "execute", "outcome": "complete", "contracts": ["ARCH_event_store.md"], "summary": "Append-only writer with atomic rename. Crash-safety verified by injected interrupt test.", "commit": "1234567", "timestamp": "2026-06-03T11:00:00Z"}

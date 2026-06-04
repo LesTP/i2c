@@ -1,0 +1,41 @@
+[
+  {
+    "phase": 1,
+    "step": 1,
+    "title": "Repo layout and config",
+    "status": "complete",
+    "commit": "a1b2c3d"
+  },
+  {
+    "phase": 1,
+    "step": 2,
+    "title": "Test harness",
+    "status": "complete",
+    "commit": "d4e5f6a"
+  },
+  {
+    "phase": 2,
+    "step": 1,
+    "title": "Append-only writer",
+    "status": "complete",
+    "commit": "1234567"
+  },
+  {
+    "phase": 2,
+    "step": 2,
+    "title": "Reader API",
+    "status": "in_progress"
+  },
+  {
+    "phase": 2,
+    "step": 3,
+    "title": "Concurrency tests",
+    "status": "pending"
+  },
+  {
+    "phase": 2,
+    "step": 4,
+    "title": "Schema migration helper",
+    "status": "pending"
+  }
+]
