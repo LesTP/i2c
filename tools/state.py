@@ -18,6 +18,11 @@ Subcommands:
         Append one record to a .jsonl file. Validates against the registered
         per-line schema (e.g., devlog_entry.schema.json for devlog.jsonl).
 
+    append-record FILE 'JSON_RECORD'
+        Append one record to a JSON-array file (steps.json, phases.json,
+        decisions.json). Validates the resulting array against the registered
+        schema; atomic write.
+
     append-gotcha FILE 'TEXT'
         Push a string onto project.json.gotchas.
 
@@ -249,6 +254,57 @@ def cmd_append(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_append_record(args: argparse.Namespace) -> int:
+    """Append a JSON record to a JSON-array file (steps, phases, decisions).
+
+    Reads the existing array, appends the new record, validates the entire
+    array against the registered schema, and atomically rewrites the file.
+    """
+    path = Path(args.file)
+    if not path.exists():
+        sys.stderr.write(f"ERROR: {path} does not exist.\n")
+        return 2
+
+    try:
+        record = json.loads(args.record)
+    except json.JSONDecodeError as e:
+        sys.stderr.write(f"ERROR: record is not valid JSON: {e}\n")
+        return 2
+
+    if not isinstance(record, dict):
+        sys.stderr.write("ERROR: record must be a JSON object.\n")
+        return 2
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        sys.stderr.write(
+            f"ERROR: `append-record` requires a JSON array file; "
+            f"{path} contains {type(data).__name__}.\n"
+        )
+        return 2
+
+    schema_name = v.SCHEMA_BY_FILENAME.get(path.name)
+    if schema_name is None:
+        sys.stderr.write(
+            f"ERROR: no schema registered for {path.name}. Known: "
+            f"{sorted(v.SCHEMA_BY_FILENAME)}\n"
+        )
+        return 2
+
+    data.append(record)
+
+    schema = v.load_schema(schema_name)
+    try:
+        v.validate_json_schema(data, schema, label=str(path))
+    except ValueError as e:
+        sys.stderr.write(f"VALIDATION FAILED: {e}\n")
+        return 1
+
+    atomic_write_json(path, data)
+    print(f"OK: appended record to {path} (now {len(data)} total)")
+    return 0
+
+
 def cmd_append_gotcha(args: argparse.Namespace) -> int:
     """Push a string onto project.json's gotchas array."""
     path = Path(args.file)
@@ -321,6 +377,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_append.add_argument("file")
     p_append.add_argument("record", help="JSON object as a string")
     p_append.set_defaults(func=cmd_append)
+
+    p_append_record = sub.add_parser(
+        "append-record",
+        help="Append one record (JSON object) to a JSON-array file (steps/phases/decisions).",
+    )
+    p_append_record.add_argument("file")
+    p_append_record.add_argument("record", help="JSON object as a string")
+    p_append_record.set_defaults(func=cmd_append_record)
 
     p_gotcha = sub.add_parser(
         "append-gotcha", help="Append a string to project.json.gotchas."

@@ -284,6 +284,119 @@ class TestAppend(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# `append-record` subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestAppendRecord(unittest.TestCase):
+    def test_append_step(self):
+        with TempStateDir() as t:
+            new_step = {
+                "phase": 1, "step": 3, "title": "Cleanup",
+                "status": "pending",
+            }
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "steps.json"),
+                json.dumps(new_step),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "steps.json").read_text())
+            self.assertEqual(len(data), 3)
+            self.assertEqual(data[-1]["title"], "Cleanup")
+
+    def test_append_phase(self):
+        with TempStateDir() as t:
+            new_phase = {
+                "id": 3, "title": "Audit", "regime": "build",
+                "dependencies": ["Loop"], "status": "pending",
+            }
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "phases.json"),
+                json.dumps(new_phase),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "phases.json").read_text())
+            self.assertEqual(len(data), 3)
+            self.assertEqual(data[-1]["id"], 3)
+
+    def test_append_decision(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "decisions.json"
+            path.write_text("[]")
+            new_decision = {
+                "id": "D-1", "title": "Storage", "status": "open",
+                "decision": "Use local FS",
+            }
+            rc, out, err = run_state(
+                "append-record", str(path), json.dumps(new_decision),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(path.read_text())
+            self.assertEqual(len(data), 1)
+            self.assertEqual(data[0]["id"], "D-1")
+
+    def test_append_record_rejected_by_schema(self):
+        with TempStateDir() as t:
+            # Missing required `regime` field on phase.
+            bad_phase = {"id": 3, "title": "x", "status": "pending"}
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "phases.json"),
+                json.dumps(bad_phase),
+            )
+            self.assertEqual(rc, 1)
+            self.assertIn("VALIDATION FAILED", err)
+            # File untouched.
+            data = json.loads((t.state_dir / "phases.json").read_text())
+            self.assertEqual(len(data), 2)
+
+    def test_append_record_rejects_unknown_filename(self):
+        with TempStateDir() as t:
+            other = t.state_dir / "random.json"
+            other.write_text("[]")
+            rc, out, err = run_state(
+                "append-record", str(other), '{"x": 1}',
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("no schema registered", err)
+
+    def test_append_record_rejects_non_array_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "project.json"),
+                '{"x": 1}',
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("JSON array file", err)
+
+    def test_append_record_rejects_missing_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "nope.json"),
+                '{"x": 1}',
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("does not exist", err)
+
+    def test_append_record_rejects_bad_json(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "steps.json"),
+                '{not valid json',
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("not valid JSON", err)
+
+    def test_append_record_rejects_non_object(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "steps.json"),
+                '[1, 2, 3]',
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("must be a JSON object", err)
+
+
+# ---------------------------------------------------------------------------
 # `append-gotcha` subcommand
 # ---------------------------------------------------------------------------
 
