@@ -97,7 +97,8 @@ record only on first plan; subsequent plans inherit it.
 > the assembler treats the current `project.json.phase` as the active one
 > regardless of `phases.json` status. Tracked as **FU-13** in `FOLLOWUPS.md`.
 
-### 5. *(Conditional)* Pre-plan: Dependency Probe — non-leaf modules only
+### 5. *(Conditional)* Pre-plan: Dependency Probe - non-leaf modules only
+<!-- assembler:requires=dependencies_nonempty -->
 
 **Include this step only when** the current phase's `dependencies` array in
 `phases.json` is non-empty. If the assembler has stripped this section from

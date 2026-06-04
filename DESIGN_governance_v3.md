@@ -115,6 +115,8 @@ into orientation docs (README, setup guide).
 
 ## 3. Deterministic Dispatch and Context Assembly
 
+> **Note (2026-06-04):** For the authoritative assembler contract — CLI surface, section catalog, assembly matrix, error policy, conditional-section mechanism — see [`ARCH_assembler.md`](ARCH_assembler.md). Where this section and that contract disagree on assembler behavior, the ARCH contract wins. This section remains useful as design rationale.
+
 ### The invocation flow
 
 In e2e v2.5, the worker called the state machine and read its own

@@ -1,0 +1,545 @@
+# ARCH: Context Assembler (`assemble_context.py`)
+
+**Status:** Contract spec. Implementation deferred to Phase 1.3.
+**Lives at:** `tools/assemble_context.py`
+**Supersedes:** Scattered specifications in `DESIGN_governance_v3.md` §3 / §7.5 / Appendix B, `WORKFLOW.md`, instruction files, `README.md`. Where this contract and any earlier file disagree, this contract wins for assembler behavior. The earlier files remain useful as design rationale.
+
+---
+
+## 1. Purpose
+
+The assembler builds the structured prompt that workers receive. It sits between the state machine (which decides what action to perform) and the worker (which performs it). It reads:
+
+- Worker spec, action instructions, and the adapter file (markdown governance)
+- `.state/*.json` and `.state/devlog.jsonl` (structured state)
+- `PROJECT.md`, `ARCHITECTURE.md`, `ARCH_<module>.md` (project narrative)
+
+…and emits a single markdown document on stdout that contains everything the worker needs for the current action. The worker reads no governance files directly.
+
+The same binary serves two callers:
+
+- **Autonomous mode:** the runner calls `--action $ACTION --phase $PHASE` per invocation; output is piped into `claude -p` / `codex exec`.
+- **Supervised mode:** the human or their assistant calls `--section status` for orientation or `--action $ACTION --phase $PHASE --mode supervised` for per-action context. Output goes to the terminal or a Devmate slash-command wrapper.
+- **Mid-step (multi-step):** the worker may call `--section X` between steps for fresh governance context (see §10).
+
+---
+
+## 2. Non-Goals
+
+The assembler is intentionally narrow. It does **not**:
+
+| Non-goal | Where this is handled instead |
+|----------|-------------------------------|
+| Write or mutate `.state/` | `tools/state.py` |
+| Call LLMs / dispatch the worker | The runner (`run-iteration.sh`) |
+| Decide the next ACTION / NEXT | `tools/state_machine.sh` |
+| Validate the worker's exit signal | The runner (against `schemas/exit_signal.schema.json`) |
+| Advance `project.json.phase` | Human / orchestrator on gate-clear, or PLAN action's `state.py` calls |
+| Re-decide whether a section *should* apply | Worker — but only for code (which step to do, what tests to run); never for governance (whether to skip the dep-probe). Governance branching is deterministic and lives in this contract. |
+| Make assembly recipes data-driven | Recipe is Python code (matrix + evaluators). Data-driven config is deferred until complexity warrants it (per D19). |
+| Stream output | Synchronous full-buffer write to stdout. |
+| Cache or watch files | Reads happen fresh on every invocation. |
+| Implement read-side queries on devlog/decisions | `jq` is the answer today; FU-14 tracks whether to absorb canned queries here later. |
+
+---
+
+## 3. CLI Surface
+
+### 3.1 Subcommand summary
+
+```
+assemble_context.py --action ACTION --phase N [--mode {autonomous,supervised}]
+assemble_context.py --section status
+assemble_context.py --section architecture
+assemble_context.py --section module --module NAME
+assemble_context.py --section devlog --phase N
+```
+
+`--action` and `--section` are mutually exclusive. Exactly one must be specified.
+
+### 3.2 Flags
+
+| Flag | Required when | Accepted values | Default |
+|------|---------------|-----------------|---------|
+| `--action` | building a full prompt | `plan`, `execute`, `review`, `close` | — |
+| `--phase` | with `--action` (always); with `--section devlog` | positive integer | — |
+| `--mode` | optional with `--action` | `autonomous`, `supervised` | `autonomous` |
+| `--section` | building a single section | `status`, `architecture`, `module`, `devlog` | — |
+| `--module` | only with `--section module` | non-empty module name | — |
+
+The mode flag is *only* meaningful with `--action`. Specifying `--mode` together with `--section` is a CLI argument error.
+
+### 3.3 Output
+
+- stdout — the assembled prompt (markdown, UTF-8, LF line endings, trailing newline).
+- stderr — error messages and structured warnings on degraded sections (see §11).
+
+### 3.4 Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Successful assembly (including assemblies with degraded optional sections marked inline) |
+| 1 | Required input missing, unreadable, or schema-invalid (see §11.1) |
+| 2 | CLI argument error (unknown flag, mutually exclusive flags both set, missing required flag) |
+
+### 3.5 Invocation examples
+
+```bash
+# Autonomous runner, per-action
+python3 tools/assemble_context.py --action execute --phase 11
+python3 tools/assemble_context.py --action plan --phase 12
+
+# Supervised assistant, per-action
+python3 tools/assemble_context.py --action plan --phase 12 --mode supervised
+
+# Cold-start orientation (single-section)
+python3 tools/assemble_context.py --section status
+
+# Mid-step context requests (worker, multi-step mode only)
+python3 tools/assemble_context.py --section architecture
+python3 tools/assemble_context.py --section module --module event_store
+python3 tools/assemble_context.py --section devlog --phase 11
+```
+
+---
+
+## 4. Section Catalog
+
+The canonical, normative list. Every name uses **Title Case**. Every reference inside any instruction file, WORKER_SPEC, adapter, or README must match these names exactly.
+
+### 4.1 Section table
+
+| Canonical name | Source | Per-action inclusion | Conditional | Notes |
+|----------------|--------|:--------------------:|-------------|-------|
+| Identity | `WORKER_SPEC.md` §1 | all | — | Subsection of Worker Contract banner |
+| Main Loop | `WORKER_SPEC.md` §2 | all | — | Subsection of Worker Contract banner. `--mode supervised` strips autonomous-only subsections (see §9). |
+| Escalation Conditions | `WORKER_SPEC.md` §3 | all | — | Subsection of Worker Contract banner |
+| Output Contract | `WORKER_SPEC.md` §4 | all | autonomous_only | Stripped under `--mode supervised` |
+| Autonomous Behavioral Rules | `WORKER_SPEC.md` §5 | all | autonomous_only | Stripped under `--mode supervised` |
+| Prohibitions | `WORKER_SPEC.md` §6 | all | — | Subsection of Worker Contract banner |
+| Action: $TYPE | state-machine output | all (autonomous) | — | Templated from ACTION value. Under `--mode supervised`, replaced with "Active Action: $TYPE". |
+| Next State: $STATE | state-machine output | all (autonomous) | autonomous_only | Stripped under `--mode supervised` |
+| Phase: N — Title (Regime) | `project.json.phase` + `phases.json` record | all | — | Title and regime looked up by phase id |
+| Step: N — Title | `steps.json` lowest-numbered pending step for current phase | EXECUTE | — | Omitted if no pending step exists (then state machine should not have emitted EXECUTE) |
+| Instructions | `instructions/$ACTION.md` | all | — | Conditional subsections stripped per markers (see §7) |
+| Project Scope | `PROJECT.md` | PLAN | — | Optional (missing PROJECT.md → degrade, see §11) |
+| Architecture | `ARCHITECTURE.md` | PLAN, REVIEW | — | Optional |
+| Module Contract | `ARCH_<module>.md` for current phase's module | all | required for current module | If `phases.json` record for the active phase has a `module` field and `ARCH_<module>.md` exists, it's required. If no `module` field, this section is omitted entirely. |
+| Project State | `project.json` (phase, state, blocked, steps_remaining, budget fields) | all | — | Always required |
+| Gotchas | `project.json.gotchas` | all | — | Empty array → render the heading with `<!-- empty -->` placeholder |
+| Current Phase | `phases.json` record for `project.json.phase` | all | — | The single phase record (regime, dependencies, status) |
+| Current Phase Steps | `steps.json` filtered to current phase | EXECUTE, REVIEW, CLOSE | — | All step records for the current phase, in step-number order |
+| Phases | `phases.json` (full array, summarized) | PLAN | — | One-line summary per phase: `id, module, regime, status` |
+| Recent Activity | `devlog.jsonl` last 5 entries | EXECUTE | — | Project-wide tail, not phase-filtered |
+| Phase Devlog | `devlog.jsonl` filtered to current phase | REVIEW, CLOSE | — | Full phase history |
+| Prior Phase Summary | `devlog.jsonl` filtered to (current phase − 1), last 3 entries | PLAN | — | Helps plan continuity. Omitted entirely for phase 1. |
+| Decisions | `decisions.json` | all | — | All four actions (PLAN included so it doesn't collide on D-IDs) |
+| Tool Rules | adapter file (`CLAUDE.md` or `CODEX.md`), section "Claude-Specific Tool Rules" / "Codex-Specific Tool Rules" | all | backend-specific | Backend choice comes from runner env / supervised invocation context |
+| Available Modules | adapter "Available Modules" section, fallback to `ARCHITECTURE.md` Implementation Sequence | all | — | See §4.3 |
+| Action Context | banner only | all | — | See §6 for the banner format |
+| Tool Rules | banner only | all | — | See §6 for the banner format |
+
+### 4.2 Source resolution rules
+
+- **`phases.json` record for current phase:** the record whose `id` equals `project.json.phase`. If no such record exists, that's a required-input failure (state machine should not dispatch ACTION when phases.json doesn't list the current phase).
+- **`ARCH_<module>.md`:** the module name comes from the current phase record's `module` field. The assembler looks for `<project-root>/ARCH_<module>.md`. Missing file: see §11.
+- **`devlog.jsonl` filters:** evaluated lazily; if the file doesn't exist or is empty, the corresponding section renders as `<!-- empty -->`.
+
+### 4.3 Available Modules fallback
+
+The Available Modules section pulls from the adapter file's "Available Modules" placeholder, parsed as the markdown between the H2 heading and the next H2 (or EOF). If that section contains only the `<!-- List tracks ... -->` placeholder comment (i.e., no real content), the assembler falls back to grepping `ARCHITECTURE.md` for an "Implementation Sequence" table and rendering its module names. If neither yields content, the section renders as `<!-- empty -->`.
+
+---
+
+## 5. Assembly Matrix
+
+The per-action inclusion table, derived from §4 for fast reference.
+
+| Section | PLAN | EXECUTE | REVIEW | CLOSE |
+|---------|:----:|:-------:|:------:|:-----:|
+| Worker Contract (Identity, Main Loop, Escalation, Output Contract, Behavioral Rules, Prohibitions) | ✓ | ✓ | ✓ | ✓ |
+| Action: $TYPE | ✓ | ✓ | ✓ | ✓ |
+| Next State: $STATE | ✓ | ✓ | ✓ | ✓ |
+| Phase: N — Title (Regime) | ✓ | ✓ | ✓ | ✓ |
+| Step: N — Title | – | ✓ | – | – |
+| Instructions | ✓ | ✓ | ✓ | ✓ |
+| Project Scope | ✓ | – | – | – |
+| Architecture | ✓ | – | ✓ | – |
+| Module Contract | ✓ | ✓ | ✓ | ✓ |
+| Project State | ✓ | ✓ | ✓ | ✓ |
+| Gotchas | ✓ | ✓ | ✓ | ✓ |
+| Current Phase | ✓ | ✓ | ✓ | ✓ |
+| Current Phase Steps | – | ✓ | ✓ | ✓ |
+| Phases | ✓ | – | – | – |
+| Recent Activity | – | ✓ | – | – |
+| Phase Devlog | – | – | ✓ | ✓ |
+| Prior Phase Summary | ✓ | – | – | – |
+| Decisions | ✓ | ✓ | ✓ | ✓ |
+| Tool Rules | ✓ | ✓ | ✓ | ✓ |
+| Available Modules | ✓ | ✓ | ✓ | ✓ |
+
+`--mode supervised` strips:
+- `Output Contract` and `Autonomous Behavioral Rules` from the Worker Contract banner
+- `Next State: $STATE` from the Action Context banner
+- Any subsection marked `<!-- assembler:autonomous_only -->` inside `WORKER_SPEC.md` or `instructions/$ACTION.md`
+
+---
+
+## 6. Prompt Structure and Ordering
+
+The assembled prompt has a fixed order of four banner-delimited regions:
+
+```
+═══════════════════════════════════════════════
+WORKER CONTRACT
+═══════════════════════════════════════════════
+
+## Identity
+[…]
+
+## Main Loop
+[…]
+
+## Escalation Conditions
+[…]
+
+## Output Contract                              ← stripped under --mode supervised
+[…]
+
+## Autonomous Behavioral Rules                  ← stripped under --mode supervised
+[…]
+
+## Prohibitions
+[…]
+
+═══════════════════════════════════════════════
+ACTION CONTEXT
+═══════════════════════════════════════════════
+
+## Action: EXECUTE
+## Next State: execute                          ← stripped under --mode supervised
+## Phase: 11 — Orchestrator (Build)
+## Step: 3 — Slash command routing              ← EXECUTE only
+## Instructions
+[from instructions/$ACTION.md, conditional subsections stripped]
+
+═══════════════════════════════════════════════
+PROJECT CONTEXT
+═══════════════════════════════════════════════
+
+## Module Contract: Orchestrator
+[from ARCH_orchestrator.md]
+
+## Project State
+[from project.json, JSON-pretty]
+
+## Gotchas
+[from project.json.gotchas, one bullet per entry]
+
+## Current Phase
+[the phases.json record for the current phase, as a small table]
+
+## Current Phase Steps                          ← EXECUTE, REVIEW, CLOSE
+[steps.json filtered to current phase, table form]
+
+## Phases                                       ← PLAN only
+[one-line per phase summary]
+
+## Recent Activity                              ← EXECUTE only
+[devlog.jsonl last 5 entries]
+
+## Phase Devlog                                 ← REVIEW, CLOSE
+[devlog.jsonl filtered to current phase]
+
+## Prior Phase Summary                          ← PLAN only (omit for phase 1)
+[devlog.jsonl prev phase last 3 entries]
+
+## Project Scope                                ← PLAN only
+[from PROJECT.md, verbatim]
+
+## Architecture                                 ← PLAN, REVIEW
+[from ARCHITECTURE.md, verbatim]
+
+## Decisions
+[from decisions.json, all records summarized]
+
+═══════════════════════════════════════════════
+TOOL RULES
+═══════════════════════════════════════════════
+
+[from adapter file's tool rules section]
+
+## Available Modules
+[from adapter or ARCHITECTURE.md fallback]
+```
+
+**Banner format:** exactly 47 box-drawing characters (`═`, U+2550) per band line, the banner title in all-caps centered between two band lines, blank line after.
+
+**Section heading style:** `## Title Case With Colons As Separators` for parameterized sections (`## Phase: 11 — Orchestrator (Build)`). Use the em-dash `—` (U+2014), not a hyphen, in parameterized headers.
+
+**Ordering invariant:** the four regions appear in this order; sections within a region appear in the order shown above; this order is fixed and not configurable.
+
+**Trailing newline:** the file ends with `\n`.
+
+---
+
+## 7. Conditional Section Mechanism
+
+Some sections inside `instructions/$ACTION.md` or `WORKER_SPEC.md` apply only under specific conditions. The assembler strips inapplicable sections deterministically.
+
+### 7.1 Marker syntax
+
+After a heading line, on its own line, place an HTML comment of the form:
+
+```
+<!-- assembler:KEY=VALUE -->
+```
+
+or, for boolean conditions:
+
+```
+<!-- assembler:KEY -->
+```
+
+The marker applies to the section that begins at the preceding heading and ends at the next heading of the same or shallower level (or EOF).
+
+### 7.2 Supported keys
+
+| Key | Evaluation | Strips when | Where applied |
+|-----|------------|-------------|---------------|
+| `requires=dependencies_nonempty` | True iff `phases.json[id=$PHASE].dependencies` has length > 0 | condition is false | `plan.md` Pre-plan Dependency Probe, `close.md` Pre-close Integration Check |
+| `autonomous_only` | True iff `--mode` is `autonomous` (the default) | condition is false (i.e., `--mode supervised`) | `WORKER_SPEC.md` Output Contract & Autonomous Behavioral Rules, any autonomous-only paragraphs in instruction files |
+| `supervised_only` | True iff `--mode supervised` | condition is false (i.e., autonomous mode) | Reserved for future use; no current consumers |
+
+### 7.3 Evaluation order
+
+1. Apply per-action inclusion (§5) to determine candidate sections.
+2. For each candidate, evaluate any `<!-- assembler:... -->` markers.
+3. Strip sections whose conditions evaluate to false. A section with no marker is always included if it passes step 1.
+4. Conditional stripping happens before banner assembly so the output is exactly what the worker sees.
+
+### 7.4 Extensibility
+
+New conditions are added by:
+1. Tagging the relevant heading in the markdown file with the new marker key.
+2. Adding a small evaluator function in the assembler that maps the key to a predicate over `.state/` and CLI args.
+
+No registry file, no DSL — just a Python function per key. Keeps the surface tight and inspectable.
+
+### 7.5 Example
+
+```markdown
+## Pre-plan: Dependency Probe — non-leaf modules only
+<!-- assembler:requires=dependencies_nonempty -->
+
+Procedure:
+1. Inventory external dependencies for the current module's `dependencies` list.
+2. …
+```
+
+When the assembler builds the PLAN prompt for a phase whose `dependencies` array is empty, the entire "Pre-plan: Dependency Probe" section is stripped. The worker receives the remaining `plan.md` content with no awareness that the conditional section ever existed.
+
+---
+
+## 8. `--section status` Content Specification
+
+The `status` section is the assembler's cold-start / orientation snapshot. It is **not** a full assembled prompt — it has no Worker Contract banner, no instructions, no module contract. It is a fast-to-read summary for humans and orchestrators.
+
+Output:
+
+```
+## Project Status
+
+**Phase:** 11 (Orchestrator) — Build
+**State:** execute
+**Blocked:** no
+**Budget:** steps_remaining=4
+**Module:** orchestrator
+**Dependencies:** event_store
+
+## Current Phase Steps
+
+| Step | Title | Status | Commit |
+|------|-------|--------|--------|
+| 11.1 | Pipeline topology with DI | complete | abc1234 |
+| 11.2 | Event loop with debounced extraction | complete | def5678 |
+| 11.3 | Slash command routing | pending | — |
+| 11.4 | End-to-end test | pending | — |
+
+## Gotchas
+
+- jq empty string vs null: use // "default" to avoid silent failures
+- sed -i behaves differently on macOS (requires backup extension)
+
+## Recent Activity (last 3 devlog entries)
+
+- 11.2 execute → complete (def5678) — Event loop with debounced extraction
+- 11.1 execute → complete (abc1234) — Pipeline topology with DI
+- 11.0 plan  → complete — Phase 11 broken into 4 steps
+
+## Open Decisions
+
+- D-12 [critical · open] Round structure: signal-based vs time-based — TBD
+```
+
+If any optional section is empty (`gotchas: []`, no recent activity, no open decisions), render the heading with `<!-- empty -->` immediately under it.
+
+`--section status` does not accept `--phase` — it always reports on the project's current phase.
+
+---
+
+## 9. Mode Framing
+
+`--mode {autonomous,supervised}` controls which subsections of the Worker Contract and the instructions are included.
+
+### 9.1 Autonomous (default)
+
+- All sections in §5 included per the matrix.
+- `Output Contract`, `Autonomous Behavioral Rules`, and `Next State` are present.
+- Any subsection tagged `<!-- assembler:autonomous_only -->` is included.
+- Any subsection tagged `<!-- assembler:supervised_only -->` is stripped.
+
+### 9.2 Supervised
+
+- All sections in §5 included per the matrix, **except** those tagged `autonomous_only` (stripped).
+- `Output Contract`, `Autonomous Behavioral Rules`, `Next State: $STATE` are stripped.
+- `Action: $TYPE` becomes `Active Action: $TYPE` (no exit-signal framing).
+- Subsections tagged `<!-- assembler:supervised_only -->` are included (none today; reserved).
+
+The assembler does **not** add any prose beyond the strip-or-include mechanism. The instruction files themselves carry both autonomous and supervised paragraphs, distinguished by markers. Adding a new supervised-mode-specific instruction means adding a tagged subsection to `instructions/$ACTION.md`, not editing assembler code.
+
+### 9.3 Mode framing is set by the caller, not the worker
+
+The runner (autonomous mode) passes `--mode autonomous` explicitly. Devmate slash-command wrappers (supervised mode) pass `--mode supervised`. Human direct CLI use chooses one. The worker reads the assembled prompt and follows whatever framing arrived; it does not choose.
+
+---
+
+## 10. Multi-Step Mid-Step Usage
+
+In multi-step mode (`STEP_BUDGET > 1`), the worker loops the state machine itself between steps (per `WORKER_SPEC.md` §2). Between steps, the worker may call the assembler for fresh single-section context. The following `--section` invocations are callable mid-step:
+
+| Section | Use case |
+|---------|----------|
+| `--section architecture` | Need the full ARCHITECTURE.md to reason about cross-module wiring during a refactor step |
+| `--section module --module $NAME` | Need a different module's contract than the active phase's module (e.g., reviewing how a consumer uses this module's API) |
+| `--section devlog --phase $PHASE` | Need an older phase's devlog for context |
+| `--section status` | Re-orient after a long action drained context window |
+
+`--action` is **not** callable mid-step. Re-assembling the full prompt mid-step would duplicate context already in the worker's window and burn tokens. The runner is the only caller authorized to issue full-prompt assemblies.
+
+Mid-step assembler calls do not decrement the step budget (`state.py` budget decrement is the state machine's job, not the assembler's).
+
+---
+
+## 11. Error and Edge Cases
+
+### 11.1 Required-input failures (exit 1, abort)
+
+| Failure | Source |
+|---------|--------|
+| `project.json` missing | always required |
+| `project.json` schema-invalid | always required |
+| `phases.json` missing or schema-invalid | always required (state machine needs it too) |
+| `steps.json` missing or schema-invalid | always required |
+| No record in `phases.json` with `id == project.json.phase` | always required (state machine should not dispatch ACTION without it) |
+| `instructions/$ACTION.md` missing | required for `--action` |
+| `WORKER_SPEC.md` missing | required |
+| Adapter file (`CLAUDE.md` or `CODEX.md`) missing | required (backend chosen by runner / caller; assembler reads whichever is named) |
+| `ARCH_<module>.md` missing when `phases.json[current].module` is set | required for current module |
+| Schema validation failure on any `.state/` file the assembler is reading for this invocation | abort; failure path includes the file path and `jsonschema` error message |
+
+On any required-input failure, the assembler writes a structured error to stderr and exits 1. Format:
+
+```
+ERROR: <kind>
+File: <absolute path>
+Detail: <jsonschema error message or file-system error>
+```
+
+Nothing is written to stdout on exit 1.
+
+### 11.2 Optional-input degradations (exit 0, marker in output)
+
+| Optional case | What the section renders |
+|---------------|--------------------------|
+| `PROJECT.md` missing | `<!-- not present: PROJECT.md not found -->` under the `## Project Scope` heading |
+| `ARCHITECTURE.md` missing | `<!-- not present: ARCHITECTURE.md not found -->` under `## Architecture` |
+| `decisions.json` empty array | `<!-- empty -->` under `## Decisions` |
+| `devlog.jsonl` empty or missing | `<!-- empty -->` under `## Recent Activity` / `## Phase Devlog` / `## Prior Phase Summary` |
+| `project.json.gotchas` empty | `<!-- empty -->` under `## Gotchas` |
+| Adapter Available Modules section empty and ARCHITECTURE fallback also empty | `<!-- empty -->` under `## Available Modules` |
+| Current phase is phase 1 (no prior phase) | `## Prior Phase Summary` heading omitted entirely (not even an empty marker — phase 1 has nothing to summarize) |
+| Current phase record has no `module` field | `## Module Contract` heading omitted entirely |
+
+Optional degradations all exit 0. The worker sees the placeholders and decides whether the absence matters. None of these block assembly.
+
+### 11.3 CLI argument errors (exit 2)
+
+| Failure | Behavior |
+|---------|----------|
+| Both `--action` and `--section` specified | exit 2 with "specify exactly one of --action or --section" |
+| Neither `--action` nor `--section` | exit 2 |
+| `--action` with unknown value | exit 2 (argparse `choices` enforces) |
+| `--section` with unknown value | exit 2 (argparse `choices` enforces) |
+| `--phase` missing when `--action` is set | exit 2 |
+| `--phase` missing when `--section devlog` | exit 2 |
+| `--module` missing when `--section module` | exit 2 |
+| `--mode` specified with `--section` | exit 2 |
+| `--phase` is not a positive integer | exit 2 |
+
+### 11.4 Schema validation policy
+
+Every `.state/*.json` file read is validated against the registered schema via `tools/validate.py` (`SCHEMA_BY_FILENAME`, `validate_state_file`). `devlog.jsonl` is validated line-by-line via `validate_devlog_jsonl`. Validation failure on a required file → exit 1 per §11.1. Validation failure on `devlog.jsonl` is treated as required (the file format is small and explicit; corrupt devlogs are bugs).
+
+---
+
+## 12. Output Encoding and Invariants
+
+- **Encoding:** UTF-8. Box-drawing characters (`═` U+2550, `—` U+2014) are emitted as their UTF-8 byte sequences.
+- **Line endings:** LF (`\n`) only. The assembler does not respect platform line-ending conventions; downstream consumers handle conversion if needed.
+- **Trailing newline:** the file ends with a single `\n`.
+- **Section ordering:** fixed per §6. Reordering is a contract break.
+- **Section content reproducibility:** the same `.state/` + `instructions/` + same CLI args produces byte-identical output. No timestamps, no randomness, no environment-dependent content (file paths in `<!-- not present -->` markers use repo-relative paths).
+- **Source markdown verbatim:** content lifted from `WORKER_SPEC.md`, `PROJECT.md`, `ARCHITECTURE.md`, `ARCH_<module>.md`, and `instructions/$ACTION.md` is included verbatim except for conditional-section stripping. The assembler does not edit prose, normalize whitespace, or re-flow paragraphs.
+- **State-file rendering:** `project.json` is rendered as pretty-printed JSON inside a fenced ```json``` block. `phases.json`, `steps.json`, `decisions.json` are rendered as markdown tables (one row per record, columns in schema-declaration order). `devlog.jsonl` filters render as bulleted summaries: `phase.step action → outcome (commit if present) — summary`.
+
+---
+
+## 13. Implementation Notes
+
+- **Language:** Python 3.10+ (matches existing tools).
+- **Dependencies:** stdlib only, plus `jsonschema` (already required by `validate.py`).
+- **Code reuse:** `tools/validate.py` provides `SCHEMA_BY_FILENAME`, `validate_state_file`, `validate_devlog_jsonl`, `load_schema`, `validate_json_schema`. The assembler reuses these directly — no duplicate validation logic.
+- **Module structure:** single file `tools/assemble_context.py` for v1. Internal organization: argparse setup, per-action recipes, per-section renderers, conditional-marker extractor, output writer. If sections proliferate, split per-section renderers into a sub-package.
+- **No caching:** every invocation re-reads every source file. Files are small (largest is `devlog.jsonl`, kilobytes); caching adds invalidation complexity without measurable benefit.
+- **No streaming:** synchronous full-buffer write. Prompts are tens of KB at most.
+- **Testing:** unit tests against the example fixture in `examples/initial_state/.state/`. Each per-section renderer testable in isolation; full-prompt assembly testable for each (action, mode) pair against golden outputs.
+- **Determinism:** no `dict`-order dependency (use the schema's declared field order for table columns); no environment-dependent content; no walltime in output.
+
+---
+
+## 14. Decisions
+
+Locked decisions, captured inline so the contract's rationale travels with it.
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| **D-arch-1** | Fail-fast for required inputs, degrade for optional ones | Required-input failure (e.g., schema-invalid `project.json`) would mislead the worker. Optional-input degradation (empty `decisions.json`, leaf module with no probe) is normal early-project state. Two error paths are worth the complexity. |
+| **D-arch-2** | `--section module --module NAME` (flag form) | Consistent with `--section devlog --phase N`. Avoids mixed positional/flag arg shapes across sections. |
+| **D-arch-3** | Heading metadata markers for conditional sections | Single mechanism handles dep-probe, integration check, supervised-mode stripping. Extensible by tagging + adding an evaluator. Markers are HTML comments — invisible in rendered markdown. |
+| **D-arch-4** | Title Case section names throughout | Matches the DESIGN sketch, the most-quoted reference. Standardizing eliminates the drift surfaced during cross-reference. |
+| **D-arch-5** | `Decisions` section included for all four actions | PLAN authors D-IDs and would collide without seeing existing decisions. Size cost is negligible. |
+| **D-arch-6** | `Current Phase` and `Current Phase Steps` are two distinct sections | Different sources (`phases.json` record vs `steps.json` filter) and different consumers. Conflating them was a documentation oversight. |
+| **D-arch-7** | Mid-step `--section X` is documented and bounded | Per D16. Bounded to four section types (§10) so it doesn't sprawl into a runtime tool. `--action` is not callable mid-step. |
+| **D-arch-8** | Available Modules: adapter primary, ARCHITECTURE.md fallback | Adapter has the `Available Modules` placeholder explicitly for this purpose. Architecture is a sensible fallback when the placeholder is unfilled. |
+| **D-arch-9** | This contract is authoritative; DESIGN_governance_v3.md gets a forward-pointer | Avoids rewriting the design doc while making the authority explicit. |
+| **D-arch-10** | Output is markdown / UTF-8 / LF / trailing newline | No source specified; pick the existing toolchain convention. |
+| **D-arch-11** | `--mode {autonomous,supervised}`, autonomous default | Default-only would surprise readers when they grep for `--mode autonomous` and find no examples; explicit values keep the surface obvious. |
+
+---
+
+## 15. Change History
+
+| Date | What changed | Why |
+|------|--------------|-----|
+| 2026-06-04 | Initial contract spec | Phase 1 build-order step 7.5 — author the contract before Phase 1.3 implementation and step 8 slash wrappers. Resolves section-name drift and undocumented edge cases surfaced by a cross-reference of all framework files. |

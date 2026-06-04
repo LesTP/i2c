@@ -66,6 +66,12 @@ State writes go through `python3 tools/state.py` — never through `sed`,
 never through direct file edits. The CLI guarantees atomic writes and
 schema validation; ad-hoc edits don't.
 
+Between steps, you may also call `python3 tools/assemble_context.py
+--section X` for fresh single-section governance context (architecture,
+module contract, an older phase's devlog, or a status snapshot). See
+`ARCH_assembler.md` §10 for the bounded set of mid-step section
+requests. Mid-step assembler calls do not decrement the step budget.
+
 ### Loop discipline — multi-step only
 
 Two contracts you must NOT break. Both have already cost work in
@@ -171,6 +177,7 @@ machine script. When any fires, EXIT 2 with a reason.
 ---
 
 ## 4. Output Contract
+<!-- assembler:autonomous_only -->
 
 The **final lines** of every invocation must be:
 
@@ -197,6 +204,7 @@ output is treated as `EXIT 2`.
 ---
 
 ## 5. Autonomous Behavioral Rules
+<!-- assembler:autonomous_only -->
 
 - **Commits:** Commit per step without waiting for human approval. Log
   decisions to `decisions.json` (via `state.py append-record`) for

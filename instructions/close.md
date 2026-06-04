@@ -46,7 +46,8 @@ sign-off the orchestrator handles — if your prompt's mode framing
 indicates that, defer the check (devlog `outcome: "blocked"`, reason
 "awaiting Refine sign-off") and continue to step 3.
 
-### 3. *(Conditional)* Pre-close: Integration Check — non-leaf modules only
+### 3. *(Conditional)* Pre-close: Integration Check - non-leaf modules only
+<!-- assembler:requires=dependencies_nonempty -->
 
 **Include this step only when** the current phase's `dependencies` array
 in `phases.json` is non-empty. If the assembler has stripped this section
