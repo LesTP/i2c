@@ -25,6 +25,7 @@ from pathlib import Path
 I2C_ROOT = Path(__file__).resolve().parent.parent
 STATE_PY = I2C_ROOT / "tools" / "state.py"
 VALIDATE_PY = I2C_ROOT / "tools" / "validate.py"
+ASSEMBLE_PY = I2C_ROOT / "tools" / "assemble_context.py"
 INITIAL = Path(__file__).resolve().parent / "initial_state" / ".state"
 
 
@@ -169,6 +170,23 @@ def main() -> int:
             print(f"  [OK] {fname} validates")
         v.validate_devlog_jsonl(devlog)
         print(f"  [OK] devlog.jsonl validates ({len(devlog.read_text().splitlines())} entries)")
+
+        # --- 9. Assembler --section status against the working state ---
+        print("\n--- 9. Run assemble_context.py --section status ---")
+        env = {**dict(__import__("os").environ), "PYTHONIOENCODING": "utf-8"}
+        proc = subprocess.run(
+            [sys.executable, str(ASSEMBLE_PY), "--section", "status"],
+            capture_output=True, text=True, cwd=str(work.parent), env=env,
+        )
+        if proc.returncode != 0:
+            print(f"FAIL: assembler --section status (rc={proc.returncode})")
+            print(f"  [stderr] {proc.stderr}")
+            return 1
+        for expected in ("## Project Status", "## Current Phase Steps", "## Gotchas"):
+            if expected not in proc.stdout:
+                print(f"FAIL: assembler output missing {expected!r}", file=sys.stderr)
+                return 1
+        print("  [OK] status snapshot includes Project Status, Current Phase Steps, Gotchas")
 
         print("\n=== SMOKE TEST PASSED ===")
         return 0

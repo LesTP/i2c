@@ -61,7 +61,8 @@ i2c/
 │
 ├── tools/
 │   ├── state.py                      atomic, schema-validated write CLI
-│   └── validate.py                   schema loader + validation helpers
+│   ├── validate.py                   schema loader + validation helpers
+│   └── assemble_context.py           builds worker prompts and section snapshots
 │
 ├── tests/                          ← unit tests (stdlib unittest, 78+ tests)
 └── examples/
@@ -182,12 +183,12 @@ the loop resumes.
 A human works directly with an AI assistant (Claude in VS Code, Codex in
 terminal). The same tools serve both modes — only the caller differs.
 
-Today (Phase 1 only), supervised use means: the human or their assistant
-reads instruction files directly and calls `state.py` for writes. Once
-the assembler exists (Phase 1.3), supervised cold-start will instead be
-`python3 tools/assemble_context.py --section status`, and per-action
-context can be requested with
-`python3 tools/assemble_context.py --action plan --mode supervised`.
+Supervised cold-start: `python3 tools/assemble_context.py --section status`.
+Per-action context:
+`python3 tools/assemble_context.py --action plan --phase N --mode supervised`.
+The assembler strips `autonomous_only` framing (Output Contract,
+Behavioral Rules, Next State) and reframes `Action: $TYPE` as
+`Active Action: $TYPE` so the assistant pauses for human approval.
 
 Mode is set by the runner's `--mode` flag; the assembled prompt's
 framing reflects it (autonomous: act and commit; supervised: surface
@@ -262,13 +263,13 @@ housekeeping.
    python3 examples/smoke_test.py
    ```
 
-6. **Begin Phase 1** by following `instructions/plan.md` directly (or,
-   once the assembler is built, by running
-   `python3 tools/assemble_context.py --action plan --mode supervised`).
+6. **Begin Phase 1** by running
+   `python3 tools/assemble_context.py --action plan --phase 1 --mode supervised`
+   and following the procedure in the assembled `Instructions` section.
 
-The framework is currently **Phase 1 (data foundation + prose layer)
-complete, Phase 1.3 (assembler) and Phase 3 (autonomous loop tooling)
-not yet built.** See the next section for what works today.
+The framework is currently **Phase 1 complete (data foundation, prose
+layer, and assembler) and Phase 3 (autonomous loop tooling) not yet
+built.** See the next section for what works today.
 
 ---
 
@@ -280,7 +281,7 @@ not yet built.** See the next section for what works today.
 | 1.2 | Instruction files (plan, execute, review, close), WORKER_SPEC, adapter templates | ✅ |
 | 1.2.5 | `ARCH_assembler.md` contract spec | ✅ |
 | 1.2.6 | `templates/.claude/commands/` slash wrappers | ✅ |
-| 1.3 | `assemble_context.py` - context assembler | ⏳ next (spec locked) |
+| 1.3 | `assemble_context.py` - context assembler | ✅ |
 | 2 | Clankercourts pilot in supervised mode | upcoming |
 | 3 | `state_machine.sh`, `run-iteration.sh` updates — autonomous loop | upcoming |
 | 4 | Codexbot StateReader + dispatcher (Telegram or Discord) | upcoming |
@@ -292,8 +293,16 @@ not yet built.** See the next section for what works today.
   atomic guarantees)
 - Schema validation on every write; `validate.py` can also re-validate
   any existing file
-- Supervised use with humans/assistants reading instruction files
-  directly
+- **Worker prompt assembly** through `assemble_context.py` — full
+  per-action prompts (`--action {plan,execute,review,close}` with
+  `--mode {autonomous,supervised}`), status snapshots
+  (`--section status`), and mid-step single-section requests
+  (`--section {architecture,module,devlog}`). Conditional sections
+  (dependency probe, integration check, autonomous-only paragraphs)
+  strip deterministically per ARCH_assembler.md §7.
+- Supervised use with humans/assistants reading the assembler output
+  (the slash wrappers in `templates/.claude/commands/` are now
+  functional end-to-end)
 - The end-to-end smoke test exercises every CLI subcommand on a realistic
   fixture
 - Cross-platform (tested on Windows / PowerShell + Python 3.12)
@@ -302,15 +311,8 @@ not yet built.** See the next section for what works today.
 
 - **No autonomous loop.** `state_machine.sh` and `run-iteration.sh`
   updates are Phase 3.
-- **No pre-assembled worker prompts.** `assemble_context.py` is Phase
-  1.3. Until it ships, "supervised mode" means the human reads
-  instruction files themselves.
 - **No remote dispatch.** Codexbot integration is Phase 4. No
   Telegram/Discord control surface yet.
-- **No slash-command wrappers in active use.** The wrappers in
-  `templates/.claude/commands/` ship as templates, but four of the five
-  shell out to `assemble_context.py` (Phase 1.3, not yet implemented).
-  `/step-done` works today — pure `state.py` calls.
 
 ---
 

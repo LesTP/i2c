@@ -1,0 +1,905 @@
+"""Tests for tools/assemble_context.py — the context assembler.
+
+Per ARCH_assembler.md (the spec). Per-renderer unit tests plus smoke-level
+full-section invocations. Golden-output snapshots deferred per D-impl-2.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+
+# Make tools/ importable.
+TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
+sys.path.insert(0, str(TOOLS_DIR))
+
+import assemble_context as ac  # noqa: E402
+
+
+I2C_ROOT = Path(__file__).resolve().parent.parent
+FIXTURE = I2C_ROOT / "examples" / "initial_state"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+class TempProject:
+    """Context manager: copy the canonical fixture into a temp dir.
+
+    If `with_framework=True`, also copies WORKER_SPEC.md, instructions/,
+    CLAUDE.md, and CODEX.md from the i2c root — enough to exercise the
+    full-prompt renderers.
+    """
+
+    def __init__(
+        self,
+        *,
+        with_extra: dict[str, str] | None = None,
+        with_framework: bool = False,
+    ):
+        # `with_extra` is {relative_path: content} written into the project root.
+        self.with_extra = with_extra or {}
+        self.with_framework = with_framework
+
+    def __enter__(self) -> Path:
+        self._tmp = tempfile.TemporaryDirectory(prefix="i2c_asm_")
+        root = Path(self._tmp.name) / "project"
+        shutil.copytree(FIXTURE, root)
+        if self.with_framework:
+            for name in ("WORKER_SPEC.md", "CLAUDE.md", "CODEX.md"):
+                shutil.copy2(I2C_ROOT / name, root / name)
+            shutil.copytree(I2C_ROOT / "instructions", root / "instructions")
+        for relpath, content in self.with_extra.items():
+            target = root / relpath
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        self.root = root
+        self._prev_cwd = Path.cwd()
+        os.chdir(root)
+        return root
+
+    def __exit__(self, *args):
+        os.chdir(self._prev_cwd)
+        self._tmp.cleanup()
+
+
+def run_cli(*argv: str) -> tuple[int, str, str]:
+    """Run ac.main with argv; capture (exit_code, stdout, stderr)."""
+    out = io.StringIO()
+    err = io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        try:
+            rc = ac.main(list(argv))
+            if rc is None:
+                rc = 0
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+    return rc, out.getvalue(), err.getvalue()
+
+
+def build_ctx(
+    *,
+    action: str | None = None,
+    section: str | None = None,
+    phase: int | None = None,
+    mode: str | None = None,
+    module: str | None = None,
+    backend: str = "claude",
+) -> ac.AssemblerContext:
+    """Build a context against the current CWD's project."""
+    import argparse
+    ns = argparse.Namespace(
+        action=action, section=section, phase=phase, mode=mode,
+        module=module, backend=backend,
+    )
+    return ac.build_context(ns)
+
+
+# ---------------------------------------------------------------------------
+# Project root detection
+# ---------------------------------------------------------------------------
+
+
+class TestFindProjectRoot(unittest.TestCase):
+    def test_finds_from_cwd(self):
+        with TempProject() as root:
+            self.assertEqual(ac.find_project_root().resolve(), root.resolve())
+
+    def test_finds_from_subdir(self):
+        with TempProject() as root:
+            sub = root / "tools"
+            sub.mkdir()
+            os.chdir(sub)
+            self.assertEqual(ac.find_project_root().resolve(), root.resolve())
+
+    def test_exits_when_not_found(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            prev = Path.cwd()
+            os.chdir(tmp)
+            try:
+                with self.assertRaises(SystemExit) as cm:
+                    ac.find_project_root()
+                self.assertEqual(cm.exception.code, 1)
+            finally:
+                os.chdir(prev)
+
+
+# ---------------------------------------------------------------------------
+# Marker parsing + heading parsing
+# ---------------------------------------------------------------------------
+
+
+class TestMarkerParsing(unittest.TestCase):
+    def test_boolean_marker(self):
+        self.assertEqual(
+            ac.parse_marker("<!-- assembler:autonomous_only -->"),
+            ("autonomous_only", None),
+        )
+
+    def test_kv_marker(self):
+        self.assertEqual(
+            ac.parse_marker("<!-- assembler:requires=dependencies_nonempty -->"),
+            ("requires", "dependencies_nonempty"),
+        )
+
+    def test_non_marker(self):
+        self.assertIsNone(ac.parse_marker("just a comment line"))
+        self.assertIsNone(ac.parse_marker("<!-- other:comment -->"))
+
+
+class TestHeadingParsing(unittest.TestCase):
+    def test_h2(self):
+        self.assertEqual(ac.heading_level("## Hello"), 2)
+
+    def test_h4(self):
+        self.assertEqual(ac.heading_level("#### Sub"), 4)
+
+    def test_non_heading(self):
+        self.assertIsNone(ac.heading_level("regular text"))
+        self.assertIsNone(ac.heading_level("#no-space"))
+
+
+# ---------------------------------------------------------------------------
+# Status section renderers — against the fixture
+# ---------------------------------------------------------------------------
+
+
+class TestStatusRenderers(unittest.TestCase):
+    def test_project_status_includes_phase_and_state(self):
+        with TempProject():
+            ctx = build_ctx(section="status")
+            out = ac.render_status_project(ctx)
+            self.assertTrue(out.startswith("## Project Status"))
+            # Fixture: phase 2 / state execute / module event_store / regime build
+            self.assertIn("Phase:", out)
+            self.assertIn("event_store", out)
+            self.assertIn("Core storage", out)
+            self.assertIn("Build", out)
+            self.assertIn("**State:** execute", out)
+            self.assertIn("**Blocked:** no", out)
+
+    def test_current_phase_steps_table_filters_to_current_phase(self):
+        with TempProject():
+            ctx = build_ctx(section="status")
+            out = ac.render_current_phase_steps_table(ctx)
+            self.assertTrue(out.startswith("## Current Phase Steps"))
+            self.assertIn("| Step |", out)
+            # Phase 2 has steps 1-4. Phase 1 steps must not appear.
+            self.assertIn("2.1", out)
+            self.assertIn("2.4", out)
+            self.assertNotIn("1.1", out)
+            self.assertNotIn("1.2", out)
+            # Commit column shows the recorded hash for completed step.
+            self.assertIn("1234567", out)
+
+    def test_current_phase_steps_empty(self):
+        with TempProject() as root:
+            # Wipe steps for current phase.
+            (root / ".state" / "steps.json").write_text(
+                json.dumps([
+                    {"phase": 1, "step": 1, "title": "x", "status": "complete"},
+                ]),
+                encoding="utf-8",
+            )
+            ctx = build_ctx(section="status")
+            out = ac.render_current_phase_steps_table(ctx)
+            self.assertIn("<!-- empty -->", out)
+
+    def test_gotchas_renders_bullets(self):
+        with TempProject():
+            ctx = build_ctx(section="status")
+            out = ac.render_gotchas(ctx)
+            self.assertTrue(out.startswith("## Gotchas"))
+            self.assertIn("- Always pass", out)
+
+    def test_gotchas_empty_placeholder(self):
+        with TempProject() as root:
+            data = json.loads((root / ".state" / "project.json").read_text())
+            data["gotchas"] = []
+            (root / ".state" / "project.json").write_text(json.dumps(data))
+            ctx = build_ctx(section="status")
+            out = ac.render_gotchas(ctx)
+            self.assertIn("<!-- empty -->", out)
+
+    def test_recent_activity_takes_last_n_reversed(self):
+        with TempProject():
+            ctx = build_ctx(section="status")
+            out = ac.render_recent_activity(ctx, n=3)
+            self.assertTrue(out.startswith("## Recent Activity"))
+            # Most recent first. Fixture's last entry is phase 2 step 1.
+            lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
+            self.assertEqual(len(lines), 3)
+            self.assertIn("2.1 execute", lines[0])
+            # commit '1234567' present on that entry
+            self.assertIn("1234567", lines[0])
+
+    def test_recent_activity_empty_devlog(self):
+        with TempProject() as root:
+            (root / ".state" / "devlog.jsonl").write_text("", encoding="utf-8")
+            ctx = build_ctx(section="status")
+            out = ac.render_recent_activity(ctx, n=3)
+            self.assertIn("<!-- empty -->", out)
+
+    def test_open_decisions_filters_to_open(self):
+        with TempProject():
+            ctx = build_ctx(section="status")
+            out = ac.render_open_decisions(ctx)
+            self.assertTrue(out.startswith("## Open Decisions"))
+            # Fixture: D-1 closed, D-2 open.
+            self.assertIn("D-2", out)
+            self.assertNotIn("D-1 ", out)
+            self.assertIn("[medium", out)
+
+    def test_open_decisions_all_closed(self):
+        with TempProject() as root:
+            data = json.loads((root / ".state" / "decisions.json").read_text())
+            for d in data:
+                d["status"] = "closed"
+            (root / ".state" / "decisions.json").write_text(json.dumps(data))
+            ctx = build_ctx(section="status")
+            out = ac.render_open_decisions(ctx)
+            self.assertIn("<!-- empty -->", out)
+
+
+# ---------------------------------------------------------------------------
+# --section status — end-to-end via main()
+# ---------------------------------------------------------------------------
+
+
+class TestSectionStatusEndToEnd(unittest.TestCase):
+    def test_section_status_runs_and_outputs_all_subsections(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "status")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Project Status", out)
+            self.assertIn("## Current Phase Steps", out)
+            self.assertIn("## Gotchas", out)
+            self.assertIn("## Recent Activity", out)
+            self.assertIn("## Open Decisions", out)
+            # Trailing newline invariant (§12).
+            self.assertTrue(out.endswith("\n"))
+
+    def test_deterministic_across_reruns(self):
+        with TempProject():
+            rc1, out1, _ = run_cli("--section", "status")
+            rc2, out2, _ = run_cli("--section", "status")
+            self.assertEqual(rc1, 0)
+            self.assertEqual(rc2, 0)
+            self.assertEqual(out1, out2)
+
+
+# ---------------------------------------------------------------------------
+# CLI argument errors (exit 2 path per §11.3)
+# ---------------------------------------------------------------------------
+
+
+class TestCliArgumentErrors(unittest.TestCase):
+    def test_both_action_and_section_rejected(self):
+        rc, _, err = run_cli("--action", "plan", "--phase", "1", "--section", "status")
+        # argparse mutually-exclusive raises exit 2.
+        self.assertEqual(rc, 2)
+
+    def test_neither_action_nor_section_rejected(self):
+        rc, _, err = run_cli("--phase", "1")
+        self.assertEqual(rc, 2)
+
+    def test_action_without_phase(self):
+        with TempProject():
+            rc, _, err = run_cli("--action", "plan")
+            self.assertEqual(rc, 2)
+
+    def test_phase_not_positive(self):
+        with TempProject():
+            rc, _, err = run_cli("--action", "plan", "--phase", "0")
+            self.assertEqual(rc, 2)
+
+    def test_section_devlog_requires_phase(self):
+        with TempProject():
+            rc, _, err = run_cli("--section", "devlog")
+            self.assertEqual(rc, 2)
+
+    def test_section_module_requires_module(self):
+        with TempProject():
+            rc, _, err = run_cli("--section", "module")
+            self.assertEqual(rc, 2)
+
+    def test_mode_with_section_rejected(self):
+        with TempProject():
+            rc, _, err = run_cli("--section", "status", "--mode", "supervised")
+            self.assertEqual(rc, 2)
+
+    def test_unknown_action_rejected(self):
+        rc, _, err = run_cli("--action", "bogus", "--phase", "1")
+        self.assertEqual(rc, 2)
+
+    def test_unknown_section_rejected(self):
+        rc, _, err = run_cli("--section", "bogus")
+        self.assertEqual(rc, 2)
+
+
+# ---------------------------------------------------------------------------
+# Required-input failures (exit 1 path per §11.1)
+# ---------------------------------------------------------------------------
+
+
+class TestRequiredInputFailures(unittest.TestCase):
+    def test_missing_project_json(self):
+        with TempProject() as root:
+            (root / ".state" / "project.json").unlink()
+            # Without project.json, find_project_root will fail at startup.
+            rc, _, err = run_cli("--section", "status")
+            self.assertEqual(rc, 1)
+            self.assertIn("ERROR:", err)
+
+    def test_schema_invalid_project_json(self):
+        with TempProject() as root:
+            (root / ".state" / "project.json").write_text(
+                json.dumps({"phase": 1, "state": "BOGUS", "blocked": False})
+            )
+            rc, _, err = run_cli("--section", "status")
+            self.assertEqual(rc, 1)
+            self.assertIn("ERROR:", err)
+            self.assertIn("schema-invalid", err)
+
+
+# ---------------------------------------------------------------------------
+# Conditional section stripping (§7)
+# ---------------------------------------------------------------------------
+
+
+class TestConditionalStripping(unittest.TestCase):
+    def _ctx(self, mode: str = "autonomous", phase: int = 2) -> ac.AssemblerContext:
+        return build_ctx(action="plan", phase=phase, mode=mode)
+
+    def test_autonomous_only_kept_in_autonomous(self):
+        with TempProject():
+            md = (
+                "# Title\n\n## Keep\nbody\n\n## Drop\n"
+                "<!-- assembler:autonomous_only -->\n"
+                "secret body\n\n## Tail\ntail body\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx(mode="autonomous"))
+            self.assertIn("## Drop", out)
+            self.assertIn("secret body", out)
+            # Marker line itself is removed.
+            self.assertNotIn("autonomous_only", out)
+            self.assertIn("## Tail", out)
+
+    def test_autonomous_only_stripped_in_supervised(self):
+        with TempProject():
+            md = (
+                "## Keep\nbody\n\n## Drop\n"
+                "<!-- assembler:autonomous_only -->\n"
+                "secret body\n\n## Tail\ntail body\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx(mode="supervised"))
+            self.assertIn("## Keep", out)
+            self.assertNotIn("## Drop", out)
+            self.assertNotIn("secret body", out)
+            self.assertIn("## Tail", out)
+
+    def test_requires_dependencies_nonempty_strip_when_empty(self):
+        # Phase 2 in fixture has dependencies == [] → section should strip.
+        with TempProject():
+            md = (
+                "## Always\nx\n\n## Probe\n"
+                "<!-- assembler:requires=dependencies_nonempty -->\n"
+                "probe body\n\n## End\ny\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx())
+            self.assertIn("## Always", out)
+            self.assertNotIn("## Probe", out)
+            self.assertNotIn("probe body", out)
+
+    def test_requires_dependencies_nonempty_kept_when_present(self):
+        # Phase 4 in fixture depends on ["event_store"] → keep section.
+        with TempProject():
+            md = (
+                "## Always\nx\n\n## Probe\n"
+                "<!-- assembler:requires=dependencies_nonempty -->\n"
+                "probe body\n\n## End\ny\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx(phase=4))
+            self.assertIn("## Probe", out)
+            self.assertIn("probe body", out)
+
+    def test_marker_in_h3_strips_at_h3_boundary(self):
+        with TempProject():
+            md = (
+                "## H2\n\n### keep1\nbody1\n\n"
+                "### drop\n<!-- assembler:autonomous_only -->\n"
+                "secret\n\n### keep2\nbody2\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx(mode="supervised"))
+            self.assertIn("### keep1", out)
+            self.assertNotIn("### drop", out)
+            self.assertNotIn("secret", out)
+            self.assertIn("### keep2", out)
+
+
+# ---------------------------------------------------------------------------
+# Section renderers — non-status sections
+# ---------------------------------------------------------------------------
+
+
+class TestWorkerSpecRenderer(unittest.TestCase):
+    def test_worker_spec_under_autonomous_includes_output_contract(self):
+        with TempProject(with_framework=True):
+            ctx = build_ctx(action="execute", phase=2, mode="autonomous")
+            out = ac.render_worker_spec(ctx)
+            self.assertIn("Identity", out)
+            self.assertIn("Main Loop", out)
+            self.assertIn("Output Contract", out)
+            self.assertIn("Autonomous Behavioral Rules", out)
+            self.assertIn("Prohibitions", out)
+            # Marker comment should not leak.
+            self.assertNotIn("autonomous_only", out)
+            # H1 title is stripped (we slice from first H2).
+            self.assertNotIn("# Worker Spec", out)
+
+    def test_worker_spec_under_supervised_strips_autonomous_only(self):
+        with TempProject(with_framework=True):
+            ctx = build_ctx(action="execute", phase=2, mode="supervised")
+            out = ac.render_worker_spec(ctx)
+            self.assertIn("Identity", out)
+            self.assertNotIn("Output Contract", out)
+            self.assertNotIn("Autonomous Behavioral Rules", out)
+            self.assertIn("Prohibitions", out)
+
+
+class TestActionContextRenderers(unittest.TestCase):
+    def test_action_heading_autonomous(self):
+        with TempProject():
+            ctx = build_ctx(action="execute", phase=2, mode="autonomous")
+            self.assertEqual(ac.render_action_heading(ctx), "## Action: EXECUTE")
+
+    def test_action_heading_supervised(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2, mode="supervised")
+            self.assertEqual(ac.render_action_heading(ctx), "## Active Action: PLAN")
+
+    def test_next_state_autonomous_present(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2, mode="autonomous")
+            self.assertEqual(ac.render_next_state(ctx), "## Next State: execute")
+
+    def test_next_state_supervised_empty(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2, mode="supervised")
+            self.assertEqual(ac.render_next_state(ctx), "")
+
+    def test_phase_heading_uses_em_dash(self):
+        with TempProject():
+            ctx = build_ctx(action="execute", phase=2)
+            self.assertEqual(
+                ac.render_phase_heading(ctx),
+                "## Phase: 2 \u2014 Core storage (Build)",
+            )
+
+    def test_phase_heading_missing_record_exits_1(self):
+        with TempProject():
+            ctx = build_ctx(action="execute", phase=99)
+            with self.assertRaises(SystemExit) as cm:
+                ac.render_phase_heading(ctx)
+            self.assertEqual(cm.exception.code, 1)
+
+    def test_step_heading_execute_only(self):
+        with TempProject():
+            ctx_exec = build_ctx(action="execute", phase=2)
+            # Fixture: 2.1 complete, 2.2 in_progress, 2.3 pending, 2.4 pending.
+            # Per ARCH §4.1 the renderer picks the lowest-numbered *pending*
+            # step — so 2.3, not 2.2.
+            self.assertIn("## Step: 2.3", ac.render_step_heading(ctx_exec))
+            # Non-execute actions return empty.
+            self.assertEqual(ac.render_step_heading(build_ctx(action="plan", phase=2)), "")
+
+    def test_step_heading_omitted_when_no_pending(self):
+        with TempProject() as root:
+            data = json.loads((root / ".state" / "steps.json").read_text())
+            for s in data:
+                if s["phase"] == 2:
+                    s["status"] = "complete"
+                    s["commit"] = "aaaa111"
+            (root / ".state" / "steps.json").write_text(json.dumps(data))
+            ctx = build_ctx(action="execute", phase=2)
+            self.assertEqual(ac.render_step_heading(ctx), "")
+
+    def test_instructions_includes_action_procedure(self):
+        with TempProject(with_framework=True):
+            ctx = build_ctx(action="plan", phase=4, mode="autonomous")
+            out = ac.render_instructions(ctx)
+            self.assertTrue(out.startswith("## Instructions"))
+            self.assertIn("Procedure", out)
+            # Phase 4 has dependencies — Pre-plan Dependency Probe kept.
+            self.assertIn("Dependency Probe", out)
+
+    def test_instructions_strips_dep_probe_for_leaf_module(self):
+        with TempProject(with_framework=True):
+            ctx = build_ctx(action="plan", phase=2, mode="autonomous")
+            out = ac.render_instructions(ctx)
+            # Phase 2 has dependencies == [] — Pre-plan Dependency Probe stripped.
+            self.assertNotIn("Pre-plan: Dependency Probe", out)
+
+
+class TestModuleContract(unittest.TestCase):
+    def test_module_contract_required_when_module_present(self):
+        # Phase 2 module is event_store; no ARCH_event_store.md ⇒ exit 1.
+        with TempProject():
+            ctx = build_ctx(action="execute", phase=2)
+            with self.assertRaises(SystemExit) as cm:
+                ac.render_module_contract(ctx)
+            self.assertEqual(cm.exception.code, 1)
+
+    def test_module_contract_renders_when_present(self):
+        with TempProject(with_extra={
+            "ARCH_event_store.md": "# Event Store\n\nIntro.\n\n## Surface\n\nDetails.\n",
+        }):
+            ctx = build_ctx(action="execute", phase=2)
+            out = ac.render_module_contract(ctx)
+            self.assertTrue(out.startswith("## Module Contract: event_store"))
+            self.assertIn("Surface", out)
+
+    def test_module_contract_omitted_when_no_module(self):
+        with TempProject() as root:
+            data = json.loads((root / ".state" / "phases.json").read_text())
+            for p in data:
+                if p["id"] == 2:
+                    del p["module"]
+            (root / ".state" / "phases.json").write_text(json.dumps(data))
+            ctx = build_ctx(action="execute", phase=2)
+            self.assertEqual(ac.render_module_contract(ctx), "")
+
+
+class TestProjectContextRenderers(unittest.TestCase):
+    def test_project_state_is_json_block(self):
+        with TempProject():
+            ctx = build_ctx(action="execute", phase=2)
+            out = ac.render_project_state(ctx)
+            self.assertTrue(out.startswith("## Project State"))
+            self.assertIn("```json", out)
+            self.assertIn('"phase": 2', out)
+
+    def test_current_phase_table(self):
+        with TempProject():
+            ctx = build_ctx(action="execute", phase=2)
+            out = ac.render_current_phase(ctx)
+            self.assertIn("| id |", out)
+            self.assertIn("event_store", out)
+            self.assertIn("build", out)
+
+    def test_phases_one_line_per_record(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2)
+            out = ac.render_phases(ctx)
+            lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
+            self.assertEqual(len(lines), 4)
+            self.assertIn("orchestrator", out)
+
+    def test_phase_devlog_filters_to_phase(self):
+        with TempProject():
+            ctx = build_ctx(action="review", phase=2)
+            out = ac.render_phase_devlog(ctx)
+            self.assertIn("2.1 execute", out)
+            self.assertNotIn("1.1", out)
+
+    def test_prior_phase_summary_omitted_for_phase_1(self):
+        with TempProject() as root:
+            data = json.loads((root / ".state" / "project.json").read_text())
+            data["phase"] = 1
+            (root / ".state" / "project.json").write_text(json.dumps(data))
+            ctx = build_ctx(action="plan", phase=1)
+            self.assertEqual(ac.render_prior_phase_summary(ctx), "")
+
+    def test_prior_phase_summary_includes_prior(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2)
+            out = ac.render_prior_phase_summary(ctx)
+            self.assertIn("Prior Phase Summary", out)
+            # Phase 1 has 3 devlog entries; should include the last 3.
+            lines = [ln for ln in out.splitlines() if ln.startswith("- ")]
+            self.assertEqual(len(lines), 3)
+
+    def test_decisions_table_with_records(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2)
+            out = ac.render_decisions(ctx)
+            self.assertIn("| id |", out)
+            self.assertIn("D-1", out)
+            self.assertIn("D-2", out)
+
+    def test_decisions_empty_placeholder(self):
+        with TempProject() as root:
+            (root / ".state" / "decisions.json").write_text("[]")
+            ctx = build_ctx(action="plan", phase=2)
+            out = ac.render_decisions(ctx)
+            self.assertIn("<!-- empty -->", out)
+
+
+class TestProjectNarrativeRenderers(unittest.TestCase):
+    def test_project_scope_missing_placeholder(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2)
+            out = ac.render_project_scope(ctx)
+            self.assertIn("<!-- not present: PROJECT.md not found -->", out)
+
+    def test_project_scope_renders(self):
+        with TempProject(with_extra={
+            "PROJECT.md": "# Project\n\n## Scope\n\nThis is scope.\n",
+        }):
+            ctx = build_ctx(action="plan", phase=2)
+            out = ac.render_project_scope(ctx)
+            self.assertIn("This is scope.", out)
+            self.assertTrue(out.startswith("## Project Scope"))
+
+    def test_architecture_missing_placeholder(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=2)
+            out = ac.render_architecture(ctx)
+            self.assertIn("<!-- not present: ARCHITECTURE.md not found -->", out)
+
+
+class TestToolRulesAndAvailableModules(unittest.TestCase):
+    def test_tool_rules_claude(self):
+        with TempProject(with_framework=True):
+            ctx = build_ctx(action="execute", phase=2, backend="claude")
+            out = ac.render_tool_rules(ctx)
+            self.assertIn("Claude-Specific Tool Rules", out)
+
+    def test_tool_rules_codex(self):
+        with TempProject(with_framework=True):
+            ctx = build_ctx(action="execute", phase=2, backend="codex")
+            out = ac.render_tool_rules(ctx)
+            self.assertIn("Codex-Specific Tool Rules", out)
+
+    def test_available_modules_placeholder_only_falls_back_to_arch(self):
+        # Adapter ships with the placeholder comment only. ARCHITECTURE.md
+        # provides Implementation Sequence.
+        arch = (
+            "# Arch\n\n## Components\n\nfoo\n\n"
+            "## Implementation Sequence\n\n"
+            "| id | module | regime | status |\n"
+            "|----|--------|--------|--------|\n"
+            "| 1  | event_store | build | done |\n"
+        )
+        with TempProject(with_framework=True, with_extra={"ARCHITECTURE.md": arch}):
+            ctx = build_ctx(action="execute", phase=2, backend="claude")
+            out = ac.render_available_modules(ctx)
+            self.assertTrue(out.startswith("## Available Modules"))
+            self.assertIn("event_store", out)
+
+    def test_available_modules_falls_to_empty(self):
+        with TempProject(with_framework=True):
+            ctx = build_ctx(action="execute", phase=2, backend="claude")
+            out = ac.render_available_modules(ctx)
+            self.assertIn("<!-- empty -->", out)
+
+
+# ---------------------------------------------------------------------------
+# Banner assembler + full-prompt assembly (Milestone 1.3.C)
+# ---------------------------------------------------------------------------
+
+
+class TestBannerAssembler(unittest.TestCase):
+    def test_banner_width_and_shape(self):
+        b = ac.assemble_banner("WORKER CONTRACT")
+        lines = b.splitlines()
+        self.assertEqual(len(lines), 3)
+        # Each band line is exactly 47 box-drawing characters.
+        self.assertEqual(lines[0], ac.BANNER_CHAR * 47)
+        self.assertEqual(lines[2], ac.BANNER_CHAR * 47)
+        self.assertEqual(lines[1], "WORKER CONTRACT")
+
+
+# Minimal complete fixture for full-prompt smoke tests.
+_FRAMEWORK_EXTRAS = {
+    "ARCH_event_store.md": (
+        "# Event Store\n\nIntro.\n\n## Surface\n\nDetails.\n"
+    ),
+    "ARCH_orchestrator.md": (
+        "# Orchestrator\n\nIntro.\n\n## Surface\n\nDetails.\n"
+    ),
+    "PROJECT.md": "# Project\n\n## Scope\n\nThis is scope.\n",
+    "ARCHITECTURE.md": (
+        "# Arch\n\n## Components\n\nfoo\n\n"
+        "## Implementation Sequence\n\n"
+        "| id | module |\n|----|--------|\n| 1  | event_store |\n"
+    ),
+}
+
+
+class TestFullPromptAssembly(unittest.TestCase):
+    def _expect_banners(self, out: str) -> None:
+        for title in ("WORKER CONTRACT", "ACTION CONTEXT", "PROJECT CONTEXT", "TOOL RULES"):
+            self.assertIn(title, out)
+            self.assertIn(ac.BANNER_CHAR * 47, out)
+
+    def test_plan_autonomous_smoke(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli(
+                "--action", "plan", "--phase", "4",  # non-leaf phase
+                "--mode", "autonomous",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self._expect_banners(out)
+            self.assertIn("Action: PLAN", out)
+            self.assertIn("Next State:", out)  # autonomous keeps Next State
+            self.assertIn("Phases", out)  # PLAN includes Phases
+            self.assertIn("Project Scope", out)
+            self.assertIn("Architecture", out)
+            self.assertIn("Module Contract:", out)
+            self.assertIn("Decisions", out)
+            # Phase 4 is non-leaf — dep-probe should be present in instructions.
+            self.assertIn("Dependency Probe", out)
+            # Autonomous-only worker spec sections present.
+            self.assertIn("Output Contract", out)
+            self.assertIn("Autonomous Behavioral Rules", out)
+            self.assertTrue(out.endswith("\n"))
+
+    def test_plan_supervised_strips_autonomous_only(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli(
+                "--action", "plan", "--phase", "4",
+                "--mode", "supervised",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("Active Action: PLAN", out)
+            self.assertNotIn("Next State:", out)
+            self.assertNotIn("Output Contract", out)
+            self.assertNotIn("Autonomous Behavioral Rules", out)
+
+    def test_execute_includes_step_and_recent_activity(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self._expect_banners(out)
+            self.assertIn("Action: EXECUTE", out)
+            self.assertIn("## Step:", out)
+            self.assertIn("Recent Activity", out)
+            self.assertIn("Current Phase Steps", out)
+            # PLAN-only sections must be absent.
+            self.assertNotIn("## Phases", out)
+            self.assertNotIn("## Project Scope", out)
+            self.assertNotIn("## Architecture", out)
+
+    def test_review_includes_phase_devlog_and_architecture(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "review", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("Action: REVIEW", out)
+            self.assertIn("Phase Devlog", out)
+            self.assertIn("Current Phase Steps", out)
+            self.assertIn("## Architecture", out)
+            # No Phases (PLAN only) or Project Scope (PLAN only).
+            self.assertNotIn("## Phases", out)
+            self.assertNotIn("## Project Scope", out)
+
+    def test_close_includes_phase_devlog_no_architecture(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "close", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("Action: CLOSE", out)
+            self.assertIn("Phase Devlog", out)
+            # ARCHITECTURE only for PLAN/REVIEW.
+            self.assertNotIn("## Architecture", out)
+
+    def test_full_prompt_deterministic(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc1, out1, _ = run_cli("--action", "execute", "--phase", "2")
+            rc2, out2, _ = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc1, 0)
+            self.assertEqual(rc2, 0)
+            self.assertEqual(out1, out2)
+
+    def test_missing_instruction_file_exits_1(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS) as root:
+            (root / "instructions" / "execute.md").unlink()
+            rc, _, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 1)
+            self.assertIn("ERROR:", err)
+
+    def test_missing_adapter_file_exits_1(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS) as root:
+            (root / "CLAUDE.md").unlink()
+            rc, _, err = run_cli(
+                "--action", "execute", "--phase", "2", "--backend", "claude",
+            )
+            self.assertEqual(rc, 1)
+
+    def test_missing_worker_spec_exits_1(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS) as root:
+            (root / "WORKER_SPEC.md").unlink()
+            rc, _, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 1)
+
+
+# ---------------------------------------------------------------------------
+# Mid-step --section invocations (§10 / Milestone 1.3.D)
+# ---------------------------------------------------------------------------
+
+
+class TestSectionArchitecture(unittest.TestCase):
+    def test_renders_verbatim(self):
+        arch_text = "# Arch\n\n## Components\n\nfoo\n"
+        with TempProject(with_extra={"ARCHITECTURE.md": arch_text}):
+            rc, out, err = run_cli("--section", "architecture")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("# Arch", out)
+            self.assertIn("Components", out)
+            self.assertTrue(out.endswith("\n"))
+
+    def test_missing_degrades_to_placeholder(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "architecture")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("<!-- not present: ARCHITECTURE.md not found -->", out)
+
+
+class TestSectionModule(unittest.TestCase):
+    def test_renders_verbatim(self):
+        with TempProject(with_extra={
+            "ARCH_event_store.md": "# Event Store\n\n## Surface\n\nfoo\n",
+        }):
+            rc, out, err = run_cli(
+                "--section", "module", "--module", "event_store",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("# Event Store", out)
+            self.assertIn("Surface", out)
+
+    def test_missing_exits_1(self):
+        with TempProject():
+            rc, _, err = run_cli(
+                "--section", "module", "--module", "missing_module",
+            )
+            self.assertEqual(rc, 1)
+            self.assertIn("ERROR:", err)
+
+
+class TestSectionDevlog(unittest.TestCase):
+    def test_filters_to_requested_phase(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "devlog", "--phase", "1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("Phase 1 Devlog", out)
+            self.assertIn("1.1 execute", out)
+            self.assertNotIn("2.1 execute", out)
+
+    def test_unknown_phase_empty(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "devlog", "--phase", "99")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("<!-- empty -->", out)
+
+
+if __name__ == "__main__":
+    unittest.main()
