@@ -237,6 +237,7 @@ housekeeping.
    - `schemas/`
    - `tools/`
    - `CLAUDE.md` and `CODEX.md` (as templates — fill in the placeholders)
+   - `templates/.claude/commands/` — supervised-mode slash wrappers (see `templates/README.md`)
 
 3. **Write the project docs**:
    - `PROJECT.md` — scope, constraints, success criteria
@@ -278,6 +279,7 @@ not yet built.** See the next section for what works today.
 | 1.1 | Schemas, `state.py`, `validate.py`, tests, fixture, smoke test | ✅ |
 | 1.2 | Instruction files (plan, execute, review, close), WORKER_SPEC, adapter templates | ✅ |
 | 1.2.5 | `ARCH_assembler.md` contract spec | ✅ |
+| 1.2.6 | `templates/.claude/commands/` slash wrappers | ✅ |
 | 1.3 | `assemble_context.py` - context assembler | ⏳ next (spec locked) |
 | 2 | Clankercourts pilot in supervised mode | upcoming |
 | 3 | `state_machine.sh`, `run-iteration.sh` updates — autonomous loop | upcoming |
@@ -305,8 +307,10 @@ not yet built.** See the next section for what works today.
   instruction files themselves.
 - **No remote dispatch.** Codexbot integration is Phase 4. No
   Telegram/Discord control surface yet.
-- **No slash-command wrappers.** Build-order step 8 ships
-  `templates/.claude/commands/` so projects can copy on bootstrap.
+- **No slash-command wrappers in active use.** The wrappers in
+  `templates/.claude/commands/` ship as templates, but four of the five
+  shell out to `assemble_context.py` (Phase 1.3, not yet implemented).
+  `/step-done` works today — pure `state.py` calls.
 
 ---
 
