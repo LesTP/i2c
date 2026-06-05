@@ -268,8 +268,9 @@ housekeeping.
    and following the procedure in the assembled `Instructions` section.
 
 The framework is currently **Phase 1 complete (data foundation, prose
-layer, and assembler) and Phase 3 (autonomous loop tooling) not yet
-built.** See the next section for what works today.
+layer, and assembler) and Phase 2 in progress (clankercourts bootstrap
+complete; first PLAN action upcoming). Phase 3 (autonomous loop tooling)
+not yet built.** See the next section for what works today.
 
 ---
 
@@ -282,7 +283,7 @@ built.** See the next section for what works today.
 | 1.2.5 | `ARCH_assembler.md` contract spec | ✅ |
 | 1.2.6 | `templates/.claude/commands/` slash wrappers | ✅ |
 | 1.3 | `assemble_context.py` - context assembler | ✅ |
-| 2 | Clankercourts pilot in supervised mode | upcoming |
+| 2 | Clankercourts pilot in supervised mode | in progress |
 | 3 | `state_machine.sh`, `run-iteration.sh` updates — autonomous loop | upcoming |
 | 4 | Codexbot StateReader + dispatcher (Telegram or Discord) | upcoming |
 | 5 | (Optional) Diplomat migration from e2e | deferred |
