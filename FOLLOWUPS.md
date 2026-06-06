@@ -15,49 +15,52 @@ to a phase) / `partially closed` / `closed` / `wontfix`.
 
 ## Cold-start summary (next session entry point)
 
-**Where we are (2026-06-06):** Phase 1 complete end-to-end. Phase 2 in
-progress — **clankercourts bootstrap complete (2026-06-05)**; framework
-files copied, `PROJECT.md` / `ARCHITECTURE.md` / `ARCH_bootstrap.md` /
-`ARCH_resolver.md` authored, `.state/` initialized with 3 phases
-pre-seeded (1 bootstrap, 2 resolver part 1, 3 resolver part 2) and 7
-decisions pre-seeded (D-1 through D-7). `assemble_context.py --section
-status` and `--action plan --phase 1 --mode supervised` both render
-correctly against the new project. CC commits: `0c60199` (bootstrap),
-`6061791` (CODEX.md adapter added), `<i2c-slash-commands>` (mirrored to
-`.llms/commands/` — but see FU-20: that path didn't get picked up by
-Devmate; commands were copied to operator-global `~/.llms/commands/`).
-First PLAN action (Phase 1, bootstrap module) upcoming.
+**Where we are (2026-06-06):** Phase 1 of i2c complete end-to-end.
+**clankercourts (i2c's first pilot) shipped Phase 1 successfully** —
+4 plan'd steps → execute(×4) → review → close, 30/30 tests pass,
+12 commits, 0 escalations. Detailed debrief in
+[`PILOT_clankercourts_phase1.md`](PILOT_clankercourts_phase1.md).
 
-**Pilot observations folded into the FU log below:** FU-12 (PowerShell
-quoting) confirmed during bootstrap — multi-line JSON inline failed
-under PowerShell escapes; worked around with variables. FU-15 (Module
-Contract hard-required) confirmed; mitigated by pre-authoring
-`ARCH_resolver.md` during bootstrap so Phase 2 PLAN won't hit it. **New
-FU-19** added: state.py path-resolution ambiguity (instruction examples
-use bare `phases.json`; actual CLI requires `.state/phases.json` from
-project root). **New FU-20** added (and expanded after testing):
-templates assume `.claude/commands/` autoloads in Devmate; in the CC
-pilot's Devmate session neither `.claude/commands/` nor project-level
-`.llms/commands/` got picked up — only operator-global
-`~/.llms/commands/`. Workaround: copy the 5 i2c slash commands to the
-operator's `~/.llms/commands/i2c-*.md`. Now `/i2c-phase-plan` etc. work
-from any Devmate session; global `/phase-plan` continues to call e2e.
+**Pilot surfaced two friction sources that block honest autonomous
+mode:**
+1. **PowerShell `$`-interpolation ate JSON tokens** (`$defs`,
+   `$refs`) in a multi-line `state.py append-gotcha` payload during
+   the close action. Silent corruption — state was schema-valid but
+   strings were mangled. Caught by the operator; would not be caught
+   in autonomous mode. FU-12 confirmed (third time); resolution is
+   the new **FU-21** (`--from-file` flag family).
+2. **Worker missed step 11 of `instructions/close.md`** — initial
+   close commit had `blocked: false`. The runner uses
+   `project.json.blocked` as its halt signal between phases; in
+   autonomous mode the loop would have advanced to Phase 2 PLAN
+   without human audit. New **FU-22** (runner post-close invariant
+   check) is the mitigation.
+
+Plus cosmetic **FU-23** (assembler status `Budget:` line when
+`budget_type` is set without an active counter), and the existing
+**FU-20** (templates README clarification re: Devmate command paths)
+absorbs the slash-command-location observation from the pilot.
 
 **What's next (priority order):**
 
-1. **Phase 2 — clankercourts pilot continues.**
-   - Run `/phase-plan` (or `assemble_context.py --action plan --phase 1
-     --mode supervised`) for Phase 1 (bootstrap module) and walk through
-     `instructions/plan.md` together.
-   - Execute Phase 1 steps (project scaffolding: `pyproject.toml`,
-     package layout, test harness, logging, map JSON schema).
-   - Review + close Phase 1, then PLAN/EXECUTE/REVIEW/CLOSE for
-     Phases 2-3 (resolver). Anything awkward → log as a new FU here.
-2. **Phase 3 — autonomous loop tooling.** `tools/state_machine.sh` first
-   (ACTION/NEXT dispatch), then `run-iteration.sh` updates to pipe
-   assembler output into `claude -p` / `codex exec`. Add `--next` flag
-   to the assembler so the runner can pass NEXT explicitly (D-impl-3
-   anticipated this). Then tighten `exit_signal.schema.json` (FU-7).
+1. **Phase 3 — autonomous loop tooling.** The pilot is the input
+   spec. Required build:
+   - `state.py {append,append-gotcha,append-record,update-record}
+     --from-file <path>` (FU-21, closes FU-12 in practice).
+   - `state_machine.sh` covering the ACTION/NEXT dispatch matrix
+     (reads project.json + phases.json + steps.json + budget).
+   - `run-iteration.sh` updates: pipe assembler output into
+     `claude -p` / `codex exec`; parse exit signal; **assert
+     post-close invariants per FU-22**; halt-and-surface on failure;
+     write `summary.log`.
+   - Optional: `--next` flag on the assembler (D-impl-3 anticipated),
+     once the runner is real and wants to pass NEXT explicitly.
+   - Once the runner is real and emits a stable exit-signal shape:
+     tighten `exit_signal.schema.json` (FU-7).
+2. **Phase 2 continues — clankercourts Phases 2 + 3.** Will be the
+   first autonomous-loop runs once Phase 3 ships. Both are leaf-module
+   Build phases (resolver), so they exercise the loop without
+   conditional dep-probe or integration-check on the first try.
 3. **Phase 4 — codexbot StateReader + dispatcher.** Telegram/Discord
    control surface over `.state/`. Mostly downstream of Phase 3.
 4. **Phase 5 (optional) — diplomat / e2e migration.** Deferred.
@@ -91,7 +94,8 @@ python examples\smoke_test.py
 | FU-3 | `state.py set` only handles JSON object files, not arrays | partially closed | `update-record` (added for review/close authoring) covers single-record updates on array files via `--match KEY=VALUE`. Generic-set-on-array still isn't supported (e.g., updating fields on N records at once). | A real workflow needs bulk update across multiple records (rare). Until then, `update-record` covers the gap that drove FU-3 in practice. |
 | FU-4 | No subcommand to mark a phase blocked/closed without `set` syntax | open | `state.py set project.json blocked=true` works but is dense. A named op like `state.py block project.json --reason "..."` would be more readable and could log a structured reason field. | Low priority — current syntax is fine for autonomous use. Revisit if supervised UI wants a richer block flow. |
 | FU-14 | No read-side query helper in `state.py` (e.g., `state.py query devlog.jsonl --where 'contracts != []'`) | accepted (deferred) | The assembler (Phase 1.3) exposes pre-formatted views: `--section devlog --phase N` gives a bulleted phase tail, `--section status` an orientation snapshot. Ad-hoc queries still fall back to `jq`. Per ARCH §2 / §10, the assembler intentionally does not absorb general-purpose queries. | Phase 2 pilot reveals a repeated query pattern worth absorbing into `--section`. |
-| FU-19 | Instruction examples use bare filenames (`phases.json`) but `state.py` is CWD-relative — works only if CWD is `.state/` | open (pilot-confirmed) | Every `state.py` example in `instructions/plan.md`, `execute.md`, `review.md`, `close.md` uses bare filenames: `state.py append-record phases.json '{...}'`, `state.py complete steps.json --phase N --step M`, `state.py append devlog.jsonl '...'`, `state.py append-gotcha project.json "..."`. The implementation is `path = Path(args.file)` — pure CWD-relative, no auto-resolution. If the worker runs from the project root (which the bootstrap procedure implies), these examples fail with `ERROR: phases.json does not exist.` until prefixed with `.state/`. **CC pilot (2026-06-05):** hit this on the first seeded `append-record` for phases.json. Worked once switched to `.state/phases.json`. Three possible fixes: (a) auto-resolve filenames matching `SCHEMA_BY_FILENAME` keys by checking `.state/<name>` if bare path doesn't exist; (b) update all instruction examples to `.state/phases.json` etc.; (c) document a "cd .state" convention. **(a)** is the most ergonomic — the bare name is unambiguous because the file basename is the schema-discriminator. | Address before more bootstrap pilots (the friction is mechanical and immediate). Lowest-effort: (a). Adds ~6 lines to `state.py` and keeps existing examples valid. |
+| FU-19 | Instruction examples use bare filenames (`phases.json`) but `state.py` is CWD-relative — works only if CWD is `.state/` | open (pilot-confirmed) | Every `state.py` example in `instructions/plan.md`, `execute.md`, `review.md`, `close.md` uses bare filenames: `state.py append-record phases.json '{...}'`, `state.py complete steps.json --phase N --step M`, `state.py append devlog.jsonl '...'`, `state.py append-gotcha project.json "..."`. The implementation is `path = Path(args.file)` — pure CWD-relative, no auto-resolution. If the worker runs from the project root (which the bootstrap procedure implies), these examples fail with `ERROR: phases.json does not exist.` until prefixed with `.state/`. **CC pilot (2026-06-05):** hit this on the first seeded `append-record` for phases.json. Worked once switched to `.state/phases.json`. **CC pilot Phase 1 PLAN (2026-06-06):** hit again on the very first `append-record .state/steps.json` of the PLAN action — the supervised worker followed `instructions/plan.md` examples literally, all 4 `append-record steps.json` calls failed with `ERROR: steps.json does not exist`, plus a knock-on PowerShell quoting failure that masked the real cause until inspected. Confirms every PLAN/EXECUTE/REVIEW/CLOSE worker invocation will trip this until fixed. Three possible fixes: (a) auto-resolve filenames matching `SCHEMA_BY_FILENAME` keys by checking `.state/<name>` if bare path doesn't exist; (b) update all instruction examples to `.state/phases.json` etc.; (c) document a "cd .state" convention. **(a)** is the most ergonomic — the bare name is unambiguous because the file basename is the schema-discriminator. | Address before more bootstrap pilots (the friction is mechanical and immediate). Lowest-effort: (a). Adds ~6 lines to `state.py` and keeps existing examples valid. |
+| FU-21 | `state.py {append,append-gotcha,append-record,update-record} --from-file <path>` for multi-line / `$`-laden payloads | open (pilot input for Phase 3) | Resolves FU-12 in practice. The CC Phase 1 close action lost two gotchas to PowerShell `$`-interpolation (the multi-line strings contained `$defs` / `$refs` which PowerShell substituted with empty values). State was schema-valid (`array of strings` is preserved either way), so silent corruption — caught only by the human reading the post-close transcript. In autonomous mode this would compound. The `--from-file` path takes the payload from a file on disk, where shell quoting doesn't apply. Pattern mirrors `git commit -F` (which i2c's own commit workflow has been using since the worker-spec commit). Estimated work: ~30 LOC across the four subcommands + tests. | Phase 3 (autonomous mode). Build before the first autonomous worker invocation that touches `state.py`. |
 
 ## Tooling — assembler (`assemble_context.py`)
 
@@ -102,6 +106,13 @@ python examples\smoke_test.py
 | FU-16 | Available Modules ARCHITECTURE.md fallback is naive | open | When the adapter's `## Available Modules` section is placeholder-only, the assembler grabs `## Implementation Sequence` from `ARCHITECTURE.md` verbatim and surfaces its body. If projects use richer Implementation Sequence tables (extra columns, longer prose), the rendered Available Modules section will be noisy. | Phase 2 / 3 pilots show real-world Implementation Sequence tables overflow the section. Tighten the fallback to extract only module names, or document a project convention for the fallback shape. |
 | FU-17 | `--phase` accepted (but ignored) with `--section status` | open | Per ARCH §8, `--section status` does not accept `--phase` — it always reports on `project.json.phase`. The implementation accepts `--phase` at the argparse layer and silently uses `project.json.phase` in `build_section_status`. Functionally correct but not strict per spec. | Either Phase 2 pilot surfaces confusion (operator passes `--phase 3` and expects status for phase 3), OR a spec-compliance pass. Fix is one branch in `_validate_args`: reject `--phase` when `--section == status`. |
 | FU-18 | Assembler tests slow on Windows network share | open | `tests/test_assemble_context.py` runs in ~60s on `\\192.168.0.50\shared\...`. Primary cost: `TempProject(with_framework=True)` copies the full `instructions/` directory and WORKER_SPEC + both adapters per test invocation. | If iteration cost becomes painful, refactor `TempProject` to copy only what each test class needs (most renderer tests don't read instructions), or cache the framework copy per pytest session. Not a correctness issue. |
+| FU-23 | Assembler `--section status` omits `Budget:` line when `budget_type` is set but no counter populated | open (pilot-cosmetic) | clankercourts' `project.json` after Phase 1 close has `budget_type: "steps"` but no `steps_remaining`. The renderer's check is `if "steps_remaining" in p` and `elif p.get("budget_type") == "time" and "time_budget_seconds" in p` — both branches need the counter present. Result: the Budget line is silently omitted. Correct per ARCH §8 (which shows the line with a counter), but a stronger snapshot would render `**Budget:** steps (no remaining count set)` so the operator sees the mode even when the runner hasn't populated the count yet. | Cosmetic; address opportunistically. |
+
+## Tooling — runner (Phase 3, not yet started)
+
+| ID | Title | Status | Context | Trigger to address |
+|----|-------|--------|---------|--------------------|
+| FU-22 | Runner post-close invariant check — assert `blocked == true` + current phase `status: complete` after every CLOSE | open (pilot input for Phase 3) | The CC Phase 1 close action's initial commit had `blocked: false` — the worker missed step 11 of `instructions/close.md` ("Set the gate"). In supervised mode the operator caught it; in autonomous mode `project.json.blocked` is the loop's halt signal, so the runner would have advanced straight into Phase 2 PLAN without the human audit gate. The cheap mitigation is runner-side: after parsing the worker's exit signal from a CLOSE invocation, the runner reads `project.json` + `phases.json`, asserts `blocked == true` and `phases.json[id==current].status == "complete"`, halts the loop with a structured `summary.log` entry on failure. Doesn't require any worker or `state.py` change — pure runner-side enforcement, complements `exit_signal.schema.json` validation. Could also extend to other action-specific invariants (e.g., REVIEW must transition to `close`). | Phase 3. Build into `run-iteration.sh`'s after-worker-exit logic, before the next `state_machine.sh` dispatch. |
 
 ## Prose — instructions, WORKER_SPEC, adapters
 
@@ -116,7 +127,7 @@ python examples\smoke_test.py
 
 | ID | Title | Status | Context | Trigger to address |
 |----|-------|--------|---------|--------------------|
-| FU-12 | Multi-line JSON in `state.py append` assumes bash-style heredoc / single-quote quoting | open (pilot-confirmed) | The examples in `instructions/execute.md` use `'{ "key": value }'` with embedded newlines. PowerShell quoting rules differ — backtick-vs-backslash, $-interpolation. Workers running on Windows shells will need an adapter-side note or a `state.py append --from-file <path>` alternative. **CC pilot (2026-06-05):** confirmed during bootstrap. Inline JSON via `'{"id":1,...}'` failed (PowerShell mangled the escapes — `json.loads` reported "Expecting property name enclosed in double quotes"). Workaround: assign JSON to a PowerShell variable first (`$p1='{"id":1,...}'; python ... $p1`). Worked cleanly for all 3 phases and 7 decision seeds. CC's `CLAUDE.md` adapter notes PYTHONIOENCODING but not the JSON quoting trick yet. | Phase 2 pilot on Windows (clankercourts is being developed in the user's Windows workspace). Add `--from-file` flag or document PowerShell-safe quoting in `CODEX.md` / `CLAUDE.md` adapter Tool Rules. **Update CC's CLAUDE.md** with the variable-assignment workaround once Phase 1 EXECUTE starts hitting state.py more heavily. |
+| FU-12 | Multi-line JSON in `state.py append` assumes bash-style heredoc / single-quote quoting | open (pilot-confirmed twice) | The examples in `instructions/execute.md` use `'{ "key": value }'` with embedded newlines. PowerShell quoting rules differ — backtick-vs-backslash, $-interpolation. Workers running on Windows shells will need an adapter-side note or a `state.py append --from-file <path>` alternative. **CC pilot (2026-06-05):** confirmed during bootstrap. Inline JSON via `'{"id":1,...}'` failed (PowerShell mangled the escapes — `json.loads` reported "Expecting property name enclosed in double quotes"). Workaround: assign JSON to a PowerShell variable first (`$p1='{"id":1,...}'; python ... $p1`). Worked cleanly for all 3 phases and 7 decision seeds. **CC pilot Phase 1 close (2026-06-06):** confirmed in production again — `state.py append-gotcha "..."` with `$defs` / `$refs` in the string silently lost those tokens (PowerShell substituted with empty values). Two follow-up commits to detect and repair. Resolution path is now **FU-21** (`--from-file` flag family). | Phase 3 — ship FU-21 (`--from-file`) and update CC's `CLAUDE.md` Tool Rules to recommend the new path. Pilot has spoken: this is the highest-impact tooling gap before autonomous mode. |
 | FU-20 | Templates assume `.claude/commands/` autoloads in Devmate; project-level `.llms/commands/` also doesn't get picked up in the workflows seen so far — operator-global `~/.llms/commands/` is the only reliable surface | open (pilot-confirmed) | `templates/README.md` states "Devmate / Claude Code picks up the project's `.claude/commands/` automatically — no extra configuration step." True for Claude Code, false for Devmate. Devmate's `agent_customization` skill documents `.llms/commands/` as the project-level convention. **CC pilot (2026-06-05/06) found both don't work in practice for the current Devmate session:** the operator's Devmate session is reading commands from `C:\Users\myeluashvili\.llms\commands\` only; neither `p:\shared\clankercourts\.claude\commands\*.md` nor `p:\shared\clankercourts\.llms\commands\*.md` showed up in the personal_context skills list. Possible causes: network-share path not scanned, workspace-root mismatch, requires Devmate restart to pick up new project-level commands, or project-level scanning not actually implemented for this Devmate build. **Workaround applied:** copied the 5 i2c slash commands to `~/.llms/commands/i2c-*.md` (operator-global with `i2c-` prefix). Now `/i2c-phase-plan`, `/i2c-cold-start`, etc. are available in any Devmate session; global `/phase-plan` continues to call e2e (Diplomat workflow unaffected). The commands shell out to `python tools/...` so they only do useful work inside an i2c project root; elsewhere they fail with a clear error. | Address before next i2c bootstrap: **(a)** update templates to ship the `i2c-` prefixed commands at both `templates/.claude/commands/` (for Claude Code) and `templates/.llms/commands/` (for Devmate at project-level if/when that works), AND document a manual copy-to-global step for Devmate users (`xcopy templates\.llms\commands\* %USERPROFILE%\.llms\commands\`); **(b)** investigate whether Devmate project-level `.llms/commands/` actually loads — may be a config / workspace setup question, or a network-share limitation. If (b) confirms project-level works under some setup, document the prerequisites. |
 
 ---
