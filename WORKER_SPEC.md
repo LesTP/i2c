@@ -43,13 +43,14 @@ signal, the runner re-invokes you for the next action.
 | `EXIT` | Emit the exit signal and stop. Do not perform any action. |
 
 ### Multi-step invocations (STEP_BUDGET > 1)
+<!-- assembler:multi_step_only -->
 
 When the runner gave you a multi-step budget, you loop the state machine
 yourself between steps:
 
 ```
 LOOP:
-  1. output=$(bash tools/state_machine.sh)
+  1. output=$(python tools/state_machine.py)
   2. ACTION = parse "ACTION:" from output
      NEXT   = parse "NEXT:" from output
   3. if ACTION == "EXIT" → emit exit signal, stop
@@ -73,6 +74,7 @@ module contract, an older phase's devlog, or a status snapshot). See
 requests. Mid-step assembler calls do not decrement the step budget.
 
 ### Loop discipline — multi-step only
+<!-- assembler:multi_step_only -->
 
 Two contracts you must NOT break. Both have already cost work in
 production loops. They apply when you are the one calling
@@ -115,47 +117,13 @@ script.
 - *Claude iter (e2e):* self-judged "STEP_BUDGET of 5 exhausted (used 3
   actions)" and exited with 2 actions still available.
 
-### Shell command discipline (non-interactive only)
+### Shell command discipline
 
-The loop invokes bash non-interactively — no stdin, no editor, no human
-at the keyboard. Any command that waits for input, opens `$EDITOR`, or
-pipes through a pager will **hang the loop indefinitely** until the
-operator manually kills the process tree.
-
-**Git — banned (always hang):**
-
-- `git add -p` / `git add --patch` — interactive hunk staging, no
-  scriptable equivalent. Use `git add <paths>` to stage whole files.
-- `git commit` without `-m` — opens `$EDITOR`. Always pass `-m "..."`.
-  For amends: `git commit --amend -m "..."` or
-  `git commit --amend --no-edit`.
-- `git rebase -i` / `git rebase --interactive` — opens `$EDITOR`. Use
-  `git rebase --autosquash` or scripted edits.
-- `git citool` / `git gui` — GUI tools, never available.
-- Any subcommand that opens an editor without a message-override flag.
-
-**Git — pager-bypass on potentially-long reads:**
-
-- `git --no-pager log`, `git --no-pager diff`, `git --no-pager show`.
-  Otherwise git auto-pipes through `less`, which blocks on stdin.
-
-**Other shells — common offenders:**
-
-- Interactive editors (`nano`, `vim`, `vi`, `emacs`) — use `sed -i '...'`
-  or heredocs (`cat > file <<'EOF' ... EOF`) for non-interactive edits.
-- Pagers (`less`, `more`, `man`) — pipe through `cat` or set `PAGER=cat`.
-- `read` (bash builtin) — by definition waits on stdin.
-- `sudo` without `-n` or a NOPASSWD config entry — waits for a password
-  prompt.
-- `ssh` without `-o BatchMode=yes` — may prompt for host-key acceptance
-  or a password.
-
-**If you need to stage only part of a file's diff:** don't reach for
-`git add -p` as a workaround — there's no way for the loop to provide
-hunk-by-hunk stdin. Instead, split the change into separate edits so
-each file change is a discrete commit's worth, or revert unwanted parts
-with `git restore <file>` before `git add <file>`. The working tree is
-the source of truth; shape it correctly before staging.
+See your adapter's Tool Rules for non-interactive shell discipline (banned
+commands like `git add -p` / `git commit` without `-m`, pager-bypass
+requirements, alternatives for editor-opening operations). Those rules
+are environment-specific (Claude Code vs. Codex sandbox) and live with
+the adapter.
 
 ---
 

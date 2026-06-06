@@ -370,6 +370,7 @@ start the first execute step in this invocation.
 ---
 
 ## Examples
+<!-- assembler:omit_in_prompt -->
 
 ### Build phase, leaf module
 
@@ -443,6 +444,7 @@ python3 tools/state.py set project.json state=execute
 ---
 
 ## Known tooling gaps referenced above
+<!-- assembler:omit_in_prompt -->
 
 - **No `state.py` op to flip phase record status from `pending` to
   `in_progress`** without going to `complete`. Workaround: leave the phase

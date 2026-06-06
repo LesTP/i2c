@@ -278,6 +278,7 @@ terminates an invocation normally).
 ---
 
 ## Examples
+<!-- assembler:omit_in_prompt -->
 
 ### Leaf-module close, no contract changes
 
@@ -390,8 +391,9 @@ python3 tools/state.py append devlog.jsonl '{"phase":8,"step":null,"action":"int
 ---
 
 ## Known tooling gap referenced above
+<!-- assembler:omit_in_prompt -->
 
-- **`state.py` lacks a read-side query helper** (e.g., `state.py query
+- **`state.py` lacks a read-side query helper**
   devlog.jsonl --phase 11 --where 'contracts != []'`). The contract scan
   in step 5 uses raw `jq` instead. This is intentional for now — reads
   don't need atomicity, and the assembler is the eventual home for

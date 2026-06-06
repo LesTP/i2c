@@ -32,7 +32,7 @@ The assembler is intentionally narrow. It does **not**:
 |----------|-------------------------------|
 | Write or mutate `.state/` | `tools/state.py` |
 | Call LLMs / dispatch the worker | The runner (`run-iteration.sh`) |
-| Decide the next ACTION / NEXT | `tools/state_machine.sh` |
+| Decide the next ACTION / NEXT | `tools/state_machine.py` |
 | Validate the worker's exit signal | The runner (against `schemas/exit_signal.schema.json`) |
 | Advance `project.json.phase` | Human / orchestrator on gate-clear, or PLAN action's `state.py` calls |
 | Re-decide whether a section *should* apply | Worker — but only for code (which step to do, what tests to run); never for governance (whether to skip the dep-probe). Governance branching is deterministic and lives in this contract. |
@@ -66,8 +66,11 @@ assemble_context.py --section devlog --phase N
 | `--mode` | optional with `--action` | `autonomous`, `supervised` | `autonomous` |
 | `--section` | building a single section | `status`, `architecture`, `module`, `devlog` | — |
 | `--module` | only with `--section module` | non-empty module name | — |
+| `--step-budget` | optional with `--action` | positive integer | `1` |
 
 The mode flag is *only* meaningful with `--action`. Specifying `--mode` together with `--section` is a CLI argument error.
+
+`--step-budget` controls whether the `multi_step_only`-marked subsections in `WORKER_SPEC.md` (the multi-step LOOP, "Loop discipline — multi-step only", and the production-incident anecdotes) appear in the assembled prompt. Default `1` (the v1 runner's value) strips them; values > 1 keep them, in preparation for the multi-iteration loop (Phase 3.B/C).
 
 ### 3.3 Output
 
@@ -133,9 +136,9 @@ The canonical, normative list. Every name uses **Title Case**. Every reference i
 | Recent Activity | `devlog.jsonl` last 5 entries | EXECUTE | — | Project-wide tail, not phase-filtered |
 | Phase Devlog | `devlog.jsonl` filtered to current phase | REVIEW, CLOSE | — | Full phase history |
 | Prior Phase Summary | `devlog.jsonl` filtered to (current phase − 1), last 3 entries | PLAN | — | Helps plan continuity. Omitted entirely for phase 1. |
-| Decisions | `decisions.json` | all | — | All four actions (PLAN included so it doesn't collide on D-IDs) |
+| Decisions | `decisions.json` | PLAN, REVIEW, CLOSE | — | EXECUTE omits it (Phase 3.A.2): project-wide decision history is reference, not per-step load-bearing. PLAN includes so D-IDs don't collide. |
 | Tool Rules | adapter file (`CLAUDE.md` or `CODEX.md`), section "Claude-Specific Tool Rules" / "Codex-Specific Tool Rules" | all | backend-specific | Backend choice comes from runner env / supervised invocation context |
-| Available Modules | adapter "Available Modules" section, fallback to `ARCHITECTURE.md` Implementation Sequence | all | — | See §4.3 |
+| Available Modules | adapter "Available Modules" section, fallback to `ARCHITECTURE.md` Implementation Sequence | EXECUTE, CLOSE | — | Omitted on PLAN/REVIEW since `## Architecture` already includes the Component Map (§4.3, §5) |
 | Action Context | banner only | all | — | See §6 for the banner format |
 | Tool Rules | banner only | all | — | See §6 for the banner format |
 
@@ -174,14 +177,19 @@ The per-action inclusion table, derived from §4 for fast reference.
 | Recent Activity | – | ✓ | – | – |
 | Phase Devlog | – | – | ✓ | ✓ |
 | Prior Phase Summary | ✓ | – | – | – |
-| Decisions | ✓ | ✓ | ✓ | ✓ |
+| Decisions | ✓ | – | ✓ | ✓ |
 | Tool Rules | ✓ | ✓ | ✓ | ✓ |
-| Available Modules | ✓ | ✓ | ✓ | ✓ |
+| Available Modules | – | ✓ | – | ✓ |
 
 `--mode supervised` strips:
 - `Output Contract` and `Autonomous Behavioral Rules` from the Worker Contract banner
 - `Next State: $STATE` from the Action Context banner
 - Any subsection marked `<!-- assembler:autonomous_only -->` inside `WORKER_SPEC.md` or `instructions/$ACTION.md`
+
+`--step-budget 1` (the v1 runner default) also strips:
+- Any subsection marked `<!-- assembler:multi_step_only -->` (currently `WORKER_SPEC.md`'s multi-step LOOP pseudocode, the "Loop discipline — multi-step only" subsection, and the production-incident anecdotes that motivate that discipline).
+
+The `<!-- assembler:omit_in_prompt -->` marker strips unconditionally on every assembly — used in `instructions/*.md` for operator-facing prose (Examples, Known tooling gaps, Behavior modes) that adds no signal in the assembled prompt.
 
 ---
 
@@ -213,15 +221,13 @@ WORKER CONTRACT
 […]
 
 ═══════════════════════════════════════════════
-ACTION CONTEXT
+TOOL RULES
 ═══════════════════════════════════════════════
 
-## Action: EXECUTE
-## Next State: execute                          ← stripped under --mode supervised
-## Phase: 11 — Orchestrator (Build)
-## Step: 3 — Slash command routing              ← EXECUTE only
-## Instructions
-[from instructions/$ACTION.md, conditional subsections stripped]
+[from adapter file's tool rules section]
+
+## Available Modules                            ← EXECUTE, CLOSE (dedup with Architecture)
+[from adapter or ARCHITECTURE.md fallback]
 
 ═══════════════════════════════════════════════
 PROJECT CONTEXT
@@ -264,20 +270,22 @@ PROJECT CONTEXT
 [from decisions.json, all records summarized]
 
 ═══════════════════════════════════════════════
-TOOL RULES
+ACTION CONTEXT
 ═══════════════════════════════════════════════
 
-[from adapter file's tool rules section]
-
-## Available Modules
-[from adapter or ARCHITECTURE.md fallback]
+## Action: EXECUTE
+## Next State: execute                          ← stripped under --mode supervised
+## Phase: 11 — Orchestrator (Build)
+## Step: 3 — Slash command routing              ← EXECUTE only
+## Instructions
+[from instructions/$ACTION.md, conditional subsections stripped]
 ```
 
 **Banner format:** exactly 47 box-drawing characters (`═`, U+2550) per band line, the banner title in all-caps centered between two band lines, blank line after.
 
 **Section heading style:** `## Title Case With Colons As Separators` for parameterized sections (`## Phase: 11 — Orchestrator (Build)`). Use the em-dash `—` (U+2014), not a hyphen, in parameterized headers.
 
-**Ordering invariant:** the four regions appear in this order; sections within a region appear in the order shown above; this order is fixed and not configurable.
+**Ordering invariant:** the four regions appear in the order shown above (Worker Contract → Tool Rules → Project Context → Action Context); sections within a region appear in the order shown above; this order is fixed and not configurable. Rationale: identity framing first, environment rules early (worker knows what tools it can and can't use before reading the procedure that names those tools), reference material in the middle, action procedure last so the model's recency bias works in our favor.
 
 **Trailing newline:** the file ends with `\n`.
 
@@ -310,6 +318,8 @@ The marker applies to the section that begins at the preceding heading and ends 
 | `requires=dependencies_nonempty` | True iff `phases.json[id=$PHASE].dependencies` has length > 0 | condition is false | `plan.md` Pre-plan Dependency Probe, `close.md` Pre-close Integration Check |
 | `autonomous_only` | True iff `--mode` is `autonomous` (the default) | condition is false (i.e., `--mode supervised`) | `WORKER_SPEC.md` Output Contract & Autonomous Behavioral Rules, any autonomous-only paragraphs in instruction files |
 | `supervised_only` | True iff `--mode supervised` | condition is false (i.e., autonomous mode) | Reserved for future use; no current consumers |
+| `multi_step_only` | True iff `--step-budget > 1` (default is `1`) | condition is false (the single-step common case) | `WORKER_SPEC.md` Multi-step LOOP, Loop discipline subsection, and production-incident anecdotes. Forward-compatible with the multi-iteration loop (Phase 3.B/C). |
+| `omit_in_prompt` | Always false | always | Operator-facing sections in `instructions/*.md` (Examples, Known tooling gaps, Behavior modes) that read well in the source file but add no signal in the assembled prompt. |
 
 ### 7.3 Evaluation order
 
@@ -428,6 +438,8 @@ In multi-step mode (`STEP_BUDGET > 1`), the worker loops the state machine itsel
 `--action` is **not** callable mid-step. Re-assembling the full prompt mid-step would duplicate context already in the worker's window and burn tokens. The runner is the only caller authorized to issue full-prompt assemblies.
 
 Mid-step assembler calls do not decrement the step budget (`state.py` budget decrement is the state machine's job, not the assembler's).
+
+Note that the `multi_step_only` marker mechanism used to strip `WORKER_SPEC.md`'s multi-step LOOP and discipline subsections in single-step mode (Phase 3.A.1) is the same `--step-budget`-driven evaluator described in §7.2. When the multi-iteration loop ships and the runner starts passing `--step-budget > 1`, those subsections automatically reappear in the assembled prompt.
 
 ---
 

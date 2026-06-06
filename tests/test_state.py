@@ -576,11 +576,6 @@ class TestAppendGotcha(unittest.TestCase):
             self.assertEqual(rc, 2)
 
 
-# ---------------------------------------------------------------------------
-# Atomic guarantee: validation failure must not modify file
-# ---------------------------------------------------------------------------
-
-
 class TestNoCorruptionOnFailedValidation(unittest.TestCase):
     def test_set_failure_preserves_file(self):
         with TempStateDir() as t:
@@ -600,6 +595,324 @@ class TestNoCorruptionOnFailedValidation(unittest.TestCase):
             )
             after = path.read_text()
             self.assertEqual(before, after)
+
+
+# ---------------------------------------------------------------------------
+# FU-19: bare-filename auto-resolution to .state/<name>
+# ---------------------------------------------------------------------------
+
+
+class TestResolveStatePath(unittest.TestCase):
+    """Bare schema filenames resolve to .state/<name> when CWD is a project root."""
+
+    def _cd_to_root(self, t: TempStateDir) -> Path:
+        """The project root is the parent of t.state_dir; chdir to it."""
+        root = t.state_dir.parent
+        self._prev_cwd = Path.cwd()
+        os.chdir(root)
+        return root
+
+    def _restore_cwd(self):
+        os.chdir(self._prev_cwd)
+
+    def test_bare_filename_resolves_when_cwd_is_project_root(self):
+        with TempStateDir() as t:
+            self._cd_to_root(t)
+            try:
+                # Bare `project.json` → .state/project.json
+                rc, out, err = run_state("set", "project.json", "state=review")
+                self.assertEqual(rc, 0, msg=err)
+                data = json.loads((t.state_dir / "project.json").read_text())
+                self.assertEqual(data["state"], "review")
+            finally:
+                self._restore_cwd()
+
+    def test_bare_filename_errors_when_no_state_dir(self):
+        # Outside any project root the bare filename returns Path("project.json")
+        # which doesn't exist; cmd_set surfaces the standard "does not exist" error.
+        with tempfile.TemporaryDirectory() as tmp:
+            prev = Path.cwd()
+            os.chdir(tmp)
+            try:
+                rc, out, err = run_state("set", "project.json", "state=review")
+                self.assertEqual(rc, 2)
+                self.assertIn("does not exist", err)
+            finally:
+                os.chdir(prev)
+
+    def test_explicit_state_path_still_works(self):
+        with TempStateDir() as t:
+            # Explicit `.state/project.json` (the pre-FU-19 examples) still
+            # resolves and works exactly as before.
+            self._cd_to_root(t)
+            try:
+                rc, out, err = run_state(
+                    "set", ".state/project.json", "state=review",
+                )
+                self.assertEqual(rc, 0, msg=err)
+            finally:
+                self._restore_cwd()
+
+    def test_explicit_absolute_path_still_works(self):
+        with TempStateDir() as t:
+            # Absolute paths bypass the resolver entirely (they already exist).
+            rc, out, err = run_state(
+                "set", str(t.state_dir / "project.json"), "state=review",
+            )
+            self.assertEqual(rc, 0, msg=err)
+
+    def test_unknown_bare_filename_not_resolved(self):
+        # `random.json` is not in SCHEMA_BY_FILENAME and not devlog.jsonl;
+        # the resolver leaves it as-is and the standard "does not exist"
+        # error surfaces.
+        with TempStateDir() as t:
+            self._cd_to_root(t)
+            try:
+                rc, out, err = run_state("set", "random.json", "x=1")
+                self.assertEqual(rc, 2)
+                # cmd_set's first check is path.exists(); failure is the
+                # standard "does not exist" path.
+                self.assertIn("does not exist", err)
+            finally:
+                self._restore_cwd()
+
+    def test_bare_devlog_filename_resolves(self):
+        # devlog.jsonl is whitelisted alongside SCHEMA_BY_FILENAME entries.
+        with TempStateDir() as t:
+            self._cd_to_root(t)
+            try:
+                entry = {
+                    "phase": 1, "step": 2, "action": "execute",
+                    "outcome": "complete", "summary": "via bare name",
+                    "timestamp": "2026-06-06T10:00:00Z",
+                }
+                rc, out, err = run_state(
+                    "append", "devlog.jsonl", json.dumps(entry),
+                )
+                self.assertEqual(rc, 0, msg=err)
+                # File was the .state/ one; original empty devlog now has 1 line.
+                lines = (t.state_dir / "devlog.jsonl").read_text().splitlines()
+                self.assertEqual(len(lines), 1)
+            finally:
+                self._restore_cwd()
+
+
+# ---------------------------------------------------------------------------
+# FU-21: --from-file payload across the four payload-bearing subcommands
+# ---------------------------------------------------------------------------
+
+
+class TestFromFileAppend(unittest.TestCase):
+    def test_round_trips_valid_jsonl_record(self):
+        with TempStateDir() as t:
+            entry = {
+                "phase": 1, "step": 2, "action": "execute",
+                "outcome": "complete", "summary": "loaded from file",
+                "timestamp": "2026-06-06T10:00:00Z",
+            }
+            payload = t.state_dir.parent / "payload.json"
+            payload.write_text(json.dumps(entry), encoding="utf-8")
+            rc, out, err = run_state(
+                "append", str(t.state_dir / "devlog.jsonl"),
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            lines = (t.state_dir / "devlog.jsonl").read_text().splitlines()
+            self.assertEqual(json.loads(lines[0])["summary"], "loaded from file")
+
+    def test_inline_and_from_file_mutex(self):
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "p.json"
+            payload.write_text('{"x":1}', encoding="utf-8")
+            rc, out, err = run_state(
+                "append", str(t.state_dir / "devlog.jsonl"),
+                '{"x":1}', "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("mutually exclusive", err)
+
+    def test_missing_from_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append", str(t.state_dir / "devlog.jsonl"),
+                "--from-file", str(t.state_dir.parent / "nope.json"),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("does not exist", err)
+
+    def test_neither_inline_nor_from_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append", str(t.state_dir / "devlog.jsonl"),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("missing payload", err)
+
+
+class TestFromFileAppendRecord(unittest.TestCase):
+    def test_round_trips_valid_json_record(self):
+        with TempStateDir() as t:
+            record = {
+                "phase": 1, "step": 3, "title": "Cleanup",
+                "status": "pending",
+            }
+            payload = t.state_dir.parent / "step.json"
+            payload.write_text(json.dumps(record), encoding="utf-8")
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "steps.json"),
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "steps.json").read_text())
+            self.assertEqual(data[-1]["title"], "Cleanup")
+
+    def test_inline_and_from_file_mutex(self):
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "s.json"
+            payload.write_text('{"phase":1,"step":3,"title":"x","status":"pending"}',
+                               encoding="utf-8")
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "steps.json"),
+                '{"phase":1,"step":3,"title":"x","status":"pending"}',
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("mutually exclusive", err)
+
+    def test_missing_from_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "steps.json"),
+                "--from-file", str(t.state_dir.parent / "nope.json"),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("does not exist", err)
+
+
+class TestFromFileUpdateRecord(unittest.TestCase):
+    def test_round_trips_field_updates(self):
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "updates.json"
+            payload.write_text(json.dumps({"status": "in_progress"}),
+                               encoding="utf-8")
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=2",
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "phases.json").read_text())
+            phase2 = next(p for p in data if p["id"] == 2)
+            self.assertEqual(phase2["status"], "in_progress")
+
+    def test_positional_and_from_file_mutex(self):
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "u.json"
+            payload.write_text('{"status":"in_progress"}', encoding="utf-8")
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=2",
+                "status=in_progress",
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("mutually exclusive", err)
+
+    def test_from_file_must_be_json_object(self):
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "bad.json"
+            payload.write_text('[1, 2, 3]', encoding="utf-8")
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=2",
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("JSON object", err)
+
+    def test_missing_from_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "update-record", str(t.state_dir / "phases.json"),
+                "--match", "id=2",
+                "--from-file", str(t.state_dir.parent / "nope.json"),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("does not exist", err)
+
+
+class TestFromFileAppendGotcha(unittest.TestCase):
+    def test_round_trips_plain_text(self):
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "gotcha.txt"
+            payload.write_text(
+                "Watch out for the buffer-edge race", encoding="utf-8",
+            )
+            rc, out, err = run_state(
+                "append-gotcha", str(t.state_dir / "project.json"),
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "project.json").read_text())
+            self.assertEqual(len(data["gotchas"]), 1)
+            self.assertIn("buffer-edge race", data["gotchas"][0])
+
+    def test_dollar_laden_payload_round_trips(self):
+        """The actual pilot bug: PowerShell ate `$defs` from inline strings.
+
+        --from-file bypasses shell quoting entirely. The file content lands
+        in project.json byte-for-byte (modulo strip()).
+        """
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "gotcha.txt"
+            text = (
+                "JSON Schema authoring: remember $defs and $refs are "
+                "schema-level reserved keys; nested types must declare "
+                "$schema at top level."
+            )
+            payload.write_text(text, encoding="utf-8")
+            rc, out, err = run_state(
+                "append-gotcha", str(t.state_dir / "project.json"),
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "project.json").read_text())
+            gotcha = data["gotchas"][-1]
+            self.assertIn("$defs", gotcha)
+            self.assertIn("$refs", gotcha)
+            self.assertIn("$schema", gotcha)
+
+    def test_inline_and_from_file_mutex(self):
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "g.txt"
+            payload.write_text("from file", encoding="utf-8")
+            rc, out, err = run_state(
+                "append-gotcha", str(t.state_dir / "project.json"),
+                "inline gotcha", "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("mutually exclusive", err)
+
+    def test_missing_from_file(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append-gotcha", str(t.state_dir / "project.json"),
+                "--from-file", str(t.state_dir.parent / "nope.txt"),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("does not exist", err)
+
+    def test_empty_file_rejected(self):
+        # Same as inline empty-string: rejected so we don't pollute gotchas.
+        with TempStateDir() as t:
+            payload = t.state_dir.parent / "empty.txt"
+            payload.write_text("   \n  ", encoding="utf-8")
+            rc, out, err = run_state(
+                "append-gotcha", str(t.state_dir / "project.json"),
+                "--from-file", str(payload),
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("cannot be empty", err)
 
 
 if __name__ == "__main__":

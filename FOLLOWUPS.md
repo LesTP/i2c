@@ -15,64 +15,52 @@ to a phase) / `partially closed` / `closed` / `wontfix`.
 
 ## Cold-start summary (next session entry point)
 
-**Where we are (2026-06-06):** Phase 1 of i2c complete end-to-end.
-**clankercourts (i2c's first pilot) shipped Phase 1 successfully** —
-4 plan'd steps → execute(×4) → review → close, 30/30 tests pass,
-12 commits, 0 escalations. Detailed debrief in
-[`PILOT_clankercourts_phase1.md`](PILOT_clankercourts_phase1.md).
+**Where we are (2026-06-06 — post Phase 3.A.1):** i2c data foundation,
+prose layer, and autonomous loop foundation are complete; **prompt
+compaction shipped** — multi-step content strips in single-step mode,
+shell discipline moved from WORKER_SPEC to the adapter, instruction-file
+Examples/Known-tooling-gaps/Behavior-mode sections drop out via
+`omit_in_prompt`, Available Modules de-duplicated with Architecture, and
+the four regions reordered to `WORKER CONTRACT → TOOL RULES → PROJECT
+CONTEXT → ACTION CONTEXT` so the action procedure lands at the tail of
+the prompt. clankercourts Phase 1 closed cleanly in supervised mode. See
+[`PILOT_clankercourts_phase1.md`](PILOT_clankercourts_phase1.md) for
+the pilot debrief (with the 2026-06-06 epistemic caveat).
 
-**Pilot surfaced two friction sources that block honest autonomous
-mode:**
-1. **PowerShell `$`-interpolation ate JSON tokens** (`$defs`,
-   `$refs`) in a multi-line `state.py append-gotcha` payload during
-   the close action. Silent corruption — state was schema-valid but
-   strings were mangled. Caught by the operator; would not be caught
-   in autonomous mode. FU-12 confirmed (third time); resolution is
-   the new **FU-21** (`--from-file` flag family).
-2. **Worker missed step 11 of `instructions/close.md`** — initial
-   close commit had `blocked: false`. The runner uses
-   `project.json.blocked` as its halt signal between phases; in
-   autonomous mode the loop would have advanced to Phase 2 PLAN
-   without human audit. New **FU-22** (runner post-close invariant
-   check) is the mitigation.
+**Tooling now available:**
+- `python tools/state.py {append,append-record,update-record,append-gotcha} --from-file <path>` for `$`-laden / multi-line payloads (FU-21 closed).
+- Bare schema filenames (`steps.json`, `phases.json`, ...) now auto-resolve to `.state/<name>` when CWD has `.state/` (FU-19 closed).
+- `python tools/state_machine.py` outputs ACTION + NEXT (read-only; no `.state/` writes).
+- `python tools/invariants.py --action close` checks the FU-22 invariants (also callable as `invariants.check_post_action(root, action)` from Python).
+- `python tools/run_iteration.py [--backend claude] [--model sonnet] [--max-budget-usd 5.00]` drives one cold-start worker invocation end-to-end.
+- `python tools/assemble_context.py --step-budget N` controls whether `multi_step_only` subsections appear (default 1 strips; >1 keeps).
 
-Plus cosmetic **FU-23** (assembler status `Budget:` line when
-`budget_type` is set without an active counter), and the existing
-**FU-20** (templates README clarification re: Devmate command paths)
-absorbs the slash-command-location observation from the pilot.
+**Pilot still informs the next priorities:**
+1. **Phase 3.B — first real autonomous run.** Run `python tools/run_iteration.py` from `p:\shared\clankercourts\` (with `state=plan`, `phase=2`, `blocked=false`). This is the first honest test of context sufficiency, **now using the compact prompt** (~30 KB instead of ~70 KB). Whatever happens is the signal — fold into FOLLOWUPS, fix in-place if cheap, plan Phase 3.C from the data.
+2. **Phase 3.C — multi-iteration loop.** Wrap `run_iteration.py` once we have real data on what the single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
+3. **Phase 3.D — Codex backend.** `--backend codex` currently stubs with a structured "not yet implemented" error.
+4. **FU-7 — tighten exit_signal schema.** Wait for real exit-signal samples from autonomous runs before locking the contract.
 
-**What's next (priority order):**
-
-1. **Phase 3 — autonomous loop tooling.** The pilot is the input
-   spec. Required build:
-   - `state.py {append,append-gotcha,append-record,update-record}
-     --from-file <path>` (FU-21, closes FU-12 in practice).
-   - `state_machine.sh` covering the ACTION/NEXT dispatch matrix
-     (reads project.json + phases.json + steps.json + budget).
-   - `run-iteration.sh` updates: pipe assembler output into
-     `claude -p` / `codex exec`; parse exit signal; **assert
-     post-close invariants per FU-22**; halt-and-surface on failure;
-     write `summary.log`.
-   - Optional: `--next` flag on the assembler (D-impl-3 anticipated),
-     once the runner is real and wants to pass NEXT explicitly.
-   - Once the runner is real and emits a stable exit-signal shape:
-     tighten `exit_signal.schema.json` (FU-7).
-2. **Phase 2 continues — clankercourts Phases 2 + 3.** Will be the
-   first autonomous-loop runs once Phase 3 ships. Both are leaf-module
-   Build phases (resolver), so they exercise the loop without
-   conditional dep-probe or integration-check on the first try.
-3. **Phase 4 — codexbot StateReader + dispatcher.** Telegram/Discord
-   control surface over `.state/`. Mostly downstream of Phase 3.
-4. **Phase 5 (optional) — diplomat / e2e migration.** Deferred.
+**What's still pending after Phase 3.A.1:**
+- **FU-12** stays open until the operator confirms `--from-file` resolves the workflow in real autonomous use.
+- **FU-20** (templates README clarification) needs a follow-up doc commit.
+- **FU-23** (cosmetic Budget rendering) is deferred.
 
 **Quick orientation commands** (from a project root that already has
 `.state/`):
 
 ```powershell
 $env:PYTHONIOENCODING="utf-8"
+python tools\state_machine.py
 python tools\assemble_context.py --section status
 python -m unittest discover -s tests
 python examples\smoke_test.py
+```
+
+To dry-run the runner (writes to `logs/loop/` but invokes a real `claude -p`):
+
+```powershell
+python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 ```
 
 **Canonical references:**
@@ -94,8 +82,8 @@ python examples\smoke_test.py
 | FU-3 | `state.py set` only handles JSON object files, not arrays | partially closed | `update-record` (added for review/close authoring) covers single-record updates on array files via `--match KEY=VALUE`. Generic-set-on-array still isn't supported (e.g., updating fields on N records at once). | A real workflow needs bulk update across multiple records (rare). Until then, `update-record` covers the gap that drove FU-3 in practice. |
 | FU-4 | No subcommand to mark a phase blocked/closed without `set` syntax | open | `state.py set project.json blocked=true` works but is dense. A named op like `state.py block project.json --reason "..."` would be more readable and could log a structured reason field. | Low priority — current syntax is fine for autonomous use. Revisit if supervised UI wants a richer block flow. |
 | FU-14 | No read-side query helper in `state.py` (e.g., `state.py query devlog.jsonl --where 'contracts != []'`) | accepted (deferred) | The assembler (Phase 1.3) exposes pre-formatted views: `--section devlog --phase N` gives a bulleted phase tail, `--section status` an orientation snapshot. Ad-hoc queries still fall back to `jq`. Per ARCH §2 / §10, the assembler intentionally does not absorb general-purpose queries. | Phase 2 pilot reveals a repeated query pattern worth absorbing into `--section`. |
-| FU-19 | Instruction examples use bare filenames (`phases.json`) but `state.py` is CWD-relative — works only if CWD is `.state/` | open (pilot-confirmed) | Every `state.py` example in `instructions/plan.md`, `execute.md`, `review.md`, `close.md` uses bare filenames: `state.py append-record phases.json '{...}'`, `state.py complete steps.json --phase N --step M`, `state.py append devlog.jsonl '...'`, `state.py append-gotcha project.json "..."`. The implementation is `path = Path(args.file)` — pure CWD-relative, no auto-resolution. If the worker runs from the project root (which the bootstrap procedure implies), these examples fail with `ERROR: phases.json does not exist.` until prefixed with `.state/`. **CC pilot (2026-06-05):** hit this on the first seeded `append-record` for phases.json. Worked once switched to `.state/phases.json`. **CC pilot Phase 1 PLAN (2026-06-06):** hit again on the very first `append-record .state/steps.json` of the PLAN action — the supervised worker followed `instructions/plan.md` examples literally, all 4 `append-record steps.json` calls failed with `ERROR: steps.json does not exist`, plus a knock-on PowerShell quoting failure that masked the real cause until inspected. Confirms every PLAN/EXECUTE/REVIEW/CLOSE worker invocation will trip this until fixed. Three possible fixes: (a) auto-resolve filenames matching `SCHEMA_BY_FILENAME` keys by checking `.state/<name>` if bare path doesn't exist; (b) update all instruction examples to `.state/phases.json` etc.; (c) document a "cd .state" convention. **(a)** is the most ergonomic — the bare name is unambiguous because the file basename is the schema-discriminator. | Address before more bootstrap pilots (the friction is mechanical and immediate). Lowest-effort: (a). Adds ~6 lines to `state.py` and keeps existing examples valid. |
-| FU-21 | `state.py {append,append-gotcha,append-record,update-record} --from-file <path>` for multi-line / `$`-laden payloads | open (pilot input for Phase 3) | Resolves FU-12 in practice. The CC Phase 1 close action lost two gotchas to PowerShell `$`-interpolation (the multi-line strings contained `$defs` / `$refs` which PowerShell substituted with empty values). State was schema-valid (`array of strings` is preserved either way), so silent corruption — caught only by the human reading the post-close transcript. In autonomous mode this would compound. The `--from-file` path takes the payload from a file on disk, where shell quoting doesn't apply. Pattern mirrors `git commit -F` (which i2c's own commit workflow has been using since the worker-spec commit). Estimated work: ~30 LOC across the four subcommands + tests. | Phase 3 (autonomous mode). Build before the first autonomous worker invocation that touches `state.py`. |
+| FU-19 | Instruction examples use bare filenames (`phases.json`) but `state.py` is CWD-relative — works only if CWD is `.state/` | **closed** (Phase 3.A) | See resolution note below. Bare filename auto-resolution shipped via `resolve_state_path()` in `state.py`; instruction examples now work as written without `.state/` prefixes. |
+| FU-21 | `state.py {append,append-gotcha,append-record,update-record} --from-file <path>` for multi-line / `$`-laden payloads | **closed** (Phase 3.A) | See resolution note below. `--from-file` shipped across all four payload-bearing subcommands; mutually exclusive with the inline positional. Closes FU-12 in practice once operators adopt the flag. |
 
 ## Tooling — assembler (`assemble_context.py`)
 
@@ -112,7 +100,7 @@ python examples\smoke_test.py
 
 | ID | Title | Status | Context | Trigger to address |
 |----|-------|--------|---------|--------------------|
-| FU-22 | Runner post-close invariant check — assert `blocked == true` + current phase `status: complete` after every CLOSE | open (pilot input for Phase 3) | The CC Phase 1 close action's initial commit had `blocked: false` — the worker missed step 11 of `instructions/close.md` ("Set the gate"). In supervised mode the operator caught it; in autonomous mode `project.json.blocked` is the loop's halt signal, so the runner would have advanced straight into Phase 2 PLAN without the human audit gate. The cheap mitigation is runner-side: after parsing the worker's exit signal from a CLOSE invocation, the runner reads `project.json` + `phases.json`, asserts `blocked == true` and `phases.json[id==current].status == "complete"`, halts the loop with a structured `summary.log` entry on failure. Doesn't require any worker or `state.py` change — pure runner-side enforcement, complements `exit_signal.schema.json` validation. Could also extend to other action-specific invariants (e.g., REVIEW must transition to `close`). | Phase 3. Build into `run-iteration.sh`'s after-worker-exit logic, before the next `state_machine.sh` dispatch. |
+| FU-22 | Runner post-close invariant check — assert `blocked == true` + current phase `status: complete` after every CLOSE | **closed** (Phase 3.A) | See resolution note below. Shipped as `tools/invariants.py` (`check_post_action(root, action)`); the single-iteration runner calls it after every CLOSE dispatch and halts-and-surfaces on failure. Reusable from supervised tooling too. |
 
 ## Prose — instructions, WORKER_SPEC, adapters
 
@@ -142,6 +130,11 @@ Items resolved, with a one-line resolution note. Historical context is cheap.
 | FU-5 | Phase 1.3 `tools/assemble_context.py` implements the conditional-section marker mechanism per ARCH §7 (evaluator registry, `requires=dependencies_nonempty`, `autonomous_only`, `supervised_only`). Markers in `instructions/plan.md` and `instructions/close.md` strip deterministically. |
 | FU-6 | Phase 1.3 tests cover both leaf and non-leaf paths; `examples/smoke_test.py` also exercises `--section status` end-to-end. |
 | FU-13 | `update-record FILE --match KEY=VALUE field=value ...` added when authoring `instructions/review.md` + `close.md` surfaced the need to close open decisions and flip phase status mid-flight. Generic: matches one record by a single key=value (errors on no-match or multi-match), updates one-or-more fields, validates the whole array, atomic write. Sibling to `append-record` in pattern. |
+| FU-19 | Phase 3.A: `tools/state.py` ships `resolve_state_path()` — if `arg` doesn't exist and CWD has a `.state/` directory and `arg` is a bare schema filename (any key of `SCHEMA_BY_FILENAME` or `devlog.jsonl`), auto-resolve to `.state/<arg>`. Applied in every payload-handling subcommand. Instruction examples now work as written without a `.state/` prefix; explicit paths still work unchanged. Test coverage in `tests/test_state.py::TestResolveStatePath` (6 cases). |
+| FU-21 | Phase 3.A: `--from-file PATH` flag landed on `append`, `append-record`, `update-record`, `append-gotcha`. Manually-enforced mutex with the positional payload (argparse's `add_mutually_exclusive_group` doesn't compose with `nargs='*'` positionals). For `update-record`, the file content must be a JSON object of field updates; for the other three it's UTF-8 text (JSON for append/append-record; plain prose for append-gotcha). Bypasses PowerShell `$`-interpolation and heredoc edge cases. Test coverage in `tests/test_state.py::TestFromFile*` (14 cases including the `$`-laden gotcha round-trip from FU-12). |
+| FU-22 | Phase 3.A: `tools/invariants.py` provides `check_post_action(root, action)` returning a list of failure messages. v1 invariants cover CLOSE (`blocked == true` + phase `status == complete`), REVIEW (`state == close`), PLAN (`state == execute`), EXECUTE (`state ∈ {execute, review}`). `tools/run_iteration.py` calls it after every CLOSE dispatch and halts-and-surfaces (exit 2) on failure. Reusable from supervised tooling — operators can run `python tools/invariants.py --action close` after a manual close to catch drift. Test coverage in `tests/test_invariants.py` (18 cases). |
+| FU-24 | Phase 3.A.1: prompt compaction + region reorder shipped after reading a real assembled prompt (~744 lines / ~70 KB). Two new evaluators (`multi_step_only`, `omit_in_prompt`) added to `assemble_context.py` plus a `--step-budget` flag. `WORKER_SPEC.md` multi-step subsections + production-incident anecdotes marked `multi_step_only` (strips at the v1 single-step default); shell-command discipline moved into `CLAUDE.md` and `CODEX.md` Tool Rules; `instructions/*.md` Examples / Known tooling gaps / Behavior modes marked `omit_in_prompt`; `Available Modules` gated to EXECUTE/CLOSE only (dedup with `Architecture`); regions reordered to **WORKER CONTRACT → TOOL RULES → PROJECT CONTEXT → ACTION CONTEXT** so the procedure lands at the prompt tail where model recency works in our favor. Net: ~55% token reduction with no information loss for what the action actually needs. Test coverage in `tests/test_assemble_context.py` (14 new cases: multi_step_only, omit_in_prompt, --step-budget validation, region order, Available Modules gating). |
+| FU-25 | Phase 3.A.2: `Decisions` table dropped from EXECUTE recipe in `_PROJECT_CONTEXT_BY_ACTION`. Project-wide decision history is reference, not per-step load-bearing; PLAN / REVIEW / CLOSE still include it. Worker can pull mid-step via `--section` if needed. ~22 lines saved per EXECUTE iteration (multiplied across N steps per phase). Test coverage: `test_execute_includes_step_and_recent_activity` asserts `## Decisions` is absent; `test_decisions_present_for_plan_review_close` guards against accidental drop on other actions. Build/Refine regime split deferred per session discussion — savings are smaller and risk of harming silent-drift recognition outweighs the win until autonomous evidence accrues. |
 
 ---
 

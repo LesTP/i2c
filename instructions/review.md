@@ -154,6 +154,7 @@ Then emit the exit signal (5-line block, see Worker Contract §6).
 ---
 
 ## Behavior modes
+<!-- assembler:omit_in_prompt -->
 
 The assembled prompt may include framing for **supervised mode** (when the
 runner was invoked with `--mode supervised`). Under supervised mode, the
@@ -186,6 +187,7 @@ means autonomous.
 ---
 
 ## Examples
+<!-- assembler:omit_in_prompt -->
 
 ### Clean review — no findings
 

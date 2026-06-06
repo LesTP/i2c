@@ -448,6 +448,101 @@ class TestConditionalStripping(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Phase 3.A.1 evaluators: multi_step_only + omit_in_prompt
+# ---------------------------------------------------------------------------
+
+
+class TestMultiStepOnlyEvaluator(unittest.TestCase):
+    """Marker `multi_step_only` strips when step_budget == 1, keeps when > 1."""
+
+    def _ctx(self, *, step_budget: int) -> ac.AssemblerContext:
+        ctx = build_ctx(action="plan", phase=2, mode="autonomous")
+        ctx.step_budget = step_budget
+        return ctx
+
+    def test_strips_when_default_single_step(self):
+        with TempProject():
+            md = (
+                "## Always\nx\n\n## Multi\n"
+                "<!-- assembler:multi_step_only -->\n"
+                "multi-step body\n\n## End\ny\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx(step_budget=1))
+            self.assertIn("## Always", out)
+            self.assertNotIn("## Multi", out)
+            self.assertNotIn("multi-step body", out)
+
+    def test_keeps_when_step_budget_greater_than_one(self):
+        with TempProject():
+            md = (
+                "## Always\nx\n\n## Multi\n"
+                "<!-- assembler:multi_step_only -->\n"
+                "multi-step body\n\n## End\ny\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx(step_budget=3))
+            self.assertIn("## Multi", out)
+            self.assertIn("multi-step body", out)
+            # Marker line itself is removed.
+            self.assertNotIn("multi_step_only", out)
+
+
+class TestOmitInPromptEvaluator(unittest.TestCase):
+    """Marker `omit_in_prompt` strips unconditionally on every assembly."""
+
+    def _ctx(self, **kwargs) -> ac.AssemblerContext:
+        return build_ctx(action="plan", phase=2, mode="autonomous", **kwargs)
+
+    def test_always_strips(self):
+        with TempProject():
+            md = (
+                "## Keep\nbody\n\n## Drop\n"
+                "<!-- assembler:omit_in_prompt -->\n"
+                "operator-only prose\n\n## Tail\ntail body\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx())
+            self.assertIn("## Keep", out)
+            self.assertNotIn("## Drop", out)
+            self.assertNotIn("operator-only prose", out)
+            self.assertIn("## Tail", out)
+
+
+class TestStepBudgetFlag(unittest.TestCase):
+    """--step-budget CLI flag parsing + validation."""
+
+    def test_default_is_one(self):
+        parser = ac.build_parser()
+        args = parser.parse_args(
+            ["--action", "plan", "--phase", "2", "--mode", "autonomous"],
+        )
+        self.assertEqual(args.step_budget, 1)
+
+    def test_accepts_positive_int(self):
+        parser = ac.build_parser()
+        args = parser.parse_args(
+            ["--action", "plan", "--phase", "2", "--step-budget", "5"],
+        )
+        self.assertEqual(args.step_budget, 5)
+
+    def test_rejects_zero(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, _, err = run_cli(
+                "--action", "plan", "--phase", "2",
+                "--mode", "autonomous", "--step-budget", "0",
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("--step-budget must be a positive integer", err)
+
+    def test_rejects_negative(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, _, err = run_cli(
+                "--action", "plan", "--phase", "2",
+                "--mode", "autonomous", "--step-budget", "-3",
+            )
+            self.assertEqual(rc, 2)
+            self.assertIn("--step-budget must be a positive integer", err)
+
+
+# ---------------------------------------------------------------------------
 # Section renderers — non-status sections
 # ---------------------------------------------------------------------------
 
@@ -790,6 +885,21 @@ class TestFullPromptAssembly(unittest.TestCase):
             self.assertNotIn("## Phases", out)
             self.assertNotIn("## Project Scope", out)
             self.assertNotIn("## Architecture", out)
+            # Phase 3.A.2: Decisions table is per-action; EXECUTE omits it
+            # (project-wide decision history isn't per-step load-bearing).
+            self.assertNotIn("## Decisions", out)
+
+    def test_decisions_present_for_plan_review_close(self):
+        # Sanity: dropping from EXECUTE didn't accidentally drop from the
+        # other three actions where the Decisions table IS load-bearing.
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            for action, phase in (("plan", "4"), ("review", "2"), ("close", "2")):
+                rc, out, err = run_cli("--action", action, "--phase", phase)
+                self.assertEqual(rc, 0, msg=err)
+                self.assertIn(
+                    "## Decisions", out,
+                    msg=f"Decisions missing from {action.upper()} prompt",
+                )
 
     def test_review_includes_phase_devlog_and_architecture(self):
         with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
@@ -840,6 +950,85 @@ class TestFullPromptAssembly(unittest.TestCase):
             (root / "WORKER_SPEC.md").unlink()
             rc, _, err = run_cli("--action", "execute", "--phase", "2")
             self.assertEqual(rc, 1)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3.A.1 — region reorder + Available Modules per-action gating
+# ---------------------------------------------------------------------------
+
+
+class TestRegionOrder(unittest.TestCase):
+    """Banners appear in the new order: WORKER → TOOL → PROJECT → ACTION."""
+
+    def _banner_positions(self, out: str) -> dict[str, int]:
+        return {title: out.index(title) for title in (
+            "WORKER CONTRACT", "TOOL RULES", "PROJECT CONTEXT", "ACTION CONTEXT",
+        )}
+
+    def test_execute_action_region_order(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            pos = self._banner_positions(out)
+            self.assertLess(pos["WORKER CONTRACT"], pos["TOOL RULES"])
+            self.assertLess(pos["TOOL RULES"], pos["PROJECT CONTEXT"])
+            self.assertLess(pos["PROJECT CONTEXT"], pos["ACTION CONTEXT"])
+
+    def test_plan_action_region_order(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "plan", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            pos = self._banner_positions(out)
+            self.assertLess(pos["WORKER CONTRACT"], pos["TOOL RULES"])
+            self.assertLess(pos["TOOL RULES"], pos["PROJECT CONTEXT"])
+            self.assertLess(pos["PROJECT CONTEXT"], pos["ACTION CONTEXT"])
+
+    def test_action_context_is_last_region(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "review", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            # Nothing meaningful should come after the Action heading except
+            # the instruction body. Specifically, no other banner should
+            # appear after ACTION CONTEXT.
+            action_pos = out.index("ACTION CONTEXT")
+            tail = out[action_pos + len("ACTION CONTEXT"):]
+            for other in ("WORKER CONTRACT", "TOOL RULES", "PROJECT CONTEXT"):
+                self.assertNotIn(other, tail)
+
+
+class TestAvailableModulesGating(unittest.TestCase):
+    """Available Modules drops out of PLAN/REVIEW (dedup with Architecture);
+    stays in EXECUTE/CLOSE where Architecture is omitted."""
+
+    def test_omitted_for_plan(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "plan", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertNotIn("## Available Modules", out)
+            # Architecture still present (its Component Map is the substitute).
+            self.assertIn("## Architecture", out)
+
+    def test_omitted_for_review(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "review", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertNotIn("## Available Modules", out)
+            self.assertIn("## Architecture", out)
+
+    def test_present_for_execute(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Available Modules", out)
+            # Architecture not in EXECUTE per matrix.
+            self.assertNotIn("## Architecture\n", out)
+
+    def test_present_for_close(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "close", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Available Modules", out)
+            self.assertNotIn("## Architecture\n", out)
 
 
 # ---------------------------------------------------------------------------

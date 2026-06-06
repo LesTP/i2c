@@ -224,11 +224,36 @@ def _eval_supervised_only(ctx: "AssemblerContext", value: str | None) -> bool:
     return ctx.mode == "supervised"
 
 
+def _eval_multi_step_only(ctx: "AssemblerContext", value: str | None) -> bool:
+    """True iff the worker is invoked with a multi-step budget (STEP_BUDGET > 1).
+
+    v1 runner always passes step_budget=1, so this evaluator strips the
+    multi-step LOOP machinery (WORKER_SPEC §2 multi-step subsections) on
+    every assembled prompt today. Forward-compatible with the multi-iteration
+    loop landing later — once runners can pass --step-budget > 1, those
+    sections automatically reappear.
+    """
+    return ctx.step_budget > 1
+
+
+def _eval_omit_in_prompt(ctx: "AssemblerContext", value: str | None) -> bool:
+    """Always False — sections marked this way are unconditionally stripped.
+
+    Lets instruction-file authors keep operator-facing prose (Examples,
+    Known tooling gaps, mode-discussion paragraphs) in `instructions/*.md`
+    for direct reading, while keeping it out of the assembled worker prompt
+    where the procedure itself already carries the load.
+    """
+    return False
+
+
 # Keyed by marker name. `requires` is a composite key — the value names the
 # evaluator to run (see ARCH §7.2 example `requires=dependencies_nonempty`).
 EVALUATORS: dict[str, Callable[["AssemblerContext", str | None], bool]] = {
     "autonomous_only": _eval_autonomous_only,
     "supervised_only": _eval_supervised_only,
+    "multi_step_only": _eval_multi_step_only,
+    "omit_in_prompt": _eval_omit_in_prompt,
 }
 
 # Sub-evaluators for the `requires=` family. Adding a new condition means
@@ -350,6 +375,7 @@ class AssemblerContext:
     section: str | None  # None for --action invocations
     phase: int | None  # required for --action and --section devlog
     module: str | None  # required for --section module
+    step_budget: int = 1  # runner-supplied; v1 always 1. Drives multi_step_only stripping.
     # State (lazy-populated; populated by build_context).
     project: dict[str, Any] = field(default_factory=dict)
     phases: list[dict[str, Any]] = field(default_factory=list)
@@ -383,6 +409,7 @@ def build_context(args: argparse.Namespace) -> AssemblerContext:
         section=getattr(args, "section", None),
         phase=getattr(args, "phase", None),
         module=getattr(args, "module", None),
+        step_budget=getattr(args, "step_budget", 1) or 1,
     )
     ctx.project = _load_required_state(root, "project.json")
     ctx.phases = _load_required_state(root, "phases.json")
@@ -933,7 +960,10 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         render_current_phase,
         render_current_phase_steps_table,
         render_recent_activity_5,
-        render_decisions,
+        # Decisions intentionally omitted from EXECUTE (Phase 3.A.2): project-
+        # wide decision history is reference, not per-step load-bearing.
+        # Worker can pull it mid-step via `--section` if a step genuinely
+        # needs it. PLAN / REVIEW / CLOSE still include it.
     ],
     "review": [
         render_module_contract,
@@ -957,12 +987,24 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
 }
 
 
+# Actions where Available Modules adds value (i.e., Architecture isn't already
+# in the prompt). For PLAN and REVIEW the Component Map inside Architecture
+# covers the same ground; rendering both is pure duplication. EXECUTE and
+# CLOSE don't get Architecture, so Available Modules earns its place there.
+_AVAILABLE_MODULES_ACTIONS = ("execute", "close")
+
+
 def build_full_prompt(ctx: AssemblerContext) -> str:
     """Assemble the full prompt per ARCH §6 ordering and §5 inclusion matrix.
 
     Renderers may return empty strings for omitted sections (e.g., Next State
     under supervised mode, Module Contract when no module field). Those drop
     out of the banner-joined output cleanly.
+
+    Region order (Phase 3.A.1): WORKER CONTRACT → TOOL RULES → PROJECT
+    CONTEXT → ACTION CONTEXT. Identity framing first, environment rules
+    early, reference material in the middle, action procedure last so
+    model recency works in our favor.
     """
     if ctx.action is None:
         raise ValueError("build_full_prompt requires an action")
@@ -974,15 +1016,13 @@ def build_full_prompt(ctx: AssemblerContext) -> str:
     if worker:
         parts.append(worker)
 
-    # Region 2: Action Context
-    parts.append(assemble_banner("ACTION CONTEXT"))
-    for renderer in (
-        render_action_heading,
-        render_next_state,
-        render_phase_heading,
-        render_step_heading,
-        render_instructions,
-    ):
+    # Region 2: Tool Rules (early so the worker knows the environment before
+    # reading the procedure that names its tools).
+    parts.append(assemble_banner("TOOL RULES"))
+    tool_renderers: list[Callable[[AssemblerContext], str]] = [render_tool_rules]
+    if ctx.action in _AVAILABLE_MODULES_ACTIONS:
+        tool_renderers.append(render_available_modules)
+    for renderer in tool_renderers:
         chunk = renderer(ctx)
         if chunk:
             parts.append(chunk.rstrip())
@@ -994,9 +1034,16 @@ def build_full_prompt(ctx: AssemblerContext) -> str:
         if chunk:
             parts.append(chunk.rstrip())
 
-    # Region 4: Tool Rules
-    parts.append(assemble_banner("TOOL RULES"))
-    for renderer in (render_tool_rules, render_available_modules):
+    # Region 4: Action Context (last — the model's most recent context is
+    # exactly what it's about to do).
+    parts.append(assemble_banner("ACTION CONTEXT"))
+    for renderer in (
+        render_action_heading,
+        render_next_state,
+        render_phase_heading,
+        render_step_heading,
+        render_instructions,
+    ):
         chunk = renderer(ctx)
         if chunk:
             parts.append(chunk.rstrip())
@@ -1125,11 +1172,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--backend", choices=("claude", "codex"), default="claude",
         help="Which adapter to read for Tool Rules. Default: claude.",
     )
+    parser.add_argument(
+        "--step-budget",
+        type=int,
+        default=1,
+        help=(
+            "Step budget the runner gave the worker. Default 1 (single-step). "
+            "When > 1, multi-step-only WORKER_SPEC subsections are kept; when "
+            "== 1, they're stripped. Forward-compat with the multi-iteration "
+            "loop landing later."
+        ),
+    )
     return parser
 
 
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Cross-flag validation that argparse can't express directly. Exits 2 on failure."""
+    if getattr(args, "step_budget", 1) < 1:
+        parser.error("--step-budget must be a positive integer")
     if args.action is not None:
         if args.phase is None:
             parser.error("--phase is required with --action")

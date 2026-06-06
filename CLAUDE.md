@@ -54,15 +54,52 @@ short and prescriptive. Examples:
 - **No subagent spawning for routine work.** Do NOT spawn `Agent(Explore)`
   subagents for simple file discovery — use `bash find` or `bash ls`
   instead. Subagents are appropriate for genuinely open-ended research.
-- **Non-interactive shell only.** No interactive editors, pagers, or git
-  prompts. `git add -p`, `git commit` without `-m`, `git rebase -i`, and
-  any `$EDITOR`-opening command will hang the loop. See the Shell command
-  discipline section of your assembled Worker Contract for the full
-  prohibitions list and recommended alternatives.
 - **State writes go through `state.py`.** Never use `sed`, `echo >`, or
   direct file edits on `.state/` files. The CLI guarantees atomic writes
   and schema validation; bypassing it can silently corrupt state for
   downstream consumers.
+
+### Non-interactive shell discipline
+
+The loop invokes bash non-interactively — no stdin, no editor, no human
+at the keyboard. Any command that waits for input, opens `$EDITOR`, or
+pipes through a pager will **hang the loop indefinitely** until the
+operator manually kills the process tree.
+
+**Git — banned (always hang):**
+
+- `git add -p` / `git add --patch` — interactive hunk staging, no
+  scriptable equivalent. Use `git add <paths>` to stage whole files.
+- `git commit` without `-m` — opens `$EDITOR`. Always pass `-m "..."`.
+  For amends: `git commit --amend -m "..."` or
+  `git commit --amend --no-edit`.
+- `git rebase -i` / `git rebase --interactive` — opens `$EDITOR`. Use
+  `git rebase --autosquash` or scripted edits.
+- `git citool` / `git gui` — GUI tools, never available.
+- Any subcommand that opens an editor without a message-override flag.
+
+**Git — pager-bypass on potentially-long reads:**
+
+- `git --no-pager log`, `git --no-pager diff`, `git --no-pager show`.
+  Otherwise git auto-pipes through `less`, which blocks on stdin.
+
+**Other shells — common offenders:**
+
+- Interactive editors (`nano`, `vim`, `vi`, `emacs`) — use `sed -i '...'`
+  or heredocs (`cat > file <<'EOF' ... EOF`) for non-interactive edits.
+- Pagers (`less`, `more`, `man`) — pipe through `cat` or set `PAGER=cat`.
+- `read` (bash builtin) — by definition waits on stdin.
+- `sudo` without `-n` or a NOPASSWD config entry — waits for a password
+  prompt.
+- `ssh` without `-o BatchMode=yes` — may prompt for host-key acceptance
+  or a password.
+
+**If you need to stage only part of a file's diff:** don't reach for
+`git add -p` as a workaround — there's no way for the loop to provide
+hunk-by-hunk stdin. Instead, split the change into separate edits so
+each file change is a discrete commit's worth, or revert unwanted parts
+with `git restore <file>` before `git add <file>`. The working tree is
+the source of truth; shape it correctly before staging.
 
 <!-- Add project-specific tool rules below. Examples:
 - Use `bash grep` instead of the Grep tool if built-in tools have path issues.

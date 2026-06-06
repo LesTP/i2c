@@ -238,6 +238,7 @@ Worker Contract (regime shift, unclear spec, all modules complete, etc.).
 ---
 
 ## Examples
+<!-- assembler:omit_in_prompt -->
 
 ### Normal step completion (Build)
 
@@ -313,6 +314,7 @@ Stay in your lane: do the step, record the result, exit.
 ---
 
 ## Known tooling gaps referenced above
+<!-- assembler:omit_in_prompt -->
 
 - **In-progress marker:** `state.py` has no subcommand to set a step
   `status="in_progress"`. Workaround in step 1 (devlog `partial` entry).

@@ -7,6 +7,53 @@
 
 ---
 
+## Epistemic caveat (2026-06-06 amendment)
+
+This pilot ran inside the **same continuous Devmate session that built
+i2c itself**. The operator knew the framework's contracts intimately,
+recognized friction at first glance, and intervened before drift
+compounded. That means the "worker contract held" conclusions below
+reflect the **session's discipline**, not the framework's enforcement.
+
+What we honestly learned:
+
+- **Mechanical primitives work.** Atomic writes, schema validation,
+  assembler output shape, slash-command surface — all verified in
+  production. These are framework properties independent of the worker.
+- **Operator-side friction is real and reproducible.** FU-12
+  (PowerShell `$`-interpolation), FU-19 (bare-filename `state.py`
+  failures), FU-20 (Devmate command paths), and FU-22 (missed close
+  invariant) were all caught by the operator's discipline rather than
+  by the framework.
+
+What we did **not** learn:
+
+- Whether the assembled context is *sufficient* for a fresh worker
+  with no prior session memory.
+- Whether the worker contract holds when there is no operator
+  watching the next character emitted.
+- Whether the "blocked: false" close miss was a worker discipline
+  failure or a contract-clarity failure of `instructions/close.md`.
+
+The autonomous loop (Phase 3.A — single-iteration runner) is the
+**only honest way to distinguish**. The first cold-start invocation
+against clankercourts Phase 2 is the real first test. Whatever happens
+there is the signal.
+
+**Additional confounding variable (Phase 3.A.1 amendment):** the
+assembled prompt the operator read during Phase 1 was the
+pre-compaction form (~744 lines / ~70 KB). After Phase 3.A.1 (prompt
+compaction + region reorder), the autonomous loop sees the compact
+form (~30 KB) with multi-step machinery stripped, instruction
+Examples / Known tooling gaps / Behavior modes omitted, Available
+Modules de-duplicated with Architecture, and the action procedure
+moved to the tail of the prompt. Any behavior difference between
+the supervised Phase 1 run and the autonomous Phase 2 run is
+attributable to both the supervised→autonomous shift *and* the
+prompt-shape change.
+
+---
+
 ## TL;DR
 
 - **Phase 1 shipped successfully.** 4 planned steps, 4 executed cleanly,
