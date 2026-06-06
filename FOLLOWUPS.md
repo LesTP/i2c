@@ -32,7 +32,11 @@ Contract hard-required) confirmed; mitigated by pre-authoring
 `ARCH_resolver.md` during bootstrap so Phase 2 PLAN won't hit it. **New
 FU-19** added: state.py path-resolution ambiguity (instruction examples
 use bare `phases.json`; actual CLI requires `.state/phases.json` from
-project root).
+project root). **New FU-20** added: templates assume `.claude/commands/`
+autoloads in Devmate, but Devmate looks at `.llms/commands/`; the i2c
+slash commands were invisible to Devmate after bootstrap. Worked around
+by mirroring to `.llms/commands/i2c-*.md` (prefixed). Templates should
+ship both directories.
 
 **What's next (priority order):**
 
@@ -108,6 +112,7 @@ python examples\smoke_test.py
 | ID | Title | Status | Context | Trigger to address |
 |----|-------|--------|---------|--------------------|
 | FU-12 | Multi-line JSON in `state.py append` assumes bash-style heredoc / single-quote quoting | open (pilot-confirmed) | The examples in `instructions/execute.md` use `'{ "key": value }'` with embedded newlines. PowerShell quoting rules differ — backtick-vs-backslash, $-interpolation. Workers running on Windows shells will need an adapter-side note or a `state.py append --from-file <path>` alternative. **CC pilot (2026-06-05):** confirmed during bootstrap. Inline JSON via `'{"id":1,...}'` failed (PowerShell mangled the escapes — `json.loads` reported "Expecting property name enclosed in double quotes"). Workaround: assign JSON to a PowerShell variable first (`$p1='{"id":1,...}'; python ... $p1`). Worked cleanly for all 3 phases and 7 decision seeds. CC's `CLAUDE.md` adapter notes PYTHONIOENCODING but not the JSON quoting trick yet. | Phase 2 pilot on Windows (clankercourts is being developed in the user's Windows workspace). Add `--from-file` flag or document PowerShell-safe quoting in `CODEX.md` / `CLAUDE.md` adapter Tool Rules. **Update CC's CLAUDE.md** with the variable-assignment workaround once Phase 1 EXECUTE starts hitting state.py more heavily. |
+| FU-20 | Templates assume `.claude/commands/` autoloads in Devmate; it doesn't — Devmate looks at `.llms/commands/` | open (pilot-confirmed) | `templates/README.md` states "Devmate / Claude Code picks up the project's `.claude/commands/` automatically — no extra configuration step." True for Claude Code, false for Devmate. Devmate's project-level slash command convention is `.llms/commands/` (per its `agent_customization` skill docs). After CC bootstrap, the 5 i2c slash commands at `.claude/commands/*.md` were invisible to Devmate; only the operator's global `~/.llms/commands/*.md` (e2e flavor) were callable — meaning typing `/phase-plan` inside CC fired the e2e command, not the i2c one. **CC pilot (2026-06-05) workaround:** mirrored the 5 commands to `.llms/commands/i2c-*.md` (prefixed to avoid name collision with the global e2e commands). Now `/i2c-phase-plan`, `/i2c-cold-start`, etc. work inside CC; global `/phase-plan` continues to call e2e (Diplomat workflow unaffected). Cost: two parallel command directories per i2c project; small. | Address before next i2c bootstrap. Two fixes worth considering: **(a)** update `templates/README.md` + `templates/.claude/commands/` to also ship a `templates/.llms/commands/` mirror with the `i2c-` prefix convention applied by default; bootstrap step copies both. **(b)** decide on one canonical location and drop the other. **(a)** preserves Claude Code compatibility and adds Devmate compatibility; **(b)** picks a side. Lean: **(a)**, since both Claude Code and Devmate are realistic worker invocation surfaces. |
 
 ---
 
