@@ -10,9 +10,9 @@ Pipeline (per the plan):
 1. Walk up from CWD to find the project root.
 2. Run ``tools/state_machine.py``; parse ``ACTION:`` / ``NEXT:``.
 3. ``ACTION == EXIT`` → write a summary line and exit 0 (nothing to do).
-4. ``--backend codex`` → print "not yet implemented" + exit 2.
+4. Validate ``--backend`` is one of {claude, codex}.
 5. Run ``tools/assemble_context.py --action $ACTION --phase $PHASE
-   --mode autonomous --backend claude``; capture the prompt.
+   --mode autonomous --backend $BACKEND``; capture the prompt.
 6. Write the prompt to ``logs/loop/iteration_NNN_prompt.md``.
 7. Run ``claude -p`` with the prompt on stdin; capture stdout to
    ``logs/loop/iteration_NNN.txt``.
@@ -241,6 +241,68 @@ def invoke_claude(
     return proc.returncode, combined
 
 
+def invoke_codex(
+    prompt: str,
+    *,
+    cwd: Path,
+) -> tuple[int, str, str]:
+    """Run ``codex exec -`` with the prompt on stdin; return
+    (rc, jsonl_raw, agent_text).
+
+    The prompt is piped via stdin (codex supports ``-`` as the prompt
+    arg). This avoids ARG_MAX risks and shell-quoting hazards with the
+    ~40-65 KB assembled prompts the i2c assembler emits.
+
+    Codex emits JSONL events to stdout. The 5-line exit signal lives in
+    the LAST event whose shape is::
+
+        {"type": "item.completed", "item": {"type": "agent_message", "text": "..."}}
+
+    The runner saves the full JSONL stream for human / parser inspection
+    and routes the extracted agent_message text through the standard
+    ``parse_exit_signal`` flow.
+
+    Unlike claude, codex has no ``--model`` or ``--max-budget-usd`` CLI
+    flags in this version; model selection and cost caps come from the
+    codex CLI's own config.
+    """
+    cmd = [
+        "codex", "exec", "-",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--json",
+    ]
+    proc = subprocess.run(
+        cmd,
+        input=prompt,
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    jsonl_raw = proc.stdout
+    last_agent_text = ""
+    for line in jsonl_raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "item.completed":
+            item = obj.get("item", {})
+            if item.get("type") == "agent_message":
+                # Keep overwriting; the LAST agent_message is the one
+                # that carries the 5-line exit signal.
+                last_agent_text = item.get("text", "") or last_agent_text
+    # Fallback: if no agent_message was emitted (worker died early or
+    # auth failed before any output), surface combined stdout+stderr so
+    # the exit-signal parser at least sees what was captured.
+    if not last_agent_text:
+        last_agent_text = jsonl_raw + (proc.stderr or "")
+    return proc.returncode, jsonl_raw, last_agent_text
+
+
 # ---------------------------------------------------------------------------
 # Summary log
 # ---------------------------------------------------------------------------
@@ -280,12 +342,13 @@ def run_iteration(
     model: str,
     max_budget_usd: float,
     claude_invoker=invoke_claude,
+    codex_invoker=invoke_codex,
 ) -> int:
     """Execute one iteration end-to-end and return the runner exit code.
 
-    ``claude_invoker`` is a seam for tests; default delegates to the real
-    ``invoke_claude`` subprocess wrapper. The signature must match
-    ``invoke_claude``'s kwargs.
+    ``claude_invoker`` and ``codex_invoker`` are seams for tests; defaults
+    delegate to the real subprocess wrappers. Each invoker's signature
+    must match its real-implementation counterpart.
     """
     root = ac.find_project_root()
     log_dir = root / LOG_DIR_NAME
@@ -311,15 +374,8 @@ def run_iteration(
         sys.stdout.write(line + "\n")
         return 0
 
-    # 3. Codex backend stub.
-    if backend == "codex":
-        sys.stderr.write(
-            "ERROR: codex backend not yet implemented (FU pending — v1 supports "
-            "claude only).\n"
-        )
-        return 2
-
-    if backend != "claude":
+    # 3. Backend validation.
+    if backend not in ("claude", "codex"):
         sys.stderr.write(f"ERROR: unknown backend {backend!r}\n")
         return 2
 
@@ -336,21 +392,29 @@ def run_iteration(
     log_dir.mkdir(parents=True, exist_ok=True)
     prompt_path = log_dir / f"iteration_{iteration:03d}_prompt.md"
     output_path = log_dir / f"iteration_{iteration:03d}.txt"
+    jsonl_path = log_dir / f"iteration_{iteration:03d}.jsonl"  # codex only
     prompt_path.write_text(prompt, encoding="utf-8")
 
-    # 6. Invoke claude.
+    # 6. Invoke the chosen backend.
     try:
-        claude_rc, captured = claude_invoker(
-            prompt,
-            cwd=root,
-            model=model,
-            max_budget_usd=max_budget_usd,
-        )
-    except FileNotFoundError:
+        if backend == "claude":
+            worker_rc, captured = claude_invoker(
+                prompt,
+                cwd=root,
+                model=model,
+                max_budget_usd=max_budget_usd,
+            )
+        else:  # codex
+            worker_rc, jsonl_raw, captured = codex_invoker(
+                prompt,
+                cwd=root,
+            )
+            jsonl_path.write_text(jsonl_raw, encoding="utf-8")
+    except FileNotFoundError as e:
+        cli_name = e.filename or backend
         sys.stderr.write(
-            "ERROR: claude CLI not found on PATH (`claude -p` could not be "
-            "invoked). Install Claude Code or use --backend codex once "
-            "implemented.\n"
+            f"ERROR: {backend} CLI not found on PATH "
+            f"(`{cli_name}` could not be invoked).\n"
         )
         return 2
     output_path.write_text(captured, encoding="utf-8")
@@ -421,8 +485,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--backend",
         choices=("claude", "codex"),
         default="claude",
-        help="Which backend to invoke. v1 supports 'claude'; 'codex' is "
-             "stubbed and exits 2 with a structured error.",
+        help="Which backend to invoke. Supports 'claude' (uses --model / "
+             "--max-budget-usd) and 'codex' (config-driven; CLI flags ignored).",
     )
     parser.add_argument(
         "--model",

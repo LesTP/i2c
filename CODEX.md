@@ -149,6 +149,26 @@ assembled prompt on stdin, logs to `logs/loop/`.
 The runner ships an iteration-specific JSONL log path in the prompt when
 relevant; that path is the input to the turn-health check above.
 
+## Output Contract
+
+End every invocation with exactly these five lines — no additional text after:
+
+```
+EXIT: 0 | 1 | 2
+REASON: <one-line summary>
+ACTION_TYPE: PLAN | EXECUTE | REVIEW | CLOSE
+ACTION_ID: <phase.step>
+STEPS_COMPLETED: <number of actions performed in this invocation>
+```
+
+| Code | Meaning |
+|------|---------|
+| 0 | Normal completion — runner reads `.state/project.json` to decide next dispatch |
+| 1 | Blocked on entry — nothing to do |
+| 2 | Error — judgment-based escalation or health check tripped |
+
+The runner's parser uses line-anchored regexes on each field. The block can be plain or inside a fenced code block; both work. **Do not omit it** — prose-only output causes the runner to report `exit=2 "signal missing or malformed"` even when the work landed correctly in `.state/` and the commit.
+
 ## Mode
 
 Mode (autonomous vs. supervised) is set by the runner via the assembler's
