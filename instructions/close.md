@@ -184,7 +184,40 @@ For decisions that the phase touched but **did not resolve**, leave them
 open. Do not mark superseded unless a different decision genuinely
 replaced this one (rare at close time).
 
-### 7. Update PROJECT.md risks (optional)
+### 7. Update ARCHITECTURE.md
+
+The per-module `ARCH_<module>.md` files cover module-internal contract
+(step 5). `ARCHITECTURE.md` is the project-wide doc — Component Map,
+Implementation Sequence table, coupling notes, key-decision summaries —
+and its Implementation Sequence table necessarily goes stale every phase
+unless updated here.
+
+**Required:**
+
+- **Implementation Sequence status.** Find the row for this phase in the
+  Implementation Sequence table and flip its `Status` column to
+  `Complete`. If the table has no row for this phase (PLAN added the
+  phase after `ARCHITECTURE.md` was last touched), add one matching the
+  table's existing column shape.
+
+**Optional (only if this phase changed it):**
+
+- **Component Map.** If the phase clarified the module's responsibility
+  or its dependency list, update its row.
+- **Coupling Notes.** If implementation surfaced a coupling not
+  previously documented (or contradicted one that was), update the
+  relevant note.
+- **Key Decisions summary block.** If step 6 closed a decision that's
+  paraphrased in this section, update the summary line. Full decision
+  text stays in `.state/decisions.json`.
+
+If nothing changed beyond the Implementation Sequence status flip, that
+one edit is the only one needed.
+
+`ARCHITECTURE.md` is markdown, not structured state — direct file edit,
+no `state.py` call. The edit ships in the close commit (step 10).
+
+### 8. Update PROJECT.md risks (optional)
 
 If this phase resolved an item listed in `PROJECT.md`'s Risks section,
 edit the file to move that risk to Resolved (or remove). `PROJECT.md` is
@@ -193,7 +226,7 @@ markdown, not structured state — direct file edit, no `state.py` call.
 This step is **optional** in the sense that not all phases touch risks.
 If yours didn't, skip.
 
-### 8. Mark the phase complete
+### 9. Mark the phase complete
 
 ```bash
 python3 tools/state.py complete phases.json --phase $PHASE
@@ -202,29 +235,30 @@ python3 tools/state.py complete phases.json --phase $PHASE
 This sets `phases.json[id=$PHASE].status = "complete"`. No commit hash
 argument here — phases are not tied to a single commit.
 
-### 9. Commit close artifacts
+### 10. Commit close artifacts
 
 One commit for the close action's writes (contract propagation edits,
-PROJECT.md risk edits, gotcha promotions). Format:
-`phase: close — short title`.
+ARCHITECTURE.md update, PROJECT.md risk edits, gotcha promotions).
+Format: `phase: close — short title`.
 
 ```bash
-git add ARCH_<module>.md PROJECT.md .state/
+git add ARCH_<module>.md ARCHITECTURE.md PROJECT.md .state/
 git commit -m "11: close — propagate orchestrator contract, promote 2 gotchas"
 ```
 
 Always pass `-m`. The full prohibitions on interactive git commands
 apply (see the Shell command discipline section in your Worker Contract).
 
-If close made no edits beyond `.state/` (no contract propagation, no
-PROJECT.md change), the commit is `.state/`-only:
+If close made no other doc edits (no `ARCH_<module>.md` propagation, no
+PROJECT.md change), the minimum commit is the Implementation Sequence
+status flip plus `.state/`:
 
 ```bash
-git add .state/
+git add ARCHITECTURE.md .state/
 git commit -m "11: close — mark phase complete, promote 1 gotcha"
 ```
 
-### 10. Append a CLOSE devlog entry
+### 11. Append a CLOSE devlog entry
 
 One entry per CLOSE invocation. `action: "close"`, `step: null`,
 `outcome: "complete"` for a clean close. Summary records the artifacts
@@ -249,7 +283,7 @@ python3 tools/state.py append devlog.jsonl '{
   breakage; you emitted `EXIT 2`
 - `failed` — phase-level tests broken (step 2 failed); you emitted `EXIT 2`
 
-### 11. Set the gate
+### 12. Set the gate
 
 ```bash
 python3 tools/state.py set project.json blocked=true
@@ -303,17 +337,22 @@ python3 tools/state.py update-record decisions.json \
   decision="JSONL append-only files. 24 tests, including injected-interrupt crash test, pass."
 
 # No contract propagation needed (no devlog entries in phase 5 with non-empty contracts).
+
+# Update ARCHITECTURE.md: flip the event_store row in the Implementation
+# Sequence table from "In progress" (or whatever) to "Complete". No other
+# sections changed this phase. (Direct file edit.)
+
 # No PROJECT.md risk to close.
 
 # Mark phase complete:
 python3 tools/state.py complete phases.json --phase 5
 
 # Commit:
-git add .state/
+git add ARCHITECTURE.md .state/
 git commit -m "5: close — event_store core storage, D-16 resolved"
 
 # Devlog:
-python3 tools/state.py append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule). No contract changes.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
+python3 tools/state.py append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule); ARCHITECTURE.md event_store row → Complete. No ARCH_<module> contract changes.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
 
 # Set the gate:
 python3 tools/state.py set project.json blocked=true
@@ -345,6 +384,11 @@ git --no-pager show $(git log --pretty=%H --grep="^11\.4:" -n 1) --stat | grep A
 # (Output confirms ARCH_orchestrator.md was in the commit.)
 # No additional propagation needed.
 
+# Update ARCHITECTURE.md: flip orchestrator row to Complete; also update
+# the Coupling Notes paragraph that mentioned orchestrator↔event_store
+# now that the boundary test surfaced an extra adapter shim. (Direct
+# file edit; both edits in one pass.)
+
 # Close two decisions:
 python3 tools/state.py update-record decisions.json \
   --match id=D-22 \
@@ -359,12 +403,13 @@ python3 tools/state.py update-record decisions.json \
 # Mark phase complete:
 python3 tools/state.py complete phases.json --phase 11
 
-# Commit (only .state/ changed since contract was already propagated immediately):
-git add .state/
+# Commit (ARCH_orchestrator.md was propagated immediately in step 11.4;
+# ARCHITECTURE.md picks up the status flip + coupling-note update):
+git add ARCHITECTURE.md .state/
 git commit -m "11: close — orchestrator complete, 2 decisions resolved"
 
 # Devlog:
-python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed. Contract propagation for ARCH_orchestrator.md confirmed in step 11.4 commit.","contracts":[],"timestamp":"2026-06-04T11:00:00Z"}'
+python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed; ARCHITECTURE.md orchestrator row → Complete plus coupling-note refresh. ARCH_orchestrator.md propagation confirmed in step 11.4 commit.","contracts":[],"timestamp":"2026-06-04T11:00:00Z"}'
 
 # Set the gate:
 python3 tools/state.py set project.json blocked=true
