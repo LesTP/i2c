@@ -102,6 +102,105 @@ python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 |----|-------|--------|---------|--------------------|
 | FU-22 | Runner post-close invariant check — assert `blocked == true` + current phase `status: complete` after every CLOSE | **closed** (Phase 3.A) | See resolution note below. Shipped as `tools/invariants.py` (`check_post_action(root, action)`); the single-iteration runner calls it after every CLOSE dispatch and halts-and-surfaces on failure. Reusable from supervised tooling too. |
 
+### Invocation guidance: running the loop from an i2c-consumer project
+
+Once `tools/run_iteration.py` ships (Phase 3.A), the canonical invocation from
+a consumer project (e.g. clankercourts) is:
+
+```powershell
+cd /path/to/your-consumer-project
+python3 ../i2c/tools/run_iteration.py --backend claude --model sonnet --max-budget-usd 5.00
+```
+
+**Why run from i2c upstream rather than copy the runner into the consumer.**
+The runner imports `assemble_context`, `state_machine`, `invariants`, and
+`validate` as Python siblings. Python adds the script's directory
+(`i2c/tools/`) to `sys.path[0]`, so all framework code resolves to i2c
+upstream. The consumer-local `tools/` is only invoked when the **worker's
+procedure text** tells it to (`python3 tools/state.py ...`) — at which point
+CWD is the consumer root (set explicitly via `subprocess.run(..., cwd=root)`),
+so the consumer's local `state.py` runs.
+
+This gives a clean version split:
+
+- **Framework pipeline** (runner, state_machine, assembler, invariants) → i2c
+  upstream. One source of truth, hermetic upgrades.
+- **Worker tool surface** (`tools/state.py` invoked by the worker for state
+  writes) → consumer-local, **but must be ABI-compatible with the procedure
+  text**. ABI here means both the subcommand set *and* the argument-form
+  features the procedures assume (FU-19 bare-filename auto-resolve;
+  FU-21 `--from-file` payload path; future flag additions). The
+  consumer-local copy must move in lockstep with i2c upstream — sync it
+  every time you sync `instructions/*.md`. There is no "may lag" mode that
+  is actually safe; pre-FU-19 state.py fails every worker write because
+  the procedure examples write bare filenames.
+  lacks.
+- **Procedure prose** (`instructions/*.md`) → consumer-local. The assembler
+  reads whatever the consumer has on disk and embeds it in the prompt.
+- **Project state + contracts** (`.state/`, `PROJECT.md`, `ARCH_*.md`) →
+  consumer-local, as expected.
+
+**Preflight diff — before each consumer's first autonomous run, and after
+each i2c upstream pull.** Compare these files between the consumer and i2c
+upstream:
+
+PowerShell:
+
+```powershell
+cd /path/to/your-consumer-project
+foreach($f in @(
+  'instructions/plan.md','instructions/execute.md',
+  'instructions/review.md','instructions/close.md',
+  'tools/state.py','tools/assemble_context.py','tools/validate.py'
+)) {
+  $cc = "$f"; $i2 = "../i2c/$f"
+  if ((Test-Path $cc) -and (Test-Path $i2)) {
+    $h1 = (Get-FileHash $cc -Algorithm SHA256).Hash
+    $h2 = (Get-FileHash $i2 -Algorithm SHA256).Hash
+    if ($h1 -eq $h2) { Write-Host "MATCH    $f" }
+    else { Write-Host "DIFFER   $f  delta=$((Get-Item $i2).Length - (Get-Item $cc).Length)" }
+  }
+}
+```
+
+bash:
+
+```bash
+cd /path/to/your-consumer-project
+for f in \
+  instructions/plan.md instructions/execute.md \
+  instructions/review.md instructions/close.md \
+  tools/state.py tools/assemble_context.py tools/validate.py
+do
+  if [ -f "$f" ] && [ -f "../i2c/$f" ]; then
+    if cmp -s "$f" "../i2c/$f"; then echo "MATCH    $f"
+    else
+      d=$(( $(stat -c%s "../i2c/$f") - $(stat -c%s "$f") ))
+      echo "DIFFER   $f  delta=$d"
+    fi
+  fi
+done
+```
+
+Acceptance criteria for invoking from i2c upstream:
+
+| File | Must match? | If divergent |
+|---|---|---|
+| `instructions/*.md` | **Yes** | Worker reads stale procedure text the assembler (newer) and invariants (newer) may reject or work against. Sync into the consumer with an explicit commit before the autonomous run. |
+| `tools/validate.py` | **Yes** | Schema validation must agree across the pipeline. Sync. |
+| `tools/state.py` | **Yes** (procedures depend on FU-19 / FU-21 features) | Pre-FU-19 state.py fails every worker write — instruction examples write bare filenames like `state.py append devlog.jsonl '...'` and require auto-resolve to `.state/devlog.jsonl`. Pre-FU-21 state.py works only with shell-quoted JSON (PowerShell `$`-interpolation surface area). Sync state.py whenever you sync `instructions/*.md`. |
+| `tools/assemble_context.py` | No (i2c is canonical) | Read from i2c upstream via sibling import. The consumer's local copy is unused for autonomous runs and may safely lag. |
+
+**Alternative — pin framework into the consumer (hermetic builds).** Copy
+`tools/{run_iteration,state_machine,invariants}.py` from i2c and overwrite
+`tools/{state,assemble_context}.py` and `instructions/*.md` in the consumer,
+then invoke `python3 tools/run_iteration.py` locally. Each i2c upgrade
+becomes a "framework snapshot" commit in the consumer's history. Use when
+the consumer needs framework versions pinned to commits in its own repo
+(audit, compliance, or air-gapped deploy scenarios).
+
+(First documented during CC autonomous-loop preflight, 2026-06-06.)
+
 ## Prose — instructions, WORKER_SPEC, adapters
 
 | ID | Title | Status | Context | Trigger to address |
@@ -110,6 +209,7 @@ python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 | FU-9 | Refine regime in execute.md uses `step: null` for devlog entries | open | The schema allows `step: null` and the prose recommends it for Refine iterations. But there's no constraint that ties a Refine entry to *which* iteration (no iteration counter field). The commit message carries it (`14.iter3:`) but the structured data doesn't. | Phase 2 pilot does enough Refine work that iteration-by-iteration analytics matter. Add `iteration: int` optional field to `devlog_entry.schema.json`. |
 | FU-10 | Production-incident anecdotes in WORKER_SPEC §3 are e2e-vintage | open | Per D-prose-8 the Codex 105k-char and Claude 5-3 incidents stay verbatim — they have pedagogical value. But once i2c has its own incidents, those should be added or substituted to keep the pedagogy current. | i2c accumulates 2+ documented loop-discipline failures of its own. Add a refresh pass to WORKER_SPEC §3. |
 | FU-11 | Per-file JSON-example validation isn't automated | open | The only check that `instructions/*.md` examples validate against the schemas is manual. A test that lifts every fenced JSON block in `instructions/**.md` and validates against the registered schema would catch drift. | A schema change breaks an instruction example silently. Pattern: parse markdown code fences, route by surrounding prose hint or filename hint. |
+| FU-26 | `close.md` and `plan.md` disagree on who advances `project.json.phase` | open (pilot-confirmed) | `close.md` step 11 prose says: *"Leave `state` as `close`. The human (or orchestrator) clears the gate later by setting `blocked=false state=plan`, which lets the next phase start. **Do not advance `phase`** — the next plan action handles phase identification."* But the same file's "What this action does NOT do" section says: *"Advance `project.json.phase` (the human / orchestrator does that implicitly when clearing the gate)"* — directly contradictory. Meanwhile `plan.md` has no branch for "current phase is complete, find next pending phase" — it expects `project.json.phase` to BE the phase to plan. `state_machine.py` and `run_iteration.py` don't advance `phase` either. **CC autonomous-loop preflight (2026-06-06):** operator cleared the gate per close.md step-11 prose (`state.py set project.json blocked=false state=plan`); state machine dispatched PLAN; assembler built the prompt for already-complete phase 1; operator caught the mistake before claude consumed budget. Restarted after `state.py set project.json phase=2`. | Reconcile. Recommended: pick the "human/orchestrator advances phase when clearing the gate" stance in close.md (more honest given zero automation today), AND add a phase-advance branch to `plan.md` so if `project.json.phase` is complete the worker explicitly advances to the lowest pending phase via `state.py set project.json phase=<N>`. The two fixes together make PLAN responsible end-to-end and keep the gate-clear primitive minimal. |
 
 ## Cross-platform
 
@@ -117,6 +217,8 @@ python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 |----|-------|--------|---------|--------------------|
 | FU-12 | Multi-line JSON in `state.py append` assumes bash-style heredoc / single-quote quoting | open (pilot-confirmed twice) | The examples in `instructions/execute.md` use `'{ "key": value }'` with embedded newlines. PowerShell quoting rules differ — backtick-vs-backslash, $-interpolation. Workers running on Windows shells will need an adapter-side note or a `state.py append --from-file <path>` alternative. **CC pilot (2026-06-05):** confirmed during bootstrap. Inline JSON via `'{"id":1,...}'` failed (PowerShell mangled the escapes — `json.loads` reported "Expecting property name enclosed in double quotes"). Workaround: assign JSON to a PowerShell variable first (`$p1='{"id":1,...}'; python ... $p1`). Worked cleanly for all 3 phases and 7 decision seeds. **CC pilot Phase 1 close (2026-06-06):** confirmed in production again — `state.py append-gotcha "..."` with `$defs` / `$refs` in the string silently lost those tokens (PowerShell substituted with empty values). Two follow-up commits to detect and repair. Resolution path is now **FU-21** (`--from-file` flag family). | Phase 3 — ship FU-21 (`--from-file`) and update CC's `CLAUDE.md` Tool Rules to recommend the new path. Pilot has spoken: this is the highest-impact tooling gap before autonomous mode. |
 | FU-20 | Templates assume `.claude/commands/` autoloads in Devmate; project-level `.llms/commands/` also doesn't get picked up in the workflows seen so far — operator-global `~/.llms/commands/` is the only reliable surface | open (pilot-confirmed) | `templates/README.md` states "Devmate / Claude Code picks up the project's `.claude/commands/` automatically — no extra configuration step." True for Claude Code, false for Devmate. Devmate's `agent_customization` skill documents `.llms/commands/` as the project-level convention. **CC pilot (2026-06-05/06) found both don't work in practice for the current Devmate session:** the operator's Devmate session is reading commands from `C:\Users\myeluashvili\.llms\commands\` only; neither `p:\shared\clankercourts\.claude\commands\*.md` nor `p:\shared\clankercourts\.llms\commands\*.md` showed up in the personal_context skills list. Possible causes: network-share path not scanned, workspace-root mismatch, requires Devmate restart to pick up new project-level commands, or project-level scanning not actually implemented for this Devmate build. **Workaround applied:** copied the 5 i2c slash commands to `~/.llms/commands/i2c-*.md` (operator-global with `i2c-` prefix). Now `/i2c-phase-plan`, `/i2c-cold-start`, etc. are available in any Devmate session; global `/phase-plan` continues to call e2e (Diplomat workflow unaffected). The commands shell out to `python tools/...` so they only do useful work inside an i2c project root; elsewhere they fail with a clear error. | Address before next i2c bootstrap: **(a)** update templates to ship the `i2c-` prefixed commands at both `templates/.claude/commands/` (for Claude Code) and `templates/.llms/commands/` (for Devmate at project-level if/when that works), AND document a manual copy-to-global step for Devmate users (`xcopy templates\.llms\commands\* %USERPROFILE%\.llms\commands\`); **(b)** investigate whether Devmate project-level `.llms/commands/` actually loads — may be a config / workspace setup question, or a network-share limitation. If (b) confirms project-level works under some setup, document the prerequisites. |
+| FU-27 | Windows `Path.cwd().resolve()` expands mapped network drives to UNC; breaks `subprocess.run(cwd=...)` for `claude.exe` | **closed** (2026-06-06) | When a consumer project lives on a Windows mapped network drive (e.g. `P:\shared\clankercourts` mapping to `\\192.168.0.50\shared\shared\clankercourts`), `Path.cwd().resolve()` expands the path to its UNC form. Downstream `subprocess.run(..., cwd=UNC)` breaks because Windows CMD (which `claude.exe`'s plugin loader shells out to) cannot set a UNC path as its current directory: `CMD does not support UNC paths as current directories`. Worker then crashes (observed cascading Bun segfault in the bundled `claude.exe`) and the runner reports `exit signal missing or malformed`. **CC autonomous-loop iteration 1 attempt (2026-06-06):** confirmed in production. **Resolution:** `tools/assemble_context.py::find_project_root` now uses `.absolute()` instead of `.resolve()`. `.absolute()` keeps the mapped drive letter while producing an absolute path that supports the parent walk; doesn't normalize `..` segments but that's irrelevant for CWD-derived calls. POSIX behavior unchanged (`.absolute()` ≈ `.resolve()` on Linux for typical paths). | n/a — shipped. |
+| FU-28 | Meta laptop sandbox prevents `claude -p` subprocess autonomy; consumer projects must invoke the loop from a server | open (pilot-confirmed; Meta-laptop-specific) | Running `python3 ../i2c/tools/run_iteration.py --backend claude ...` from a Meta-issued Windows laptop hangs indefinitely. The wrapper chain `claude` → `dotslash` → `fast_mux` → bun-bundled `claude.exe` doesn't terminate cleanly under sandboxed non-interactive stdin. Even a trivial standalone `"say hi" | claude -p` hangs >5 minutes with no output. The Meta sandbox restricts autonomy (subprocess pipe handling, child-process exit semantics, or both) such that `claude -p` is non-functional for autonomous-loop purposes. **CC autonomous-loop iteration 1 attempt (2026-06-06):** confirmed in production; runner timed out after 25min with no claude output, no `iteration_NNN.txt` written, no exit signal. `fast_mux.exe` was still alive holding stdout open after the inner Bun crashed. **Workaround applied:** invoke the loop from a server (operator's Raspberry Pi `pirozhok`) where the consumer project is mounted via Samba (same disk as the laptop's mapped drive). Pattern: `ssh pirozhok "incus exec claude-code -- su - claude -c 'cd /home/claude/workspace/<consumer> && python3 ../i2c/tools/run_iteration.py ...'"`. First autonomous PLAN ran cleanly in ~115s, exit=0. See the Invocation guidance subsection under "Tooling — runner" for the consumer-side decision tree. | Add a "consumers on Meta-issued laptops" note to that Invocation guidance subsection: any Meta laptop blocks `claude -p` autonomy regardless of how the loop is invoked. The runner doesn't need a fix; the operational guidance just needs to state explicitly: laptop = supervised-only; server = autonomous. (Followup author note: the laptop-vs-server framing should also influence how we recommend operators pick where the consumer project lives — Samba-mounted shared disk lets the same `.state/` see both supervised laptop sessions and autonomous server runs without any sync friction.) |
 
 ---
 

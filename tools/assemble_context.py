@@ -94,8 +94,18 @@ def find_project_root(start: Path | None = None) -> Path:
     The directory containing `.state/project.json` is the project root. All
     file lookups (PROJECT.md, ARCHITECTURE.md, ARCH_*.md, instructions/,
     adapter file) are relative to it.
+
+    Uses ``.absolute()`` rather than ``.resolve()`` so the returned path
+    keeps the form the caller is using. On Windows in particular,
+    ``Path.cwd().resolve()`` expands a mapped network drive (e.g.
+    ``P:\\shared\\foo``) to its UNC form (``\\\\host\\share\\foo``), which
+    then breaks downstream ``subprocess.run(..., cwd=...)`` calls because
+    CMD-based child processes (notably the claude CLI's plugin loader)
+    cannot set a UNC path as their current directory. ``.absolute()``
+    preserves the drive letter while still producing an absolute path
+    that supports the parent walk below.
     """
-    cwd = (start or Path.cwd()).resolve()
+    cwd = (start or Path.cwd()).absolute()
     for candidate in [cwd, *cwd.parents]:
         if (candidate / ".state" / "project.json").is_file():
             return candidate
