@@ -386,7 +386,7 @@ They're short operational strings, not prose. Written at phase close
 ```json
 [
   { "id": 1, "module": "event_store", "title": "Core storage", "regime": "build", "status": "complete" },
-  { "id": 11, "module": "orchestrator", "title": "Pipeline + event loop", "regime": "build", "status": "in_progress" }
+  { "id": 11, "module": "orchestrator", "title": "Pipeline + event loop", "regime": "build", "status": "pending" }
 ]
 ```
 

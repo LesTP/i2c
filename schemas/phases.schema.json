@@ -39,8 +39,8 @@
       },
       "status": {
         "type": "string",
-        "enum": ["pending", "in_progress", "complete"],
-        "description": "Phase status. Catches typos that would make the phase invisible to summary queries."
+        "enum": ["pending", "complete"],
+        "description": "Phase status. Binary: pending = not yet completed; complete = closed (audit gate set). Catches typos that would make the phase invisible to summary queries."
       }
     }
   }

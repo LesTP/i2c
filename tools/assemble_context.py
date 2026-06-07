@@ -668,6 +668,24 @@ def render_worker_spec(ctx: AssemblerContext) -> str:
 # --- Action Context banner content -----------------------------------------
 
 
+_OUTPUT_CONTRACT_REMINDER = """\
+**End your response with EXACTLY these five lines. No prose after.**
+
+```
+EXIT: 0 | 1 | 2
+REASON: <one-line summary>
+ACTION_TYPE: PLAN | EXECUTE | REVIEW | CLOSE
+ACTION_ID: <phase.step>
+STEPS_COMPLETED: <number of actions performed in this invocation>
+```
+
+The runner parses these via line-anchored regex. Omitting them causes the
+iteration to be reported as `exit=2 "signal missing or malformed"` even if
+your work landed correctly in `.state/` and the commit. See your adapter's
+`## Output Contract` section for full semantics.
+"""
+
+
 def render_action_heading(ctx: AssemblerContext) -> str:
     """## Action: $TYPE — or ## Active Action: $TYPE under --mode supervised (§9.2)."""
     if ctx.action is None:
@@ -1057,6 +1075,16 @@ def build_full_prompt(ctx: AssemblerContext) -> str:
         chunk = renderer(ctx)
         if chunk:
             parts.append(chunk.rstrip())
+
+    # Region 5: Output Contract reminder (absolute tail — recency anchor so
+    # workers whose model defaults conversational, like newer codex, are
+    # less likely to skip the 5-line exit signal). Autonomous-only,
+    # matching the existing autonomous_only convention for Output Contract
+    # in WORKER_SPEC — supervised reviewers read the worker output directly
+    # and don't need a parseable signal block.
+    if ctx.mode == "autonomous":
+        parts.append(assemble_banner("OUTPUT CONTRACT — REMINDER"))
+        parts.append(_OUTPUT_CONTRACT_REMINDER.rstrip())
 
     body = "\n\n".join(parts)
     if not body.endswith("\n"):

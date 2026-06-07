@@ -24,11 +24,11 @@ in the assembled `Current Phase` section, then follow the matching branch.
    target. Refer to it as **`phase.step`** in commits and devlog entries
    (e.g., `11.3`).
 
-   `state.py` only writes the terminal `complete` status; there is no
-   subcommand for marking a step `in_progress`. If you want a visible
-   "started" signal for supervised observers, append a devlog entry with
-   `outcome: "partial"` mid-step, then the normal completion entry at the
-   end. For unattended runs, skip the marker and just complete in step 5.
+   Step status is binary (`pending` until `complete`). If you want a
+   visible "started" signal for supervised observers, append a devlog entry
+   with `outcome: "partial"` mid-step, then the normal completion entry at
+   the end. For unattended runs, skip the marker and just complete in step
+   5.
 
 2. **Read context.** Read the source files and tests relevant to the step.
    Re-read **immediately before editing** — stale context causes lost updates.
@@ -316,9 +316,6 @@ Stay in your lane: do the step, record the result, exit.
 ## Known tooling gaps referenced above
 <!-- assembler:omit_in_prompt -->
 
-- **In-progress marker:** `state.py` has no subcommand to set a step
-  `status="in_progress"`. Workaround in step 1 (devlog `partial` entry).
-  Tracked as **FU-1** in `FOLLOWUPS.md`.
 - **Mid-phase step append:** `state.py` has no `append-step` subcommand.
   Adjacent work surfaces in the next PLAN action via `Deferred:` flag in
   devlog summary. Tracked as **FU-2** in `FOLLOWUPS.md`.

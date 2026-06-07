@@ -22,14 +22,15 @@ the phase number you are planning. Then look at the assembled `Phases` section
 (sourced from `.state/phases.json`):
 
 - **No record exists for this phase number** → this is a new phase. You will
-  create the phase record in step 4.
+  create the phase record (with `status: "pending"`) in step 4.
 - **Record exists with `status: "pending"`** → the phase was outlined
   upstream (typically by a prior CLOSE action that scheduled future phases).
-  You will promote it to `in_progress` and may need to refine the
-  `dependencies`, `regime`, or `title` fields below.
-- **Record exists with `status: "in_progress"`** → you are re-planning an
-  already-started phase. This is unusual; verify with the orchestrator before
-  proceeding (escalate via `EXIT 2` if unclear).
+  Leave it as-is; you may refine `dependencies`, `regime`, or `title` via
+  `update-record` if needed.
+- **Record exists with `status: "complete"`** → the phase is already closed.
+  PLAN was mis-dispatched against a completed phase. Escalate via `EXIT 2`
+  (reason "plan called on completed phase"); the human / orchestrator likely
+  forgot to advance `project.json.phase`.
 
 ### 2. Determine scope and outcomes
 
@@ -73,7 +74,7 @@ python3 tools/state.py append-record phases.json '{
   "title": "Pipeline + event loop",
   "regime": "build",
   "dependencies": ["event_store"],
-  "status": "in_progress"
+  "status": "pending"
 }'
 ```
 
@@ -85,17 +86,11 @@ Use an empty array for leaf modules. Non-empty `dependencies` triggers the
 Pre-plan Dependency Probe section below (if assembled into your prompt) and
 the Pre-close Integration Check in `instructions/close.md`.
 
-If the record already exists as `pending`, promote it. Use `state.py set` is
-not supported on array files (FU-3); instead, rewrite via `complete` if you
-only need to bump status, or escalate if larger edits are needed. For now,
-treat `pending → in_progress` transitions as: append the assumed-correct
-record only on first plan; subsequent plans inherit it.
-
-> **Status tooling gap.** There is no atomic `state.py` op to flip a phase
-> record's status from `pending` to `in_progress` without going to
-> `complete`. Workaround for now: leave `pending` records as-is during PLAN;
-> the assembler treats the current `project.json.phase` as the active one
-> regardless of `phases.json` status. Tracked as **FU-13** in `FOLLOWUPS.md`.
+If the record already exists as `pending`, leave it as-is. Phase status is
+binary (`pending` until `complete`); the active phase is identified by
+`project.json.phase`, not by an in-flight status field. If you need to amend
+`dependencies` / `regime` / `title` on the existing record, use
+`state.py update-record phases.json --match id=N ...`.
 
 ### 5. *(Conditional)* Pre-plan: Dependency Probe - non-leaf modules only
 <!-- assembler:requires=dependencies_nonempty -->
@@ -377,7 +372,7 @@ start the first execute step in this invocation.
 Phase 5 (`event_store`, Build, no dependencies). Three steps.
 
 ```bash
-python3 tools/state.py append-record phases.json '{"id":5,"module":"event_store","title":"Core storage","regime":"build","dependencies":[],"status":"in_progress"}'
+python3 tools/state.py append-record phases.json '{"id":5,"module":"event_store","title":"Core storage","regime":"build","dependencies":[],"status":"pending"}'
 
 python3 tools/state.py append-record steps.json '{"phase":5,"step":1,"title":"Append-only writer with fsync","status":"pending"}'
 python3 tools/state.py append-record steps.json '{"phase":5,"step":2,"title":"Cursor-based reader","status":"pending"}'
@@ -400,7 +395,7 @@ Phase 11 (`orchestrator`, Build, depends on `event_store`). Probe runs
 first; mismatch surfaces; one step added to handle the gap.
 
 ```bash
-python3 tools/state.py append-record phases.json '{"id":11,"module":"orchestrator","title":"Pipeline + event loop","regime":"build","dependencies":["event_store"],"status":"in_progress"}'
+python3 tools/state.py append-record phases.json '{"id":11,"module":"orchestrator","title":"Pipeline + event loop","regime":"build","dependencies":["event_store"],"status":"pending"}'
 
 # Probe finds idempotency_key kwarg is in the real surface but not the fake.
 python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"probe","outcome":"complete","summary":"Probed event_store: append() takes idempotency_key kwarg in real impl; fake omits it. Will adapt orchestrator to pass it; bug logged for fake.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T07:30:00Z"}'
@@ -425,7 +420,7 @@ python3 tools/state.py set project.json state=execute
 Phase 14 (`formatting`, Refine, no dependencies). Goal-based, time-budgeted.
 
 ```bash
-python3 tools/state.py append-record phases.json '{"id":14,"module":"formatting","title":"Telegram message formatting polish","regime":"refine","dependencies":[],"status":"in_progress"}'
+python3 tools/state.py append-record phases.json '{"id":14,"module":"formatting","title":"Telegram message formatting polish","regime":"refine","dependencies":[],"status":"pending"}'
 
 python3 tools/state.py append-record decisions.json '{"id":"D-30","title":"Phase 14 goal","status":"closed","priority":"high","decision":"MarkdownV2 escaping handles all edge cases observed in last week of group activity; messages render correctly on iOS, Android, Web.","rationale":"Recurring formatting bugs in production; correctness is perceptual."}'
 
@@ -446,10 +441,7 @@ python3 tools/state.py set project.json state=execute
 ## Known tooling gaps referenced above
 <!-- assembler:omit_in_prompt -->
 
-- **No `state.py` op to flip phase record status from `pending` to
-  `in_progress`** without going to `complete`. Workaround: leave the phase
-  record as `pending` and rely on `project.json.phase` to identify the
-  active phase. Tracked as **FU-13** in `FOLLOWUPS.md`.
-- **No `state.py set` on array files.** Limits how plan can amend an
-  existing phase record (e.g., to add a `dependencies` entry discovered
-  during probe). Tracked as **FU-3** in `FOLLOWUPS.md`.
+- **No `state.py set` on array files.** `update-record` covers single-record
+  field updates (used above to amend `dependencies` etc. on existing phase
+  records). Generic-set across N records is not supported. Tracked as
+  **FU-3** in `FOLLOWUPS.md`.

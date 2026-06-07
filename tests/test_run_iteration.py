@@ -180,14 +180,6 @@ class TestStateMachineExit(unittest.TestCase):
             self.assertIn("exit=0", summary)
 
 
-class TestCodexBackendStub(unittest.TestCase):
-    def test_codex_returns_2_with_structured_error(self):
-        with TempProject():
-            rc, out, err = run_iter(backend="codex")
-            self.assertEqual(rc, 2)
-            self.assertIn("codex backend not yet implemented", err)
-
-
 class TestHappyPath(unittest.TestCase):
     """Fixture is phase=2 execute with 2 pending steps → EXECUTE/execute."""
 
@@ -266,7 +258,7 @@ class TestCloseInvariantHalt(unittest.TestCase):
 
     def test_close_without_blocked_halts_with_invariant_error(self):
         with TempProject() as p:
-            # Drive state to "close" + phase 2 still in_progress, so the
+            # Drive state to "close" + phase 2 still pending, so the
             # state machine dispatches CLOSE.
             p.patch_project(state="close", blocked=False)
             # Worker emits a clean EXIT 0 signal but DOESN'T update

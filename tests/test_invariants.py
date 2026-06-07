@@ -90,7 +90,7 @@ class TestCheckPostAction(unittest.TestCase):
     def test_close_fails_when_phase_not_complete(self):
         with TempProject() as p:
             p.patch_project(state="close", blocked=True, phase=2)
-            p.patch_phase_status(2, "in_progress")
+            p.patch_phase_status(2, "pending")
             failures = inv.check_post_action(p.root, "close")
             self.assertEqual(len(failures), 1)
             self.assertIn("must be 'complete'", failures[0])
@@ -98,7 +98,7 @@ class TestCheckPostAction(unittest.TestCase):
     def test_close_fails_when_both_invariants_violated(self):
         with TempProject() as p:
             p.patch_project(state="close", blocked=False, phase=2)
-            p.patch_phase_status(2, "in_progress")
+            p.patch_phase_status(2, "pending")
             failures = inv.check_post_action(p.root, "close")
             self.assertEqual(len(failures), 2)
 

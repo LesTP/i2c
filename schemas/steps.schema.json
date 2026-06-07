@@ -26,8 +26,8 @@
       },
       "status": {
         "type": "string",
-        "enum": ["pending", "in_progress", "complete"],
-        "description": "Step status. Replaces e2e checkbox parsing — catches the 'missing checkbox' bug class by construction."
+        "enum": ["pending", "complete"],
+        "description": "Step status. Binary: pending = not yet completed; complete = work done and committed. Replaces e2e checkbox parsing — catches the 'missing checkbox' bug class by construction."
       },
       "commit": {
         "type": "string",

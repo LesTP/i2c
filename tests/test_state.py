@@ -34,7 +34,7 @@ class TempStateDir:
             "phase": 1, "state": "execute", "blocked": False, "gotchas": []
         })
         write_json(self.state_dir / "phases.json", [
-            {"id": 1, "title": "Bootstrap", "regime": "build", "dependencies": [], "status": "in_progress"},
+            {"id": 1, "title": "Bootstrap", "regime": "build", "dependencies": [], "status": "pending"},
             {"id": 2, "title": "Loop", "regime": "build", "dependencies": [], "status": "pending"},
         ])
         write_json(self.state_dir / "steps.json", [
@@ -420,18 +420,20 @@ class TestUpdateRecord(unittest.TestCase):
             self.assertEqual(data[0]["status"], "closed")
             self.assertEqual(data[0]["decision"], "Use local FS")
 
-    def test_update_phase_status(self):
+    def test_update_phase_field(self):
         with TempStateDir() as t:
-            # FU-13 scenario: flip phase from pending to in_progress
+            # Generic update-record on a phase field (status is binary and
+            # set by `complete`; other phase fields like title can be amended
+            # via update-record).
             rc, out, err = run_state(
                 "update-record", str(t.state_dir / "phases.json"),
                 "--match", "id=2",
-                "status=in_progress",
+                "title=Main loop",
             )
             self.assertEqual(rc, 0, msg=err)
             data = json.loads((t.state_dir / "phases.json").read_text())
             phase2 = next(p for p in data if p["id"] == 2)
-            self.assertEqual(phase2["status"], "in_progress")
+            self.assertEqual(phase2["title"], "Main loop")
 
     def test_update_step_notes(self):
         with TempStateDir() as t:
@@ -793,7 +795,7 @@ class TestFromFileUpdateRecord(unittest.TestCase):
     def test_round_trips_field_updates(self):
         with TempStateDir() as t:
             payload = t.state_dir.parent / "updates.json"
-            payload.write_text(json.dumps({"status": "in_progress"}),
+            payload.write_text(json.dumps({"title": "Main loop"}),
                                encoding="utf-8")
             rc, out, err = run_state(
                 "update-record", str(t.state_dir / "phases.json"),
@@ -803,16 +805,16 @@ class TestFromFileUpdateRecord(unittest.TestCase):
             self.assertEqual(rc, 0, msg=err)
             data = json.loads((t.state_dir / "phases.json").read_text())
             phase2 = next(p for p in data if p["id"] == 2)
-            self.assertEqual(phase2["status"], "in_progress")
+            self.assertEqual(phase2["title"], "Main loop")
 
     def test_positional_and_from_file_mutex(self):
         with TempStateDir() as t:
             payload = t.state_dir.parent / "u.json"
-            payload.write_text('{"status":"in_progress"}', encoding="utf-8")
+            payload.write_text('{"title":"Main loop"}', encoding="utf-8")
             rc, out, err = run_state(
                 "update-record", str(t.state_dir / "phases.json"),
                 "--match", "id=2",
-                "status=in_progress",
+                "title=Main loop",
                 "--from-file", str(payload),
             )
             self.assertEqual(rc, 2)

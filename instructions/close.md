@@ -20,8 +20,8 @@ devlog conventions from `instructions/execute.md`.
 Read `project.json.phase` from the assembled `Project State` section. That
 is the phase you are closing. Confirm:
 
-- The phase's record in `phases.json` has `status: "in_progress"` (it
-  should — plan promoted it on creation).
+- The phase's record in `phases.json` has `status: "pending"` (binary; PLAN
+  leaves it pending until CLOSE flips it to `complete` in step 8).
 - Every step in `steps.json` for this phase has `status: "complete"`
   (review just ran, so this should be true).
 

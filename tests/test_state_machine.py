@@ -226,7 +226,7 @@ class TestDecideMatrix(unittest.TestCase):
         steps = [
             {"phase": 1, "step": 1, "status": "pending", "title": "x"},
             {"phase": 2, "step": 1, "status": "pending", "title": "y"},
-            {"phase": 2, "step": 2, "status": "in_progress", "title": "z"},
+            {"phase": 2, "step": 2, "status": "complete", "title": "z", "commit": "def4567"},
             {"phase": 2, "step": 3, "status": "complete", "title": "q", "commit": "abc1234"},
         ]
         self.assertEqual(sm.count_pending_steps(steps, 2), 1)
@@ -243,8 +243,8 @@ class TestStateMachineCli(unittest.TestCase):
     """End-to-end CLI tests: temp project → main() → parsed stdout."""
 
     def test_fixture_baseline_dispatches_execute(self):
-        # Fixture: phase=2 execute, steps 2.1 complete, 2.2 in_progress,
-        # 2.3 pending, 2.4 pending. Pending count for phase 2 = 2 → EXECUTE/execute.
+        # Fixture: phase=2 execute, steps 2.1 complete, 2.2/2.3/2.4 pending.
+        # Pending count for phase 2 = 3 → EXECUTE/execute.
         with TempProject():
             rc, out, err = run_main()
             self.assertEqual(rc, 0, msg=err)

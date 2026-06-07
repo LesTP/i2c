@@ -71,9 +71,11 @@ def main() -> int:
         assert_eq(p["state"], "execute", "starting state")
         assert_eq(p["blocked"], False, "starting blocked")
         s = read_json(steps)
-        in_prog = [x for x in s if x["status"] == "in_progress"]
-        assert_eq(len(in_prog), 1, "in_progress step count")
-        assert_eq(in_prog[0]["step"], 2, "in_progress step number")
+        # Active step is the lowest-numbered pending step in the current phase
+        # (in_progress dropped from schema; status is binary pending|complete).
+        active = [x for x in s if x["phase"] == 2 and x["status"] == "pending"]
+        assert_eq(len(active), 3, "pending step count in phase 2")
+        assert_eq(min(x["step"] for x in active), 2, "next pending step number")
 
         # --- 1. Worker completes step 2.2 with commit ---
         print("\n--- 1. Mark step 2.2 complete ---")

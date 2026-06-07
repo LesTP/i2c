@@ -611,10 +611,9 @@ class TestActionContextRenderers(unittest.TestCase):
     def test_step_heading_execute_only(self):
         with TempProject():
             ctx_exec = build_ctx(action="execute", phase=2)
-            # Fixture: 2.1 complete, 2.2 in_progress, 2.3 pending, 2.4 pending.
-            # Per ARCH §4.1 the renderer picks the lowest-numbered *pending*
-            # step — so 2.3, not 2.2.
-            self.assertIn("## Step: 2.3", ac.render_step_heading(ctx_exec))
+            # Fixture: 2.1 complete, 2.2/2.3/2.4 pending. Renderer picks the
+            # lowest-numbered pending step — so 2.2.
+            self.assertIn("## Step: 2.2", ac.render_step_heading(ctx_exec))
             # Non-execute actions return empty.
             self.assertEqual(ac.render_step_heading(build_ctx(action="plan", phase=2)), "")
 
