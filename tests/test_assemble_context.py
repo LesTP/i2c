@@ -376,6 +376,110 @@ class TestRequiredInputFailures(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# PLAN-action tolerance for missing phase record (Stack B, DESIGN §6.4)
+# ---------------------------------------------------------------------------
+
+
+class TestPlanActionToleratesMissingPhaseRecord(unittest.TestCase):
+    """Per DESIGN_state_lifecycle_v1.md §6.4: --action plan against a phase
+    with no phases.json record must render a stub instead of error_exit.
+    PLAN's procedure (instructions/plan.md step 4) creates the record."""
+
+    def test_phase_heading_renders_stub_under_action_plan(self):
+        with TempProject():
+            # Phase 99 has no phases.json record (fixture has 1-4).
+            ctx = build_ctx(action="plan", phase=99, mode="autonomous")
+            out = ac.render_phase_heading(ctx)
+            self.assertIn("## Phase: 99", out)
+            self.assertIn("(record to be created by PLAN)", out)
+
+    def test_phase_heading_still_errors_under_other_actions(self):
+        with TempProject():
+            # Same missing-record condition under --action execute must still
+            # error_exit — it indicates a real misdispatch.
+            ctx = build_ctx(action="execute", phase=99, mode="autonomous")
+            with self.assertRaises(SystemExit) as cm:
+                ac.render_phase_heading(ctx)
+            self.assertEqual(cm.exception.code, 1)
+
+    def test_phase_heading_still_errors_for_section_request(self):
+        with TempProject():
+            # --section requests don't get the tolerance either.
+            ctx = build_ctx(section="status", phase=99)
+            # render_phase_heading isn't called for --section status, but if
+            # render_current_phase is called explicitly with this ctx, no
+            # tolerance should apply.
+            with self.assertRaises(SystemExit) as cm:
+                ac.render_phase_heading(ctx)
+            self.assertEqual(cm.exception.code, 1)
+
+    def test_current_phase_renders_helpful_placeholder_under_action_plan(self):
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=99, mode="autonomous")
+            out = ac.render_current_phase(ctx)
+            self.assertTrue(out.startswith("## Current Phase"))
+            self.assertIn("no phases.json record yet for phase 99", out)
+            self.assertIn("PLAN will create it", out)
+            self.assertIn("instructions/plan.md step 4", out)
+
+    def test_current_phase_renders_empty_marker_for_other_actions(self):
+        with TempProject():
+            # Non-plan actions still get the bare empty marker (in practice
+            # they error before reaching this renderer).
+            ctx = build_ctx(action="execute", phase=99, mode="autonomous")
+            out = ac.render_current_phase(ctx)
+            self.assertIn(ac.PLACEHOLDER_EMPTY, out)
+            self.assertNotIn("PLAN will create it", out)
+
+    def test_dependencies_nonempty_evaluator_false_when_no_record(self):
+        # The conditional dep-probe section strips when there is no record
+        # to inspect — PLAN's prompt for a fresh phase has no probe; PLAN
+        # creates the record (possibly non-leaf) and a follow-up assembler
+        # call surfaces the probe section.
+        with TempProject():
+            ctx = build_ctx(action="plan", phase=99, mode="autonomous")
+            self.assertFalse(
+                ac._eval_dependencies_nonempty(ctx, value=None)
+            )
+
+    def test_plan_action_end_to_end_no_record(self):
+        # Full CLI invocation: --action plan --phase 99 must succeed and
+        # produce a prompt containing the stub heading + placeholder body.
+        with TempProject(with_framework=True):
+            rc, out, err = run_cli(
+                "--action", "plan", "--phase", "99", "--mode", "supervised"
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Phase: 99", out)
+            self.assertIn("(record to be created by PLAN)", out)
+            self.assertIn("no phases.json record yet for phase 99", out)
+
+    def test_plan_action_end_to_end_dep_probe_stripped(self):
+        # The conditional dep-probe section in instructions/plan.md (gated
+        # on dependencies_nonempty) must be absent from the PLAN prompt
+        # when no record exists. Match the section heading "Pre-plan:
+        # Dependency Probe" (with colon) — the no-colon variant appears in
+        # plan.md's narrative outside the gated section.
+        with TempProject(with_framework=True):
+            rc, out, err = run_cli(
+                "--action", "plan", "--phase", "99", "--mode", "supervised"
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertNotIn("Pre-plan: Dependency Probe", out)
+
+    def test_execute_action_end_to_end_no_record_still_fails(self):
+        # Negative: --action execute with no record must still fail. The
+        # tolerance is plan-only.
+        with TempProject(with_framework=True):
+            rc, out, err = run_cli(
+                "--action", "execute", "--phase", "99", "--mode", "supervised"
+            )
+            self.assertEqual(rc, 1)
+            self.assertIn("ERROR:", err)
+            self.assertIn("missing current-phase record", err)
+
+
+# ---------------------------------------------------------------------------
 # Conditional section stripping (§7)
 # ---------------------------------------------------------------------------
 

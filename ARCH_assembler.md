@@ -453,7 +453,7 @@ Note that the `multi_step_only` marker mechanism used to strip `WORKER_SPEC.md`'
 | `project.json` schema-invalid | always required |
 | `phases.json` missing or schema-invalid | always required (state machine needs it too) |
 | `steps.json` missing or schema-invalid | always required |
-| No record in `phases.json` with `id == project.json.phase` | always required (state machine should not dispatch ACTION without it) |
+| No record in `phases.json` with `id == project.json.phase` | required for every action EXCEPT `--action plan` (which creates the record per `instructions/plan.md` step 4 — see DESIGN_state_lifecycle_v1.md §6.4); always required for `--section` requests |
 | `instructions/$ACTION.md` missing | required for `--action` |
 | `WORKER_SPEC.md` missing | required |
 | Adapter file (`CLAUDE.md` or `CODEX.md`) missing | required (backend chosen by runner / caller; assembler reads whichever is named) |
@@ -482,6 +482,7 @@ Nothing is written to stdout on exit 1.
 | Adapter Available Modules section empty and ARCHITECTURE fallback also empty | `<!-- empty -->` under `## Available Modules` |
 | Current phase is phase 1 (no prior phase) | `## Prior Phase Summary` heading omitted entirely (not even an empty marker — phase 1 has nothing to summarize) |
 | Current phase record has no `module` field | `## Module Contract` heading omitted entirely |
+| `--action plan` AND no phases.json record for current phase | `## Phase: N — (record to be created by PLAN)` heading; `## Current Phase` body renders a placeholder comment pointing to `instructions/plan.md` step 4; dep-probe conditional section strips (`dependencies_nonempty` evaluator returns False). See DESIGN_state_lifecycle_v1.md §6.4. |
 
 Optional degradations all exit 0. The worker sees the placeholders and decides whether the absence matters. None of these block assembly.
 

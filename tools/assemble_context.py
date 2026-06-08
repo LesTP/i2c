@@ -216,7 +216,15 @@ def heading_level(line: str) -> int | None:
 
 
 def _eval_dependencies_nonempty(ctx: "AssemblerContext", value: str | None) -> bool:
-    """True iff phases.json[id == current_phase].dependencies has length > 0."""
+    """True iff phases.json[id == current_phase].dependencies has length > 0.
+
+    Returns False when no record exists. Under ``--action plan`` against a
+    fresh phase (no record yet) this means the dep-probe conditional
+    section strips from the prompt; PLAN creates the record (step 4) and
+    refines dependencies via ``update-record`` if the chosen module is
+    non-leaf — a follow-up PLAN invocation then renders the probe. See
+    DESIGN_state_lifecycle_v1.md §6.4.
+    """
     record = ctx.current_phase_record()
     if record is None:
         return False
@@ -707,9 +715,21 @@ def render_next_state(ctx: AssemblerContext) -> str:
 
 
 def render_phase_heading(ctx: AssemblerContext) -> str:
-    """## Phase: N — Title (Regime) — title and regime sourced from phases.json."""
+    """## Phase: N — Title (Regime) — title and regime sourced from phases.json.
+
+    Tolerance: when ``--action plan`` AND no phases.json record exists for
+    the current phase, render a stub heading instead of error_exit. PLAN's
+    procedure (``instructions/plan.md`` step 4) creates the record. Any
+    other action hitting a missing record is a real misdispatch and still
+    fails fast. See DESIGN_state_lifecycle_v1.md §6.4.
+    """
     record = ctx.current_phase_record()
     if record is None:
+        if ctx.action == "plan":
+            return (
+                f"## Phase: {ctx.current_phase_id()} {EMDASH} "
+                "(record to be created by PLAN)"
+            )
         # Required-input failure per §4.2: phases.json must list current phase.
         error_exit(
             "phases.json missing current-phase record",
@@ -786,11 +806,24 @@ def render_project_state(ctx: AssemblerContext) -> str:
 
 
 def render_current_phase(ctx: AssemblerContext) -> str:
-    """## Current Phase — the phases.json record for the current phase, as a table."""
+    """## Current Phase — the phases.json record for the current phase, as a table.
+
+    Tolerance: when ``--action plan`` AND no record exists, render a
+    placeholder noting that PLAN will create the record. Other actions
+    hitting a missing record render the standard empty marker (which is
+    typically unreachable in practice — render_phase_heading fails first).
+    """
     record = ctx.current_phase_record()
     lines = ["## Current Phase", ""]
     if record is None:
-        lines.append(PLACEHOLDER_EMPTY)
+        if ctx.action == "plan":
+            lines.append(
+                "<!-- no phases.json record yet for phase "
+                f"{ctx.current_phase_id()}; PLAN will create it "
+                "(see instructions/plan.md step 4) -->"
+            )
+        else:
+            lines.append(PLACEHOLDER_EMPTY)
         return "\n".join(lines)
     # Column order from schema declaration: id, module, title, regime,
     # dependencies, status.
