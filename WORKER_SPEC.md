@@ -96,7 +96,8 @@ state transition via state.py).
 
 **2. Trust the script's verdict; never self-judge.** The script decides
 EXIT, REVIEW, EXECUTE, etc. — based on `STEP_BUDGET`,
-`STOP_BEFORE_REVIEW`, pending-step count, and the `blocked` flag. Your
+`STOP_BEFORE_REVIEW`, pending-step count, and the `state` value
+(including halt states `audit_boundary`, `audit_escalation`, `done`). Your
 job is to do what it returns and then call it again. Do NOT:
 
 - Pre-compute budget exhaustion (`"5 - 3 = exhausted, stopping"` is
@@ -181,8 +182,8 @@ output is treated as `EXIT 2`.
 - **Contract changes affecting other modules:** Hard stop — log via
   devlog with `outcome: "escalate"`, EXIT 2.
 - **Phase completion:** CLOSE always exits normally (EXIT 0) with
-  `project.json.blocked` set to `true`. The human audits before the
-  next phase begins.
+  `project.json.state` set to `audit_boundary`. The human (or autonomous
+  wrapper) audits before the next phase begins.
 
 ---
 

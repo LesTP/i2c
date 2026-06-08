@@ -2,9 +2,9 @@
 
 Final phase action. Runs phase-level checks, promotes learnings to gotchas,
 propagates contract changes, marks the phase complete, and hands off to the
-human for audit by setting `blocked: true`. The state machine has already
-decided this action is appropriate (review just transitioned the project to
-`close`); do not re-decide.
+human for audit by transitioning to `state: audit_boundary`. The state
+machine has already decided this action is appropriate (review just
+transitioned the project to `close`); do not re-decide.
 
 This file is assembled into the worker's prompt when the state machine emits
 `ACTION: CLOSE`. Pair this procedure with the `Worker Contract` section in
@@ -286,13 +286,22 @@ python3 tools/state.py append devlog.jsonl '{
 ### 12. Set the gate
 
 ```bash
-python3 tools/state.py set project.json blocked=true
+python3 tools/state.py set project.json state=audit_boundary
 ```
 
-Leave `state` as `close`. The human (or orchestrator) clears the gate
-later by setting `blocked=false state=plan`, which lets the next phase
-start. **Do not advance `phase`** — the next plan action handles phase
-identification.
+Leaves the project in `audit_boundary`, where the state machine returns
+EXIT (loop halts, awaiting human/wrapper). The human (or autonomous
+wrapper) transitions out of `audit_boundary` by writing one of:
+
+- `set project.json phase=N+1 state=plan` — advance to the next phase
+  (atomic two-key write).
+- `set project.json state=done` — declare the project terminal (no more
+  phases planned). `done` is recoverable only by a later deliberate
+  `set phase=M state=plan` write.
+
+**Do not advance `phase`** in this close action — the human/wrapper does
+that at the `audit_boundary` clear. See `DESIGN_state_lifecycle_v1.md`
+§3.1 for the full state model.
 
 Then emit the exit signal (5-line block, see Worker Contract §6). Exit
 code is `0` for a clean close (per the Output Contract — close always
@@ -305,9 +314,10 @@ terminates an invocation normally).
 - Implement code (that was EXECUTE)
 - Find and apply code review fixes (that was REVIEW)
 - Plan the next phase (that's the next PLAN, after the human audit)
-- Advance `project.json.phase` (the human / orchestrator does that
-  implicitly when clearing the gate)
-- Clear `blocked` — that's the human's gate
+- Advance `project.json.phase` (the human / autonomous wrapper does that
+  at the `audit_boundary` clear, atomic with `state=plan`)
+- Declare project terminus (`state=done`) on its own (that's the
+  human/wrapper at the `audit_boundary` clear)
 
 ---
 
@@ -355,7 +365,7 @@ git commit -m "5: close — event_store core storage, D-16 resolved"
 python3 tools/state.py append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule); ARCHITECTURE.md event_store row → Complete. No ARCH_<module> contract changes.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
 
 # Set the gate:
-python3 tools/state.py set project.json blocked=true
+python3 tools/state.py set project.json state=audit_boundary
 
 # Emit exit signal (EXIT 0).
 ```
@@ -412,7 +422,7 @@ git commit -m "11: close — orchestrator complete, 2 decisions resolved"
 python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed; ARCHITECTURE.md orchestrator row → Complete plus coupling-note refresh. ARCH_orchestrator.md propagation confirmed in step 11.4 commit.","contracts":[],"timestamp":"2026-06-04T11:00:00Z"}'
 
 # Set the gate:
-python3 tools/state.py set project.json blocked=true
+python3 tools/state.py set project.json state=audit_boundary
 ```
 
 ### Close blocked by integration check

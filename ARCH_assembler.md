@@ -128,7 +128,7 @@ The canonical, normative list. Every name uses **Title Case**. Every reference i
 | Project Scope | `PROJECT.md` | PLAN | — | Optional (missing PROJECT.md → degrade, see §11) |
 | Architecture | `ARCHITECTURE.md` | PLAN, REVIEW | — | Optional |
 | Module Contract | `ARCH_<module>.md` for current phase's module | all | required for current module | If `phases.json` record for the active phase has a `module` field and `ARCH_<module>.md` exists, it's required. If no `module` field, this section is omitted entirely. |
-| Project State | `project.json` (phase, state, blocked, steps_remaining, budget fields) | all | — | Always required |
+| Project State | `project.json` (phase, state, steps_remaining, budget fields) | all | — | Always required |
 | Gotchas | `project.json.gotchas` | all | — | Empty array → render the heading with `<!-- empty -->` placeholder |
 | Current Phase | `phases.json` record for `project.json.phase` | all | — | The single phase record (regime, dependencies, status) |
 | Current Phase Steps | `steps.json` filtered to current phase | EXECUTE, REVIEW, CLOSE | — | All step records for the current phase, in step-number order |
@@ -362,7 +362,6 @@ Output:
 
 **Phase:** 11 (Orchestrator) — Build
 **State:** execute
-**Blocked:** no
 **Budget:** steps_remaining=4
 **Module:** orchestrator
 **Dependencies:** event_store

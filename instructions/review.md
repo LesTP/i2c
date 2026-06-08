@@ -62,9 +62,10 @@ Two priorities, in order:
 2. **Simplify and reduce code.** All else equal, less code wins.
 
 If you find drift from `ARCH_<module>.md`, the review is over — that's a
-**contract change** discovered after the fact. Stop the review, log the
-finding via devlog with `outcome: "escalate"`, and `EXIT 2`. The next
-PLAN action (or human) will reconcile contract and code.
+**contract change** discovered after the fact. Stop the review, set
+`state=audit_escalation` via `state.py`, log the finding via devlog with
+`outcome: "escalate"`, and `EXIT 2`. The human/wrapper reconciles
+contract and code; restoring `state=review` resumes.
 
 ### 4. Apply Must fixes and Should fixes
 
@@ -82,9 +83,10 @@ git commit -m "11: review — drop dead helper from event loop"
 ```
 
 If a Must fix balloons in scope mid-fix (you start fixing a bug and find
-the bug needs an architecture change to address): stop, **escalate**
-(`EXIT 2`, reason "review surfaced architecture issue"). The fix becomes
-a new phase or a contract change, not a sneaked refactor.
+the bug needs an architecture change to address): stop, set
+`state=audit_escalation` via `state.py`, and **escalate** (`EXIT 2`,
+reason "review surfaced architecture issue"). The fix becomes a new
+phase or a contract change, not a sneaked refactor.
 
 ### 5. Log skipped Optional items as decisions
 
@@ -178,7 +180,7 @@ means autonomous.
 - Promote learnings from devlog into gotchas (that's CLOSE)
 - Propagate contract changes across `ARCH_*.md` files (that's CLOSE)
 - Mark the phase complete in `phases.json` (that's CLOSE)
-- Set `blocked: true` to gate on the human (that's CLOSE)
+- Transition to `audit_boundary` (that's CLOSE's final write)
 - Plan the next phase (that's PLAN of the next invocation after
   close + human audit)
 - Add or rename steps in `steps.json` (steps are PLAN's responsibility;
@@ -235,6 +237,7 @@ diverged from `ARCH_orchestrator.md` (now takes a kwarg the contract
 doesn't list). Halt.
 
 ```bash
+python3 tools/state.py set project.json state=audit_escalation
 python3 tools/state.py append devlog.jsonl '{"phase":8,"step":null,"action":"review","outcome":"escalate","summary":"Review halted: dispatch_action in code takes idempotency_key kwarg, ARCH_orchestrator.md does not list it. Drift originated in step 8.3 — devlog there should have flagged contract change. Needs decision: align code to ARCH or update ARCH.","contracts":["ARCH_orchestrator.md"],"timestamp":"2026-06-04T10:45:00Z"}'
 
 # Do NOT apply any fixes. Do NOT transition to close.

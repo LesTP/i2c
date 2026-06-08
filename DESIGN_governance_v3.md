@@ -1,9 +1,21 @@
 # Design Spec — i2c: Structured State and Deterministic Dispatch
 
-**Status:** Accepted
+**Status:** Accepted (state-model superseded — see note below)
 **Date:** 2026-05-27 (proposed) → 2026-05-28 (accepted)
 **Project:** i2c (idea to code) — standalone at `p:\shared\i2c`
 **Lineage:** e2e v2 (pseudocode in WORKER_SPEC) → v2.5 (state_machine.sh) → i2c (structured backend + per-action instruction files)
+
+> **Superseded scope (2026-06-08):** the `(state, blocked)` two-variable
+> lifecycle model documented throughout this doc is **superseded by**
+> [`DESIGN_state_lifecycle_v1.md`](DESIGN_state_lifecycle_v1.md), which
+> drops `blocked` and expands `state` to seven values
+> (`plan`, `execute`, `review`, `close`, `audit_boundary`,
+> `audit_escalation`, `done`). Any reference below to `blocked: true`, gate
+> clearing via `blocked=false`, or "the four states" should be read against
+> the new model: post-CLOSE → `state=audit_boundary`; mid-phase escalation
+> → `state=audit_escalation`; project terminus → `state=done`. The rest of
+> this doc (file layout, dispatch flow, four worker actions, schema
+> validation, e2e comparison, etc.) is unchanged.
 
 ---
 

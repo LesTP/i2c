@@ -42,11 +42,15 @@ Follow the procedure. Notable write operations the procedure references
 - Mark phase complete + set the gate:
   ```bash
   python3 tools/state.py complete phases.json --phase $PHASE
-  python3 tools/state.py set project.json blocked=true
+  python3 tools/state.py set project.json state=audit_boundary
   ```
 
-Leave `state` as `close`. The next gate-clear (by you, or via codexbot
-`/close` once it ships) flips `blocked=false state=plan` for the next
-phase.
+After close, project sits at `state=audit_boundary`. The next gate-clear
+(by you, or via codexbot `/close` once it ships) writes one of:
+
+- `set project.json phase=N+1 state=plan` — advance to the next phase
+- `set project.json state=done` — declare project terminal
+
+See `DESIGN_state_lifecycle_v1.md` §3 for the full lifecycle model.
 
 Full assembler contract: see `ARCH_assembler.md`.

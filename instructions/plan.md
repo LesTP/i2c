@@ -18,19 +18,26 @@ shape (this file inherits those).
 ### 1. Identify the phase being planned
 
 Read `project.json.phase` from the assembled `Project State` section. That is
-the phase number you are planning. Then look at the assembled `Phases` section
-(sourced from `.state/phases.json`):
+the phase number you are planning. (If you arrived from `audit_boundary`,
+the human/wrapper just set `phase=N+1` atomically with `state=plan` per the
+boundary-clear transition documented in `instructions/close.md` step 12.)
+
+Then look at the assembled `Phases` section (sourced from
+`.state/phases.json`):
 
 - **No record exists for this phase number** → this is a new phase. You will
-  create the phase record (with `status: "pending"`) in step 4.
+  create the phase record (with `status: "pending"`) in step 4. The assembler
+  rendered a stub phase heading for this case; see
+  `DESIGN_state_lifecycle_v1.md` §6.4.
 - **Record exists with `status: "pending"`** → the phase was outlined
   upstream (typically by a prior CLOSE action that scheduled future phases).
   Leave it as-is; you may refine `dependencies`, `regime`, or `title` via
   `update-record` if needed.
 - **Record exists with `status: "complete"`** → the phase is already closed.
-  PLAN was mis-dispatched against a completed phase. Escalate via `EXIT 2`
-  (reason "plan called on completed phase"); the human / orchestrator likely
-  forgot to advance `project.json.phase`.
+  PLAN was mis-dispatched against a completed phase. **Escalate**: set
+  `state=audit_escalation` and emit `EXIT 2` (reason "plan called on
+  completed phase"); the human/wrapper likely forgot to advance
+  `project.json.phase` when clearing `audit_boundary`.
 
 ### 2. Determine scope and outcomes
 

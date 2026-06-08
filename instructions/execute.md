@@ -153,13 +153,15 @@ than being pre-listed. Budget is wall-clock, not step count
      python3 tools/state.py set project.json state=review
      ```
 
-   - **Goal needs human sign-off mid-phase?** Set blocked and exit:
+   - **Goal needs human sign-off mid-phase?** Transition to escalation and exit:
 
      ```bash
-     python3 tools/state.py set project.json blocked=true
+     python3 tools/state.py set project.json state=audit_escalation
      ```
 
-     Emit exit signal with outcome=`blocked`.
+     Emit exit signal with outcome=`blocked`. The state machine returns
+     EXIT on the next dispatch; human/wrapper resolves the escalation and
+     restores `state=execute` to resume.
 
 ---
 
@@ -191,9 +193,10 @@ When a step modifies a contract:
 
 3. **Cross-module breakage** (a consumer module that is already built will
    stop compiling/passing with this change): **hard stop.** Do not commit.
-   Set `state=review` with `blocked=true` and emit `EXIT 2` with reason
-   "contract change affects built module: \<name\>". The orchestrator will
-   route this for human decision.
+   Set `state=audit_escalation` and emit `EXIT 2` with reason
+   "contract change affects built module: \<name\>". The state machine
+   returns EXIT on the next dispatch; the human/wrapper routes the
+   escalation for decision.
 
 4. **Test propagation** when a contract crosses into a built module:
    - Update the consumer's test double to match the new signature
@@ -228,9 +231,9 @@ Three-strikes rule on the same problem:
 
 1. First failure → diagnose and apply a targeted fix.
 2. Same failure → try a fundamentally different approach.
-3. Third failure → stop. Append devlog entry with `outcome: "escalate"` and a
-   summary of what you tried. Emit `EXIT 2`. Do not commit a half-working
-   state.
+3. Third failure → stop. Set `state=audit_escalation` via `state.py`,
+   append devlog entry with `outcome: "escalate"` and a summary of what
+   you tried. Emit `EXIT 2`. Do not commit a half-working state.
 
 Other escalation triggers fire from the Escalation Conditions section of your
 Worker Contract (regime shift, unclear spec, all modules complete, etc.).
@@ -268,7 +271,7 @@ This is **cross-module breakage** — hard stop. Do not commit the signature
 change.
 
 ```bash
-python3 tools/state.py set project.json state=review blocked=true
+python3 tools/state.py set project.json state=audit_escalation
 python3 tools/state.py append devlog.jsonl '{"phase":5,"step":2,"action":"execute","outcome":"escalate","summary":"Idempotency key on EventStore.append would break orchestrator (already built). Needs decision: bump consumer or pick non-breaking shape.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T04:45:00Z"}'
 
 # Emit EXIT 2 with reason "contract change affects built module: orchestrator".
@@ -279,6 +282,7 @@ python3 tools/state.py append devlog.jsonl '{"phase":5,"step":2,"action":"execut
 Step 8.4 keeps failing the same flaky test across three tries.
 
 ```bash
+python3 tools/state.py set project.json state=audit_escalation
 python3 tools/state.py append devlog.jsonl '{"phase":8,"step":4,"action":"execute","outcome":"escalate","summary":"test_orchestrator_recovery fails on third attempt with same TimeoutError. Tried: (1) bumping timeout, (2) seeding deterministic clock, (3) running test in isolation. Pattern suggests deeper race in PatchManager.","timestamp":"2026-06-04T05:15:00Z"}'
 
 # Do NOT mark the step complete. Do NOT commit a half-working fix.
