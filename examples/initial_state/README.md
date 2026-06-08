@@ -10,7 +10,7 @@ for exercising the toolchain.
 
 | File | Contents |
 |------|----------|
-| `project.json` | Current phase, state, blocked flag, gotchas |
+| `project.json` | Current phase, lifecycle state (see DESIGN_state_lifecycle_v1.md), gotchas, budget |
 | `phases.json` | All phases (one record per phase) |
 | `steps.json` | All steps across all phases |
 | `devlog.jsonl` | Append-only history (one JSON object per line) |

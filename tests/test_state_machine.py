@@ -1,8 +1,10 @@
 """Tests for tools/state_machine.py — dispatch decision matrix.
 
 Read-only; exercises every cell of the matrix plus STOP_BEFORE_REVIEW and
-the blocked short-circuit. Subprocess-level test verifies the script
-walks up from a sub-directory CWD via find_project_root.
+the halt-state short-circuits (audit_boundary, audit_escalation, done).
+Subprocess-level test verifies the script walks up from a sub-directory
+CWD via find_project_root. Schema/state model per
+DESIGN_state_lifecycle_v1.md.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ FIXTURE = I2C_ROOT / "examples" / "initial_state"
 class TempProject:
     """Temp project directory copied from the canonical .state fixture.
 
-    Mutators (``set_state``, ``set_blocked``, ``set_steps``) edit JSON in
+    Mutators (``set_project``, ``set_steps``) edit JSON in
     place — no schema gymnastics, just enough to walk the matrix.
     """
 
@@ -119,8 +121,8 @@ def parse_output(stdout: str) -> tuple[str, str]:
 class TestDecideMatrix(unittest.TestCase):
     """Pure tests against sm.decide() — no file I/O."""
 
-    def _project(self, *, state: str, blocked: bool = False, phase: int = 1):
-        return {"phase": phase, "state": state, "blocked": blocked}
+    def _project(self, *, state: str, phase: int = 1):
+        return {"phase": phase, "state": state}
 
     def _steps(self, phase: int, pending: int, total: int | None = None):
         """Synthesize steps.json with `pending` pending + remainder complete."""
@@ -134,18 +136,22 @@ class TestDecideMatrix(unittest.TestCase):
             out.append(rec)
         return out
 
-    # ---- blocked short-circuit --------------------------------------------
+    # ---- halt-state short-circuits ----------------------------------------
 
-    def test_blocked_exits_with_current_state(self):
-        proj = self._project(state="execute", blocked=True)
-        action, nxt = sm.decide(proj, self._steps(1, 1))
-        self.assertEqual(action, "EXIT")
-        self.assertEqual(nxt, "execute")
-
-    def test_blocked_exits_even_in_close(self):
-        proj = self._project(state="close", blocked=True)
+    def test_audit_boundary_exits_with_audit_boundary_next(self):
+        proj = self._project(state="audit_boundary")
         action, nxt = sm.decide(proj, [])
-        self.assertEqual((action, nxt), ("EXIT", "close"))
+        self.assertEqual((action, nxt), ("EXIT", "audit_boundary"))
+
+    def test_audit_escalation_exits_with_audit_escalation_next(self):
+        proj = self._project(state="audit_escalation")
+        action, nxt = sm.decide(proj, self._steps(1, 1))
+        self.assertEqual((action, nxt), ("EXIT", "audit_escalation"))
+
+    def test_done_exits_with_done_next(self):
+        proj = self._project(state="done")
+        action, nxt = sm.decide(proj, [])
+        self.assertEqual((action, nxt), ("EXIT", "done"))
 
     # ---- plan -------------------------------------------------------------
 
@@ -190,7 +196,7 @@ class TestDecideMatrix(unittest.TestCase):
     def test_close_dispatches_close(self):
         proj = self._project(state="close")
         action, nxt = sm.decide(proj, [])
-        self.assertEqual((action, nxt), ("CLOSE", "plan"))
+        self.assertEqual((action, nxt), ("CLOSE", "audit_boundary"))
 
     # ---- STOP_BEFORE_REVIEW -----------------------------------------------
 
@@ -262,14 +268,28 @@ class TestStateMachineCli(unittest.TestCase):
             p.set_project(state="close")
             rc, out, err = run_main()
             self.assertEqual(rc, 0, msg=err)
-            self.assertEqual(parse_output(out), ("CLOSE", "plan"))
+            self.assertEqual(parse_output(out), ("CLOSE", "audit_boundary"))
 
-    def test_blocked_dispatches_exit(self):
+    def test_audit_boundary_dispatches_exit(self):
         with TempProject() as p:
-            p.set_project(blocked=True, state="close")
+            p.set_project(state="audit_boundary")
             rc, out, err = run_main()
             self.assertEqual(rc, 0, msg=err)
-            self.assertEqual(parse_output(out), ("EXIT", "close"))
+            self.assertEqual(parse_output(out), ("EXIT", "audit_boundary"))
+
+    def test_audit_escalation_dispatches_exit(self):
+        with TempProject() as p:
+            p.set_project(state="audit_escalation")
+            rc, out, err = run_main()
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(parse_output(out), ("EXIT", "audit_escalation"))
+
+    def test_done_dispatches_exit(self):
+        with TempProject() as p:
+            p.set_project(state="done")
+            rc, out, err = run_main()
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(parse_output(out), ("EXIT", "done"))
 
     def test_stop_before_review_env(self):
         # Mark all phase 2 steps complete so EXECUTE state with 0 pending
@@ -310,7 +330,7 @@ class TestStateMachineCli(unittest.TestCase):
     def test_schema_invalid_state_file_exits_2(self):
         with TempProject() as p:
             (p.root / ".state" / "project.json").write_text(
-                '{"phase": 1, "state": "bogus", "blocked": false}',
+                '{"phase": 1, "state": "bogus"}',
                 encoding="utf-8",
             )
             rc, _, err = run_main()

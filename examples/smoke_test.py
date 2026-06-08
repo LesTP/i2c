@@ -69,7 +69,7 @@ def main() -> int:
         p = read_json(project)
         assert_eq(p["phase"], 2, "starting phase")
         assert_eq(p["state"], "execute", "starting state")
-        assert_eq(p["blocked"], False, "starting blocked")
+        assert_eq("blocked" not in p, True, "blocked field absent (dropped per DESIGN_state_lifecycle_v1)")
         s = read_json(steps)
         # Active step is the lowest-numbered pending step in the current phase
         # (in_progress dropped from schema; status is binary pending|complete).
@@ -143,15 +143,18 @@ def main() -> int:
         phase2 = next(x for x in read_json(phases) if x["id"] == 2)
         assert_eq(phase2["status"], "complete", "phase 2 status")
 
-        # --- 6. Worker transitions to close and sets blocked ---
-        print("\n--- 6. Transition project to close + blocked=true ---")
-        r = run("set", str(project), "state=close", "blocked=true", "phase=3")
+        # --- 6. Worker transitions to audit_boundary at end of close ---
+        # Per the lifecycle redesign (DESIGN_state_lifecycle_v1): CLOSE worker
+        # always sets state=audit_boundary as its final act and never advances
+        # `phase`. The human/wrapper later transitions out of audit_boundary by
+        # setting `phase=N+1 state=plan` (advance) or `state=done` (terminus).
+        print("\n--- 6. Transition project to audit_boundary (close worker's final write) ---")
+        r = run("set", str(project), "state=audit_boundary")
         if r.returncode != 0:
             return 1
         p = read_json(project)
-        assert_eq(p["state"], "close", "project state")
-        assert_eq(p["blocked"], True, "project blocked")
-        assert_eq(p["phase"], 3, "project phase advanced")
+        assert_eq(p["state"], "audit_boundary", "project state")
+        assert_eq(p["phase"], 2, "phase unchanged by close worker")
 
         # --- 7. Schema rejects invalid state value (the bug class i2c retires) ---
         print("\n--- 7. Validation rejects typo in state field ---")
@@ -161,7 +164,7 @@ def main() -> int:
             return 1
         print("  [OK] typo rejected, exit code =", r.returncode)
         p = read_json(project)
-        assert_eq(p["state"], "close", "state untouched by failed update")
+        assert_eq(p["state"], "audit_boundary", "state untouched by failed update")
 
         # --- 8. Full file validation (round-trip through validate.py) ---
         print("\n--- 8. Validate every state file end-to-end ---")

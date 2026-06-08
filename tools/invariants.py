@@ -3,27 +3,33 @@
 After every action completes, certain structural invariants must hold in
 ``.state/``. The runner calls ``check_post_action`` after a worker returns
 to detect silent drift — e.g., the CC Phase 1 close that left
-``blocked: false`` because the worker missed step 11 of
-``instructions/close.md``. Detecting this runner-side complements the
-worker's exit-signal validation (``schemas/exit_signal.schema.json``) by
-asserting that the worker actually *did* the writes its action required.
+``state=close`` (no audit_boundary transition) because the worker missed the
+final step of ``instructions/close.md``. Detecting this runner-side
+complements the worker's exit-signal validation
+(``schemas/exit_signal.schema.json``) by asserting that the worker actually
+*did* the writes its action required.
 
 This module is reusable: ``check_post_action(project_root, action)``
 returns a list of failure messages (empty list = pass). Supervised
 workflows can call the same function after a manual action.
 
-v1 invariants (per the plan):
+v1 invariants (per the lifecycle redesign in DESIGN_state_lifecycle_v1.md):
 
 ================== =================================================================
 Action             Invariant
 ================== =================================================================
-``close``          ``project.json.blocked == true`` AND
+``close``          ``project.json.state == "audit_boundary"`` AND
                    ``phases.json[id == project.json.phase].status == "complete"``
-``review``         ``project.json.state == "close"``
-``plan``           ``project.json.state == "execute"``
-``execute``        Either ``project.json.state == "execute"`` (more steps pending)
-                   OR ``project.json.state == "review"`` (last step complete)
+``review``         ``project.json.state in {"close", "audit_escalation"}``
+``plan``           ``project.json.state in {"execute", "audit_escalation"}``
+``execute``        ``project.json.state in {"execute", "review", "audit_escalation"}``
 ================== =================================================================
+
+``audit_escalation`` is a valid post-state for plan/execute/review because
+any of those actions may halt the loop with an escalation. ``close`` always
+transitions to ``audit_boundary`` — conservative closure per D-state-3: the
+close worker never sets ``done`` directly; the human/wrapper decides at the
+boundary whether to advance to a new phase or terminate.
 
 These are the trivial structural invariants the action procedures lock in.
 The list grows as new patterns emerge from autonomous runs.
@@ -88,10 +94,12 @@ def check_post_action(project_root: Path, action: str) -> list[str]:
 
 def _check_close(project: dict[str, Any], phases: list[dict[str, Any]]) -> list[str]:
     failures: list[str] = []
-    if not bool(project.get("blocked", False)):
+    state = project.get("state")
+    if state != "audit_boundary":
         failures.append(
-            "post-CLOSE invariant: project.json.blocked must be true after CLOSE "
-            "(worker likely skipped step 11 of instructions/close.md)"
+            "post-CLOSE invariant: project.json.state must be 'audit_boundary' "
+            f"after CLOSE (currently {state!r}); worker likely skipped the final "
+            "close step that sets state=audit_boundary"
         )
     phase_id = project.get("phase")
     record = next((p for p in phases if p.get("id") == phase_id), None)
@@ -109,31 +117,31 @@ def _check_close(project: dict[str, Any], phases: list[dict[str, Any]]) -> list[
 
 def _check_review(project: dict[str, Any]) -> list[str]:
     state = project.get("state")
-    if state != "close":
+    if state not in ("close", "audit_escalation"):
         return [
             f"post-REVIEW invariant: project.json.state must be 'close' "
-            f"(currently {state!r})"
+            f"or 'audit_escalation' (currently {state!r})"
         ]
     return []
 
 
 def _check_plan(project: dict[str, Any]) -> list[str]:
     state = project.get("state")
-    if state != "execute":
+    if state not in ("execute", "audit_escalation"):
         return [
             f"post-PLAN invariant: project.json.state must be 'execute' "
-            f"(currently {state!r})"
+            f"or 'audit_escalation' (currently {state!r})"
         ]
     return []
 
 
 def _check_execute(project: dict[str, Any]) -> list[str]:
     state = project.get("state")
-    if state not in ("execute", "review"):
+    if state not in ("execute", "review", "audit_escalation"):
         return [
             f"post-EXECUTE invariant: project.json.state must be 'execute' "
-            f"(more pending steps) or 'review' (last step complete); "
-            f"currently {state!r}"
+            f"(more pending steps), 'review' (last step complete), or "
+            f"'audit_escalation' (worker halted); currently {state!r}"
         ]
     return []
 

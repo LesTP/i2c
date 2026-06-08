@@ -438,10 +438,6 @@ def build_context(args: argparse.Namespace) -> AssemblerContext:
 # ---------------------------------------------------------------------------
 
 
-def _fmt_blocked(blocked: bool) -> str:
-    return "yes" if blocked else "no"
-
-
 def _fmt_dependencies(deps: list[str] | None) -> str:
     if not deps:
         return "(none — leaf module)"
@@ -449,7 +445,7 @@ def _fmt_dependencies(deps: list[str] | None) -> str:
 
 
 def render_status_project(ctx: AssemblerContext) -> str:
-    """## Project Status — phase, state, blocked, budget, module, dependencies."""
+    """## Project Status — phase, state, budget, module, dependencies."""
     p = ctx.project
     phase_id = p.get("phase", 0)
     record = ctx.current_phase_record()
@@ -469,7 +465,6 @@ def render_status_project(ctx: AssemblerContext) -> str:
     lines = ["## Project Status", ""]
     lines.append(f"**Phase:** {phase_id} ({module}) {EMDASH} {title} ({regime})")
     lines.append(f"**State:** {p.get('state', '—')}")
-    lines.append(f"**Blocked:** {_fmt_blocked(bool(p.get('blocked', False)))}")
     if "steps_remaining" in p:
         lines.append(f"**Budget:** steps_remaining={p['steps_remaining']}")
     elif p.get("budget_type") == "time" and "time_budget_seconds" in p:

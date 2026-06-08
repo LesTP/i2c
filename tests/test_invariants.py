@@ -42,6 +42,9 @@ class TempProject:
         path = self.root / ".state" / "project.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         data.update(kwargs)
+        # Defensive: remove any legacy 'blocked' field if a test sets one;
+        # the schema no longer accepts it (DESIGN_state_lifecycle_v1).
+        data.pop("blocked", None)
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     def patch_phase_status(self, phase_id: int, status: str) -> None:
@@ -73,23 +76,23 @@ def run_cli(*argv: str) -> tuple[int, str, str]:
 class TestCheckPostAction(unittest.TestCase):
     # ---- close ------------------------------------------------------------
 
-    def test_close_passes_when_blocked_and_phase_complete(self):
+    def test_close_passes_when_state_is_audit_boundary_and_phase_complete(self):
         with TempProject() as p:
-            p.patch_project(state="close", blocked=True, phase=2)
+            p.patch_project(state="audit_boundary", phase=2)
             p.patch_phase_status(2, "complete")
             self.assertEqual(inv.check_post_action(p.root, "close"), [])
 
-    def test_close_fails_when_not_blocked(self):
+    def test_close_fails_when_state_not_audit_boundary(self):
         with TempProject() as p:
-            p.patch_project(state="close", blocked=False, phase=2)
+            p.patch_project(state="close", phase=2)
             p.patch_phase_status(2, "complete")
             failures = inv.check_post_action(p.root, "close")
             self.assertEqual(len(failures), 1)
-            self.assertIn("blocked must be true", failures[0])
+            self.assertIn("must be 'audit_boundary'", failures[0])
 
     def test_close_fails_when_phase_not_complete(self):
         with TempProject() as p:
-            p.patch_project(state="close", blocked=True, phase=2)
+            p.patch_project(state="audit_boundary", phase=2)
             p.patch_phase_status(2, "pending")
             failures = inv.check_post_action(p.root, "close")
             self.assertEqual(len(failures), 1)
@@ -97,14 +100,14 @@ class TestCheckPostAction(unittest.TestCase):
 
     def test_close_fails_when_both_invariants_violated(self):
         with TempProject() as p:
-            p.patch_project(state="close", blocked=False, phase=2)
+            p.patch_project(state="close", phase=2)
             p.patch_phase_status(2, "pending")
             failures = inv.check_post_action(p.root, "close")
             self.assertEqual(len(failures), 2)
 
     def test_close_fails_when_no_matching_phase_record(self):
         with TempProject() as p:
-            p.patch_project(state="close", blocked=True, phase=99)
+            p.patch_project(state="audit_boundary", phase=99)
             failures = inv.check_post_action(p.root, "close")
             self.assertTrue(any("no phases.json record" in f for f in failures))
 
@@ -115,7 +118,12 @@ class TestCheckPostAction(unittest.TestCase):
             p.patch_project(state="close")
             self.assertEqual(inv.check_post_action(p.root, "review"), [])
 
-    def test_review_fails_when_state_not_close(self):
+    def test_review_passes_when_state_is_audit_escalation(self):
+        with TempProject() as p:
+            p.patch_project(state="audit_escalation")
+            self.assertEqual(inv.check_post_action(p.root, "review"), [])
+
+    def test_review_fails_when_state_not_close_or_escalation(self):
         with TempProject() as p:
             p.patch_project(state="execute")
             failures = inv.check_post_action(p.root, "review")
@@ -129,7 +137,12 @@ class TestCheckPostAction(unittest.TestCase):
             p.patch_project(state="execute")
             self.assertEqual(inv.check_post_action(p.root, "plan"), [])
 
-    def test_plan_fails_when_state_not_execute(self):
+    def test_plan_passes_when_state_is_audit_escalation(self):
+        with TempProject() as p:
+            p.patch_project(state="audit_escalation")
+            self.assertEqual(inv.check_post_action(p.root, "plan"), [])
+
+    def test_plan_fails_when_state_not_execute_or_escalation(self):
         with TempProject() as p:
             p.patch_project(state="plan")
             failures = inv.check_post_action(p.root, "plan")
@@ -146,6 +159,11 @@ class TestCheckPostAction(unittest.TestCase):
     def test_execute_passes_when_state_is_review(self):
         with TempProject() as p:
             p.patch_project(state="review")
+            self.assertEqual(inv.check_post_action(p.root, "execute"), [])
+
+    def test_execute_passes_when_state_is_audit_escalation(self):
+        with TempProject() as p:
+            p.patch_project(state="audit_escalation")
             self.assertEqual(inv.check_post_action(p.root, "execute"), [])
 
     def test_execute_fails_when_state_is_plan(self):
@@ -171,7 +189,7 @@ class TestCheckPostAction(unittest.TestCase):
     def test_schema_invalid_state_surfaces_as_failure(self):
         with TempProject() as p:
             (p.root / ".state" / "project.json").write_text(
-                '{"phase": 1, "state": "bogus", "blocked": true}',
+                '{"phase": 1, "state": "bogus"}',
                 encoding="utf-8",
             )
             failures = inv.check_post_action(p.root, "close")
@@ -187,7 +205,7 @@ class TestCheckPostAction(unittest.TestCase):
 class TestInvariantsCli(unittest.TestCase):
     def test_cli_passes_with_OK_message(self):
         with TempProject() as p:
-            p.patch_project(state="close", blocked=True, phase=2)
+            p.patch_project(state="audit_boundary", phase=2)
             p.patch_phase_status(2, "complete")
             rc, out, err = run_cli("--action", "close")
             self.assertEqual(rc, 0, msg=err)
@@ -196,13 +214,13 @@ class TestInvariantsCli(unittest.TestCase):
 
     def test_cli_fails_with_structured_error(self):
         with TempProject() as p:
-            p.patch_project(state="close", blocked=False, phase=2)
+            p.patch_project(state="close", phase=2)
             p.patch_phase_status(2, "complete")
             rc, out, err = run_cli("--action", "close")
             self.assertEqual(rc, 1)
             self.assertIn("ERROR", err)
             self.assertIn("Detail:", err)
-            self.assertIn("blocked must be true", err)
+            self.assertIn("must be 'audit_boundary'", err)
 
     def test_cli_rejects_unknown_action(self):
         with TempProject():

@@ -1,7 +1,6 @@
 {
   "phase": 2,
   "state": "execute",
-  "blocked": false,
   "steps_remaining": 3,
   "gotchas": [
     "Always pass `--mode supervised` when running assemble_context.py interactively"

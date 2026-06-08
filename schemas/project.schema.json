@@ -4,7 +4,7 @@
   "title": "Project State",
   "description": "Top-level state for an i2c project. Read on every worker invocation; written at state transitions and phase boundaries. Lives at .state/project.json.",
   "type": "object",
-  "required": ["phase", "state", "blocked"],
+  "required": ["phase", "state"],
   "additionalProperties": false,
   "properties": {
     "phase": {
@@ -14,12 +14,16 @@
     },
     "state": {
       "type": "string",
-      "enum": ["plan", "execute", "review", "close"],
-      "description": "Current state within the phase lifecycle. Catches typos that would silently misroute the state machine."
-    },
-    "blocked": {
-      "type": "boolean",
-      "description": "True when worker is waiting on human input (phase boundary, escalation, contract change)."
+      "enum": [
+        "plan",
+        "execute",
+        "review",
+        "close",
+        "audit_boundary",
+        "audit_escalation",
+        "done"
+      ],
+      "description": "Current lifecycle position. plan|execute|review|close dispatch the matching ACTION. audit_boundary (post-CLOSE, human/wrapper decides advance vs. done) and audit_escalation (mid-phase escalation, human required) both EXIT. done is terminal — no further dispatch unless an operator explicitly sets state=plan with a new phase. See DESIGN_state_lifecycle_v1.md (D-state-1..7) for the full model."
     },
     "steps_remaining": {
       "type": "integer",

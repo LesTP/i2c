@@ -30,26 +30,38 @@ class TestValidateJsonSchema(unittest.TestCase):
         self.project_schema = v.load_schema("project.schema.json")
 
     def test_valid_project_state(self) -> None:
-        data = {"phase": 1, "state": "execute", "blocked": False}
+        data = {"phase": 1, "state": "execute"}
         v.validate_json_schema(data, self.project_schema)  # does not raise
 
     def test_invalid_state_enum(self) -> None:
-        data = {"phase": 1, "state": "bogus", "blocked": False}
+        data = {"phase": 1, "state": "bogus"}
         with self.assertRaisesRegex(ValueError, "state"):
             v.validate_json_schema(data, self.project_schema)
 
     def test_missing_required_field(self) -> None:
-        data = {"phase": 1, "state": "execute"}  # missing blocked
-        with self.assertRaisesRegex(ValueError, "blocked"):
+        data = {"phase": 1}  # missing state
+        with self.assertRaisesRegex(ValueError, "state"):
             v.validate_json_schema(data, self.project_schema)
 
     def test_unknown_field_rejected(self) -> None:
-        data = {"phase": 1, "state": "execute", "blocked": False, "typo_key": "x"}
+        data = {"phase": 1, "state": "execute", "typo_key": "x"}
         with self.assertRaisesRegex(ValueError, "typo_key|additional"):
             v.validate_json_schema(data, self.project_schema)
 
+    def test_blocked_field_rejected(self) -> None:
+        # 'blocked' was dropped per DESIGN_state_lifecycle_v1; schema must reject it.
+        data = {"phase": 1, "state": "audit_boundary", "blocked": True}
+        with self.assertRaisesRegex(ValueError, "blocked|additional"):
+            v.validate_json_schema(data, self.project_schema)
+
+    def test_lifecycle_states_accepted(self) -> None:
+        # All seven enum values must validate.
+        for state in ("plan", "execute", "review", "close",
+                       "audit_boundary", "audit_escalation", "done"):
+            v.validate_json_schema({"phase": 1, "state": state}, self.project_schema)
+
     def test_label_in_error(self) -> None:
-        data = {"phase": 1, "state": "bogus", "blocked": False}
+        data = {"phase": 1, "state": "bogus"}
         with self.assertRaisesRegex(ValueError, "myfile.json"):
             v.validate_json_schema(data, self.project_schema, label="myfile.json")
 
@@ -60,7 +72,7 @@ class TestValidateStateFile(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "project.json"
-            path.write_text(json.dumps({"phase": 2, "state": "review", "blocked": True}))
+            path.write_text(json.dumps({"phase": 2, "state": "review"}))
             data = v.validate_state_file(path)
             self.assertEqual(data["phase"], 2)
 
@@ -180,7 +192,7 @@ class TestProjectSchemaBudgetFields(unittest.TestCase):
         self.schema = v.load_schema("project.schema.json")
 
     def _project(self, **overrides):
-        base = {"phase": 1, "state": "execute", "blocked": False}
+        base = {"phase": 1, "state": "execute"}
         base.update(overrides)
         return base
 

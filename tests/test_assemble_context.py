@@ -186,7 +186,10 @@ class TestStatusRenderers(unittest.TestCase):
             self.assertIn("Core storage", out)
             self.assertIn("Build", out)
             self.assertIn("**State:** execute", out)
-            self.assertIn("**Blocked:** no", out)
+            # Note: 'Blocked' line was removed in DESIGN_state_lifecycle_v1 —
+            # `blocked` field dropped from project.json schema in favor of
+            # state values audit_boundary, audit_escalation, done.
+            self.assertNotIn("Blocked:", out)
 
     def test_current_phase_steps_table_filters_to_current_phase(self):
         with TempProject():
@@ -364,7 +367,7 @@ class TestRequiredInputFailures(unittest.TestCase):
     def test_schema_invalid_project_json(self):
         with TempProject() as root:
             (root / ".state" / "project.json").write_text(
-                json.dumps({"phase": 1, "state": "BOGUS", "blocked": False})
+                json.dumps({"phase": 1, "state": "BOGUS"})
             )
             rc, _, err = run_cli("--section", "status")
             self.assertEqual(rc, 1)

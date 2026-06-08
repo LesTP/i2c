@@ -5,12 +5,12 @@ worker invocation should perform, plus the NEXT state that worker must set
 after completing the action. Emits the decision as two lines on stdout::
 
     ACTION: PLAN|EXECUTE|REVIEW|CLOSE|EXIT
-    NEXT: plan|execute|review|close
+    NEXT: plan|execute|review|close|audit_boundary|audit_escalation|done
 
 Pure read + decision per D-r-4: never modifies ``.state/``. The worker
 performs all state writes via ``tools/state.py`` per the action procedure.
 The runner's FU-22 post-close invariant check (``tools/invariants.py``)
-replaces the small ``blocked: true`` side-effect that e2e's
+replaces the small ``state=audit_boundary`` side-effect that e2e's
 ``state_machine.sh`` had on CLOSE dispatch.
 
 Environment variables (mirroring e2e for forward compatibility):
@@ -18,6 +18,7 @@ Environment variables (mirroring e2e for forward compatibility):
 - ``STEP_BUDGET`` (default ``1``) — number of steps the worker may take
   this invocation. Reserved for multi-step mode; v1 runner always passes
   ``1`` so this script never decrements anything.
+
 - ``STOP_BEFORE_REVIEW`` (default ``false``) — when ``true``, a dispatch
   that would have been ``REVIEW`` becomes ``EXIT`` instead. NEXT is set to
   ``review`` so a follow-up invocation resumes there.
@@ -28,19 +29,21 @@ Exit codes:
 - ``2`` — missing or schema-invalid ``.state/`` files; structured error
   on stderr via ``assemble_context.error_exit``.
 
-Decision matrix (per the plan):
+Decision matrix (per DESIGN_state_lifecycle_v1.md §4):
 
-============================  ==========================  ===========================  =======  ========
-``project.json.blocked``      ``project.json.state``      pending steps for phase      ACTION   NEXT
-============================  ==========================  ===========================  =======  ========
-``true``                      (any)                       (any)                        EXIT     current
-``false``                     ``plan``                    (any)                        PLAN     execute
-``false``                     ``execute``                 > 1                          EXECUTE  execute
-``false``                     ``execute``                 == 1                         EXECUTE  review
-``false``                     ``execute``                 == 0                         REVIEW   close
-``false``                     ``review``                  (any)                        REVIEW   close
-``false``                     ``close``                   (any)                        CLOSE    plan
-============================  ==========================  ===========================  =======  ========
+============================  ===========================  =======  ================
+``project.json.state``        pending steps for phase      ACTION   NEXT
+============================  ===========================  =======  ================
+``plan``                      (any)                        PLAN     execute
+``execute``                   > 1                          EXECUTE  execute
+``execute``                   == 1                         EXECUTE  review
+``execute``                   == 0                         REVIEW   close
+``review``                    (any)                        REVIEW   close
+``close``                     (any)                        CLOSE    audit_boundary
+``audit_boundary``            (any)                        EXIT     audit_boundary
+``audit_escalation``          (any)                        EXIT     audit_escalation
+``done``                      (any)                        EXIT     done
+============================  ===========================  =======  ================
 
 ``STOP_BEFORE_REVIEW=true`` short-circuits any REVIEW dispatch to
 ``ACTION: EXIT`` with ``NEXT: review``.
@@ -66,7 +69,19 @@ import validate as v
 # ---------------------------------------------------------------------------
 
 
-VALID_STATES = ("plan", "execute", "review", "close")
+VALID_STATES = (
+    "plan",
+    "execute",
+    "review",
+    "close",
+    "audit_boundary",
+    "audit_escalation",
+    "done",
+)
+
+# States that dispatch EXIT regardless of phase/steps content. The loop halts
+# at these; humans or an autonomous wrapper transition out.
+HALT_STATES = ("audit_boundary", "audit_escalation", "done")
 
 
 def _parse_bool_env(name: str, default: bool = False) -> bool:
@@ -105,20 +120,18 @@ def decide(
 
     Pure function: no I/O, no env lookups. Easy to test cell-by-cell.
     """
-    blocked = bool(project.get("blocked", False))
     state = project.get("state", "")
     if state not in VALID_STATES:
         raise ValueError(
             f"project.json.state is {state!r}; expected one of {VALID_STATES}"
         )
-    if blocked:
+
+    if state in HALT_STATES:
         return "EXIT", state
 
     phase = int(project.get("phase", 0))
-
     if state == "plan":
         return "PLAN", "execute"
-
     if state == "execute":
         pending = count_pending_steps(steps, phase)
         if pending == 0:
@@ -127,14 +140,14 @@ def decide(
             return "REVIEW", "close"
         next_state = "review" if pending == 1 else "execute"
         return "EXECUTE", next_state
-
     if state == "review":
         if stop_before_review:
             return "EXIT", "review"
         return "REVIEW", "close"
-
     if state == "close":
-        return "CLOSE", "plan"
+        return "CLOSE", "audit_boundary"
+    # Unreachable — VALID_STATES + HALT_STATES guards above. Defensive raise.
+    raise ValueError(f"unreachable state {state!r}")  # pragma: no cover
 
     # Unreachable — VALID_STATES guards above. Defensive raise.
     raise ValueError(f"unreachable state {state!r}")  # pragma: no cover

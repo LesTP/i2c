@@ -31,7 +31,7 @@ class TempStateDir:
         self.state_dir = root / ".state"
         self.state_dir.mkdir()
         write_json(self.state_dir / "project.json", {
-            "phase": 1, "state": "execute", "blocked": False, "gotchas": []
+            "phase": 1, "state": "execute", "gotchas": []
         })
         write_json(self.state_dir / "phases.json", [
             {"id": 1, "title": "Bootstrap", "regime": "build", "dependencies": [], "status": "pending"},
@@ -90,8 +90,14 @@ class TestParseValue(unittest.TestCase):
 
 class TestParseKvPairs(unittest.TestCase):
     def test_parses_multi(self):
-        d = state.parse_kv_pairs(["state=review", "blocked=true", "phase=3"])
-        self.assertEqual(d, {"state": "review", "blocked": True, "phase": 3})
+        d = state.parse_kv_pairs(["state=review", "phase=3", "steps_remaining=2"])
+        self.assertEqual(d, {"state": "review", "phase": 3, "steps_remaining": 2})
+
+    def test_parses_bool(self):
+        # parse_kv_pairs handles bool values; current schema has no bool fields
+        # but the parser must still coerce them for future schema additions.
+        d = state.parse_kv_pairs(["flag=true"])
+        self.assertEqual(d, {"flag": True})
 
     def test_missing_equals(self):
         with self.assertRaisesRegex(ValueError, "key=value"):
@@ -138,12 +144,12 @@ class TestSet(unittest.TestCase):
         with TempStateDir() as t:
             rc, out, err = run_state(
                 "set", str(t.state_dir / "project.json"),
-                "state=review", "blocked=true",
+                "state=review", "phase=2",
             )
             self.assertEqual(rc, 0, msg=err)
             data = json.loads((t.state_dir / "project.json").read_text())
             self.assertEqual(data["state"], "review")
-            self.assertIs(data["blocked"], True)
+            self.assertEqual(data["phase"], 2)
 
     def test_rejects_invalid_enum(self):
         with TempStateDir() as t:
@@ -528,7 +534,7 @@ class TestUpdateRecord(unittest.TestCase):
             rc, out, err = run_state(
                 "update-record", str(t.state_dir / "project.json"),
                 "--match", "phase=1",
-                "blocked=true",
+                "state=review",
             )
             self.assertEqual(rc, 2)
             self.assertIn("JSON array file", err)

@@ -73,6 +73,9 @@ class TempProject:
         path = self.root / ".state" / "project.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         data.update(kwargs)
+        # Defensive: 'blocked' was dropped per DESIGN_state_lifecycle_v1;
+        # schema rejects it. Strip in case a test accidentally passes it.
+        data.pop("blocked", None)
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     def patch_phase_status(self, phase_id: int, status: str) -> None:
@@ -164,9 +167,9 @@ def read_summary(root: Path) -> str:
 class TestStateMachineExit(unittest.TestCase):
     """When state_machine dispatches EXIT, no worker invocation happens."""
 
-    def test_blocked_short_circuits_to_exit_zero(self):
+    def test_audit_boundary_short_circuits_to_exit_zero(self):
         with TempProject() as p:
-            p.patch_project(blocked=True, state="close")
+            p.patch_project(state="audit_boundary")
             calls = []
             invoker = make_fake_invoker(signal_block(), capture=calls)
             rc, out, err = run_iter(invoker=invoker)
@@ -254,15 +257,16 @@ class TestExitSignalParsing(unittest.TestCase):
 
 
 class TestCloseInvariantHalt(unittest.TestCase):
-    """A CLOSE worker that doesn't set blocked=true must trip FU-22."""
+    """A CLOSE worker that doesn't set state=audit_boundary must trip FU-22."""
 
-    def test_close_without_blocked_halts_with_invariant_error(self):
+    def test_close_without_audit_boundary_halts_with_invariant_error(self):
         with TempProject() as p:
             # Drive state to "close" + phase 2 still pending, so the
             # state machine dispatches CLOSE.
-            p.patch_project(state="close", blocked=False)
+            p.patch_project(state="close")
             # Worker emits a clean EXIT 0 signal but DOESN'T update
-            # blocked/phase status. Runner must detect via invariants.
+            # state to audit_boundary or mark phase complete. Runner must
+            # detect via invariants.
             invoker = make_fake_invoker(
                 signal_block(
                     exit_code=0, reason="closed it",
@@ -278,11 +282,11 @@ class TestCloseInvariantHalt(unittest.TestCase):
 
     def test_close_with_proper_invariants_passes(self):
         with TempProject() as p:
-            # Pre-stage the post-CLOSE state correctly: state=close, then
-            # the worker (our fake) "would have" set blocked=true and
-            # marked phase complete. Simulate that by patching them up
-            # front since the fake doesn't actually call state.py.
-            p.patch_project(state="close", blocked=True, phase=2)
+            # Pre-stage the post-CLOSE state correctly: state=audit_boundary,
+            # phase 2 complete. The fake worker doesn't actually call state.py,
+            # so we patch the post-condition directly to simulate a worker
+            # that did its job.
+            p.patch_project(state="audit_boundary", phase=2)
             p.patch_phase_status(2, "complete")
             invoker = make_fake_invoker(
                 signal_block(
