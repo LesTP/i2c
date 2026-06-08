@@ -52,7 +52,7 @@ i2c/
 │                                     check, decision closure, set the human gate
 │
 ├── schemas/                        ← JSON Schema for every state file
-│   ├── project.schema.json           top-level state (phase, state, blocked, gotchas, budget)
+│   ├── project.schema.json           top-level state (phase, state enum, gotchas, budget)
 │   ├── phases.schema.json            array of phase records (regime, dependencies)
 │   ├── steps.schema.json             array of step records (status enum, commit hash)
 │   ├── devlog_entry.schema.json      per-line schema for devlog.jsonl
@@ -100,7 +100,7 @@ git-tracked. Diffs of these files cleanly show state transitions.
 
 | File | Shape | What it holds |
 |------|-------|---------------|
-| `project.json` | JSON object | Current phase number, current action state, blocked flag, gotchas, step or time budget |
+| `project.json` | JSON object | Current phase number, lifecycle state (see below), gotchas, step or time budget |
 | `phases.json` | Array of objects | One record per phase — id, module, title, regime (build/refine/explore), dependencies, status |
 | `steps.json` | Array of objects | One record per step across all phases — (phase, step), title, status, commit hash |
 | `devlog.jsonl` | One JSON object per line | Append-only history of every action's outcome |
@@ -110,11 +110,36 @@ Schemas are in [`schemas/`](schemas/). All writes go through
 [`tools/state.py`](tools/state.py) for atomicity and validation; never
 `sed`, `echo >`, or text editors.
 
+### Lifecycle state values
+
+`project.json.state` is the single variable that drives the state
+machine. Seven values, all valid; see
+[`DESIGN_state_lifecycle_v1.md`](DESIGN_state_lifecycle_v1.md) for the
+full model.
+
+| State | Meaning | Next dispatch | Recovery write (when halted) |
+|-------|---------|---------------|------------------------------|
+| `plan` | Next action is PLAN | PLAN | — |
+| `execute` | Next action is EXECUTE | EXECUTE | — |
+| `review` | Next action is REVIEW | REVIEW | — |
+| `close` | Next action is CLOSE | CLOSE | — |
+| `audit_boundary` | Phase done, human/wrapper decides next phase or terminus | EXIT | `set phase=N+1 state=plan` (advance) or `set state=done` (terminate) |
+| `audit_escalation` | Worker hit an escalation (three strikes / contract drift / scope expansion); human required | EXIT | `set state=execute\|review\|...` (resume the running state after resolving the escalation) |
+| `done` | Project terminal; no further dispatch | EXIT | `set phase=N+1 state=plan` (deliberate add-a-phase) |
+
+CLOSE workers always transition to `audit_boundary` (conservative
+closure — the human/wrapper, not the worker, decides whether the next
+state is `plan` or `done`). EXECUTE and REVIEW workers transition to
+`audit_escalation` on escalation per their instruction files.
+
 ### state.py operations
 
 ```bash
 # Top-level keys on a JSON-object file (project.json)
-python3 tools/state.py set project.json state=execute blocked=false
+python3 tools/state.py set project.json state=execute
+
+# Advance to a new phase + transition to plan (one atomic write)
+python3 tools/state.py set project.json phase=12 state=plan
 
 # Mark a step or phase complete (matched by key)
 python3 tools/state.py complete steps.json --phase 11 --step 3 --commit abc1234
@@ -173,10 +198,15 @@ The worker reads zero governance files. It does its action, writes
 outcomes via `state.py`, emits the exit signal, exits. The runner
 re-invokes for the next action.
 
-At phase close, `blocked: true` halts the loop. A human or orchestrator
-audits, then clears the gate with
-`python3 tools/state.py set project.json blocked=false state=plan` and
-the loop resumes.
+At phase close, the worker transitions to `state=audit_boundary` and the
+loop halts. A human or autonomous wrapper audits, then writes one of:
+
+- `python3 tools/state.py set project.json phase=N+1 state=plan` —
+  advance to the next phase
+- `python3 tools/state.py set project.json state=done` — declare the
+  project terminal
+
+and the loop resumes (or stops permanently on `done`).
 
 ### Supervised
 
@@ -250,7 +280,7 @@ housekeeping.
 
    ```bash
    mkdir .state
-   echo '{"phase": 0, "state": "plan", "blocked": false, "gotchas": []}' > .state/project.json
+   echo '{"phase": 0, "state": "plan", "gotchas": []}' > .state/project.json
    echo '[]' > .state/phases.json
    echo '[]' > .state/steps.json
    echo '[]' > .state/decisions.json
