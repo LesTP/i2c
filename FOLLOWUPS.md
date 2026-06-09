@@ -25,10 +25,17 @@ phase=4` awaiting the boundary-clear decision before Phase 5+. ARCH
 template authored at `ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md`,
 awaiting first-real-use validation on CC's next module.
 
-See `PILOT_clankercourts_phase1.md` for the original Phase 1 pilot debrief
-(2026-06-06 epistemic caveat still applies). FU-32 below carries the live
-spec for the remaining autonomous-PLAN readiness work (Δ5 + CC ARCH
-validation).
+**Epistemic note (carried over from the original Phase 1 pilot debrief,
+2026-06-06):** the original clankercourts Phase 1 ran inside the same
+continuous session that built i2c itself — operator knew the framework's
+contracts intimately and caught friction (FU-12, FU-19, FU-21, FU-22)
+before it compounded. "Worker contract held" claims from that period
+reflect session discipline, not framework enforcement. Subsequent CC
+Phases 2–4 ran autonomously (separate sessions, no operator in the
+loop mid-iteration) and validated the framework properly.
+
+FU-32 below carries the live spec for the remaining autonomous-PLAN
+readiness work (Δ5 + CC ARCH validation).
 
 **Tooling now available:**
 - `python tools/state.py {append,append-record,update-record,append-gotcha} --from-file <path>` for `$`-laden / multi-line payloads (FU-21 closed).
@@ -100,12 +107,15 @@ python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 | FU-17 | `--phase` accepted (but ignored) with `--section status` | open | Per ARCH §8, `--section status` does not accept `--phase` — it always reports on `project.json.phase`. The implementation accepts `--phase` at the argparse layer and silently uses `project.json.phase` in `build_section_status`. Functionally correct but not strict per spec. | Either Phase 2 pilot surfaces confusion (operator passes `--phase 3` and expects status for phase 3), OR a spec-compliance pass. Fix is one branch in `_validate_args`: reject `--phase` when `--section == status`. |
 | FU-18 | Assembler tests slow on Windows network share | open | `tests/test_assemble_context.py` runs in ~60s on `\\192.168.0.50\shared\...`. Primary cost: `TempProject(with_framework=True)` copies the full `instructions/` directory and WORKER_SPEC + both adapters per test invocation. | If iteration cost becomes painful, refactor `TempProject` to copy only what each test class needs (most renderer tests don't read instructions), or cache the framework copy per pytest session. Not a correctness issue. |
 | FU-23 | Assembler `--section status` omits `Budget:` line when `budget_type` is set but no counter populated | open (pilot-cosmetic) | clankercourts' `project.json` after Phase 1 close has `budget_type: "steps"` but no `steps_remaining`. The renderer's check is `if "steps_remaining" in p` and `elif p.get("budget_type") == "time" and "time_budget_seconds" in p` — both branches need the counter present. Result: the Budget line is silently omitted. Correct per ARCH §8 (which shows the line with a counter), but a stronger snapshot would render `**Budget:** steps (no remaining count set)` so the operator sees the mode even when the runner hasn't populated the count yet. | Cosmetic; address opportunistically. |
+| FU-34 | Additional `--section` projections for codexbot consumers | open (partially closed by `--section phase-summary`) | `--section phase-summary --phase N` shipped 2026-06-09 (covers operator's boundary-review use case). Two more projections still useful for codexbot integration: `--section escalation --phase N` (last `escalate` devlog entry + surrounding context: preceding 3 entries + relevant decisions); `--section iteration --iter N` (captures from `logs/loop/iteration_NNN.txt` plus state snapshot at that point). Each ~50-100 LOC. Together replace the "20 screens of markdown dump" pattern with targeted structured projections for downstream UIs (`/audit`, `/escalation`, `/logs`, `/review`). | Codexbot integration session starts implementing `/escalation` and `/logs` commands and needs structured projections instead of raw file reads. |
 
 ## Tooling — runner
 
 | ID | Title | Status | Context | Trigger to address |
 |----|-------|--------|---------|--------------------|
 | FU-22 | Runner post-close invariant check - assert `blocked == true` + current phase `status: complete` after every CLOSE | **closed** (Phase 3.A) | See resolution note below. Shipped as `tools/invariants.py` (`check_post_action(root, action)`); the single-iteration runner calls it after every CLOSE dispatch and halts-and-surfaces on failure. Reusable from supervised tooling too. |
+| FU-33 | Runner doesn't surface token/quota counts in `summary.log` | open | `run_iteration.py` parses claude's `--json` output (and codex JSONL) for exit-signal handling but doesn't extract `usage_input_tokens` / `usage_output_tokens` and surface them. Codexbot's eventual `/cost` or `/tokens` command needs per-iteration cost visibility, and the operator wants the same signal during supervised runs. Pirozhok README has an open item "Codex cost extraction from --json output" that maps to this. | Add `tokens_in=N tokens_out=M` (and optionally `tokens_cumulative=K`) to each `summary.log` line. Cross-provider: same field names, populated when extractable, `n/a` otherwise. ~30 LOC in `run_iteration.py`. |
+| FU-35 | Runner doesn't emit Anthropic `cache_control` markers around stable prompt prefix | open | Wrapping WORKER CONTRACT and TOOL RULES regions with Anthropic's ephemeral cache_control blocks lets us hit the prompt cache on iter 2+ within a phase — meaningful cost win once Phase 3.C ships multi-iteration. Other providers (OpenAI, Gemini) auto-detect identical prefixes without explicit markers, so the current prompt shape already benefits them; this item is Anthropic-specific. | Ship after Phase 3.C (multi-iteration loop). ~10 LOC in `run_iteration.py`'s claude invocation path. Verify cache hits by observing `cache_read_tokens` in API response on the second iteration of a phase. |
 | FU-32 | PLAN action not yet autonomous-capable; needs five framework deltas + ARCH-file discipline | **partially closed** (in progress; see progress log below) | After CC Phase 4 EXECUTE shipped supervised (commit `97e9ea4`), the meta-question surfaced: i2c's autonomous loop runs EXECUTE/REVIEW/CLOSE cleanly, but PLAN's step-breakdown step still requires human authoring because ARCH files aren't constrained enough to drive mechanical step decomposition. e2e solves this via a two-step workflow (pre-arch design separately, autonomous batch implementation); i2c lacks the ARCH-authoring discipline and the safety-net escalation triggers that make autonomous PLAN safe. Five deltas identified — see the progress log below for current state and the Δ5 spec. | Continue with CC Phase 5+ ARCH authoring against the new template; Δ5 follows once the template is validated. |
 
 ### FU-32 progress log
