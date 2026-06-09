@@ -8,10 +8,18 @@
 > distinguish automatable halts from human-only halts using state
 > alone.
 >
-> Status: draft, awaiting approval before implementation.
-> Authors: operator + assistant, 2026-06-07.
-> Closes: FU-30. Resolves: the doc/code contradiction surfaced at the
-> clankercourts post-Phase-3 boundary (close.md ↔ plan.md ↔ assembler).
+> Status: **shipped 2026-06-08.** Implementation landed across commits
+> 224aaf5 (memo), e2a71ec (Stack A — schema + state_machine), 9e53e62
+> (Stack B — assembler renderer + tolerance), a4d88b5 (Stack C —
+> instruction files), 7693330 (Stack E — FOLLOWUPS / README). Mirrored
+> to clankercourts as commit 1c126db (Stack D). 50+ tests added; CC's
+> `.state/project.json` migrated in place. Closes FU-30. Resolves the
+> doc/code contradiction surfaced at the clankercourts post-Phase-3
+> boundary (close.md ↔ plan.md ↔ assembler).
+>
+> Authors: operator + assistant, 2026-06-07 (memo) → 2026-06-08 (shipped).
+> This memo is preserved as the architectural record of *why* the
+> redesign happened; the implementation is canonical.
 
 ---
 

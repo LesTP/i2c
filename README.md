@@ -34,37 +34,50 @@ Modes:             autonomous (loop runner) or supervised (human + assistant)
 ```
 i2c/
 ├── README.md                       ← this file
-├── DESIGN_governance_v3.md         ← architectural rationale; the "why"
-├── WORKFLOW.md                     ← actor topology + invocation flow diagrams
-├── FOLLOWUPS.md                    ← rolling backlog of design notes / tooling gaps
-├── FUTURE_waymark.md               ← roadmap for refitting waymark on i2c
+├── FOLLOWUPS.md                    ← rolling backlog + cold-start summary (canonical project state)
+│
+├── DESIGN_governance_v3.md         ← original architectural rationale (D1–D21); state-model section superseded
+├── DESIGN_state_lifecycle_v1.md    ← current state-model design (7-state enum); shipped 2026-06-08
+├── ARCH_assembler.md               ← assembler contract (CLI surface, section catalog, error policy)
+├── WORKFLOW.md                     ← actor topology + dispatch flow diagrams
+├── FUTURE_waymark.md               ← roadmap for Waymark VS Code extension over i2c .state/
 │
 ├── WORKER_SPEC.md                  ← universal worker loop contract (backend-agnostic)
-├── CLAUDE.md                       ← per-project adapter template — Claude tool rules
-├── CODEX.md                        ← per-project adapter template — Codex tool rules
+├── CLAUDE.md                       ← Claude adapter template + tool rules
+├── CODEX.md                        ← Codex adapter template + tool rules
 │
 ├── instructions/                   ← per-action procedures (assembled into worker prompts)
 │   ├── plan.md                       Identify regime, write step/phase/decision records,
-│   │                                 conditional dependency-probe for non-leaf modules
+│   │                                 conditional dep-probe + escalation triggers (step 2.5)
 │   ├── execute.md                    Pick step, implement, test, commit, log
 │   ├── review.md                     Must/Should/Optional categorization, apply fixes
-│   └── close.md                      Phase-level tests, gotchas, conditional integration
-│                                     check, decision closure, set the human gate
+│   └── close.md                      Phase-level tests, gotchas, integration check,
+│                                     decision closure, set audit_boundary gate
+│
+├── ref/                            ← human-facing reference for collaborative authoring (not assembled)
+│   ├── SPEC_architecture.md          ARCH-file templates: Pattern A + Pattern B + variants
+│   └── GUIDE_architecture.md         Process walkthrough for architecture authoring sessions
 │
 ├── schemas/                        ← JSON Schema for every state file
-│   ├── project.schema.json           top-level state (phase, state enum, gotchas, budget)
+│   ├── project.schema.json           top-level state (phase, 7-state enum, gotchas, budget)
 │   ├── phases.schema.json            array of phase records (regime, dependencies)
 │   ├── steps.schema.json             array of step records (status enum, commit hash)
 │   ├── devlog_entry.schema.json      per-line schema for devlog.jsonl
-│   ├── decisions.schema.json         array of decision records
+│   ├── decisions.schema.json         array of decision records (optional phase field)
 │   └── exit_signal.schema.json       worker exit signal validation
 │
 ├── tools/
-│   ├── state.py                      atomic, schema-validated write CLI
+│   ├── state.py                      atomic, schema-validated write CLI (+ --from-file flag)
 │   ├── validate.py                   schema loader + validation helpers
-│   └── assemble_context.py           builds worker prompts and section snapshots
+│   ├── assemble_context.py           builds worker prompts and section snapshots
+│   ├── state_machine.py              ACTION + NEXT computation (read-only)
+│   ├── invariants.py                 post-action invariant checks
+│   └── run_iteration.py              single-iteration autonomous runner
 │
-├── tests/                          ← unit tests (stdlib unittest, 78+ tests)
+├── templates/                      ← slash-command wrappers for supervised mode
+│   └── .claude/commands/             cold-start, phase-plan, phase-review, etc.
+│
+├── tests/                          ← unit tests (stdlib unittest, ~278 tests)
 └── examples/
     ├── initial_state/                canonical fixture: a mid-phase project
     └── smoke_test.py                 end-to-end CLI walkthrough
@@ -74,21 +87,23 @@ Within a real project using i2c, additional files live at the project root:
 
 ```
 <your project>/
-├── .state/                         ← actual project state (gitignored? no — git-tracked)
+├── .state/                         ← actual project state (git-tracked)
 │   ├── project.json
 │   ├── phases.json
 │   ├── steps.json
 │   ├── devlog.jsonl
 │   └── decisions.json
 ├── PROJECT.md                      ← scope, constraints, success criteria
-├── ARCHITECTURE.md                 ← component map, data flow
-├── ARCH_<module>.md                ← per-module interface contracts
+├── ARCHITECTURE.md                 ← component map, data flow, implementation sequence
+├── ARCH_<module>.md                ← per-module interface contracts (Pattern A only;
+│                                     Pattern B keeps everything in ARCHITECTURE.md)
 ├── CLAUDE.md / CODEX.md            ← copied from i2c, filled in
 ├── WORKER_SPEC.md                  ← copied or symlinked from i2c
-├── instructions/                   ← copied or symlinked from i2c
+├── instructions/                   ← copied or symlinked from i2c (worker procedures)
 ├── schemas/                        ← copied or symlinked from i2c
-├── tools/                          ← copied or symlinked from i2c
-└── logs/loop/                      ← runner output (autonomous mode only)
+├── tools/                          ← copied or symlinked from i2c (state.py + validate.py
+│                                     must be in sync; assemble_context.py canonical from i2c)
+└── logs/loop/                      ← runner output (autonomous mode only; gitignored)
 ```
 
 ---
@@ -297,14 +312,20 @@ housekeeping.
    `python3 tools/assemble_context.py --action plan --phase 1 --mode supervised`
    and following the procedure in the assembled `Instructions` section.
 
-The framework is currently **Phase 1 complete (data foundation, prose
-layer, and assembler) and Phase 2 in progress (clankercourts bootstrap
-complete; first PLAN action upcoming). Phase 3 (autonomous loop tooling)
-not yet built.** See the next section for what works today.
+For a project that wants to run autonomously rather than supervised,
+substitute step 6 with `python3 ../i2c/tools/run_iteration.py --backend
+claude --max-budget-usd 5.00` (and see the Invocation guidance in
+`FOLLOWUPS.md` about laptop-vs-server constraints).
 
 ---
 
 ## Build status
+
+The framework is functionally complete for single-iteration autonomous
+runs. CC (clankercourts) is the first real consumer; it ran Phases 2–4
+end-to-end autonomously (Codex and Claude backends both proven in
+production). Remaining work is incremental — multi-iteration loop,
+codexbot integration, ARCH-authoring discipline (FU-32).
 
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
@@ -312,58 +333,98 @@ not yet built.** See the next section for what works today.
 | 1.2 | Instruction files (plan, execute, review, close), WORKER_SPEC, adapter templates | ✅ |
 | 1.2.5 | `ARCH_assembler.md` contract spec | ✅ |
 | 1.2.6 | `templates/.claude/commands/` slash wrappers | ✅ |
-| 1.3 | `assemble_context.py` - context assembler | ✅ |
-| 2 | Clankercourts pilot in supervised mode | in progress |
-| 3 | `state_machine.sh`, `run-iteration.sh` updates — autonomous loop | upcoming |
-| 4 | Codexbot StateReader + dispatcher (Telegram or Discord) | upcoming |
+| 1.3 | `assemble_context.py` — context assembler | ✅ |
+| 2 | Clankercourts pilot (Phases 1–4 shipped; Phase 1 supervised, Phases 2–4 autonomous) | ✅ |
+| 3.A | `state_machine.py`, `run_iteration.py`, `invariants.py` — single-iteration autonomous loop | ✅ |
+| 3.A.1 | Prompt compaction + region reorder (Worker Contract → Tool Rules → Project Context → Action Context) | ✅ |
+| 3.A.2 | EXECUTE recipe trim (drop project-wide decisions table) | ✅ |
+| 3.B | First real autonomous run (CC Phases 2–4 on Claude + Codex) | ✅ |
+| 3.D | Codex backend (`--backend codex` in runner) | ✅ |
+| State lifecycle v1 | 7-state enum replaces `(state, blocked)` overload (FU-30) | ✅ |
+| FU-32 Δ1, Δ2, Δ4 + phase-summary | autonomous-PLAN readiness work | ✅ |
+| 3.C | Multi-iteration loop (`--step-budget > 1`) | upcoming |
+| 4 | Codexbot StateReader + dispatcher for i2c projects | upcoming |
+| FU-32 Δ5 | PLAN precondition check on ARCH completeness | deferred (after CC Phase 5+ validates template) |
 | 5 | (Optional) Diplomat migration from e2e | deferred |
 
 ### What works today
 
-- All `.state/` operations through `state.py` (writes, validation,
-  atomic guarantees)
-- Schema validation on every write; `validate.py` can also re-validate
-  any existing file
-- **Worker prompt assembly** through `assemble_context.py` — full
+- All `.state/` operations through `state.py` with atomic writes,
+  schema validation, and `--from-file` payload paths (FU-21 closed).
+- Schema validation on every write; `validate.py` re-validates any
+  existing file.
+- Worker prompt assembly through `assemble_context.py` — full
   per-action prompts (`--action {plan,execute,review,close}` with
   `--mode {autonomous,supervised}`), status snapshots
-  (`--section status`), and mid-step single-section requests
-  (`--section {architecture,module,devlog}`). Conditional sections
-  (dependency probe, integration check, autonomous-only paragraphs)
-  strip deterministically per ARCH_assembler.md §7.
-- Supervised use with humans/assistants reading the assembler output
-  (the slash wrappers in `templates/.claude/commands/` are now
-  functional end-to-end)
-- The end-to-end smoke test exercises every CLI subcommand on a realistic
-  fixture
-- Cross-platform (tested on Windows / PowerShell + Python 3.12)
+  (`--section status`), phase-boundary audit view
+  (`--section phase-summary --phase N`, ARCH_assembler.md §8b), and
+  mid-step single-section requests (`--section {architecture,module,devlog}`).
+  Conditional sections strip deterministically per
+  `ARCH_assembler.md` §7.
+- Single-iteration autonomous loop: `python tools/run_iteration.py
+  [--backend claude|codex] [--model sonnet] [--max-budget-usd 5.00]`
+  dispatches one worker invocation with full state-machine +
+  invariants checking. **Both backends proven in production** on CC
+  Phases 2–4.
+- Supervised CLI use of the same assembler output (via slash command
+  wrappers or direct invocation).
+- ARCH-file authoring template at `ref/SPEC_architecture.md` +
+  `ref/GUIDE_architecture.md` (Pattern A / Pattern B; see FU-32 D4
+  progress in `FOLLOWUPS.md`).
+- Cross-platform (Windows / PowerShell + Python 3.12; Linux server
+  via SSH-into-container for autonomous loops, since Meta-issued
+  laptops can't host the subprocess chain — FU-28).
 
 ### What doesn't work yet
 
-- **No autonomous loop.** `state_machine.sh` and `run-iteration.sh`
-  updates are Phase 3.
-- **No remote dispatch.** Codexbot integration is Phase 4. No
-  Telegram/Discord control surface yet.
+- **No multi-iteration loop.** Runner hard-codes `--step-budget 1`;
+  one worker invocation = one ACTION. Phase 3.C is to wrap it with a
+  multi-step driver. The `multi_step_only` marker mechanism in
+  WORKER_SPEC and instructions is already forward-compatible.
+- **No remote dispatch surface.** Codexbot integration (Phase 4) is
+  designed but not built. The current operator UX is direct CLI or
+  SSH-into-container; codexbot would add Telegram `/status`, `/run`,
+  `/close`, etc. backed by a StateReader over `.state/`.
+- **No autonomous-capable PLAN yet.** PLAN runs work but step
+  decomposition is human-assisted. FU-32 Δ5 (PLAN precondition check
+  on ARCH completeness) lands after the Pattern A template validates
+  on CC Phase 5+.
+
+For the rolling state-of-the-project view (what's pending, what's been
+shipped recently, what the next steps are), see the cold-start summary
+at the top of [`FOLLOWUPS.md`](FOLLOWUPS.md).
 
 ---
 
 ## Where to look next
 
-- **Architectural rationale and decisions:**
-  [`DESIGN_governance_v3.md`](DESIGN_governance_v3.md) - the design doc
-  with all locked decisions (D1-D21).
-- **Assembler contract:** [`ARCH_assembler.md`](ARCH_assembler.md) - the
-  authoritative CLI surface, section catalog, assembly matrix, and error
-  policy for `assemble_context.py`. Phase 1.3 implements against this.
-- **Visual workflow:** [`WORKFLOW.md`](WORKFLOW.md) - actor topology,
-  invocation flow, action map, supervised mode diagram.
-- **Outstanding gaps and design notes:**
-  [`FOLLOWUPS.md`](FOLLOWUPS.md) — rolling backlog with explicit
-  triggers for when to act on each item.
+- **Current state and active priorities:**
+  [`FOLLOWUPS.md`](FOLLOWUPS.md) — cold-start summary up top, then the
+  rolling backlog (open / partially-closed / closed FU entries).
+  Single canonical source for "where are we right now."
+- **Architectural rationale and locked decisions:**
+  [`DESIGN_governance_v3.md`](DESIGN_governance_v3.md) — original
+  design doc with D1–D21; state-model section is superseded by
+  `DESIGN_state_lifecycle_v1.md` (banner at top of the file notes
+  this).
+- **State lifecycle (current model):**
+  [`DESIGN_state_lifecycle_v1.md`](DESIGN_state_lifecycle_v1.md) —
+  7-state enum that replaced `(state, blocked)`. Shipped 2026-06-08.
+- **Assembler contract:**
+  [`ARCH_assembler.md`](ARCH_assembler.md) — authoritative CLI
+  surface, section catalog (including `--section phase-summary` §8b),
+  assembly matrix, error policy.
+- **ARCH-file authoring template:**
+  [`ref/SPEC_architecture.md`](ref/SPEC_architecture.md) +
+  [`ref/GUIDE_architecture.md`](ref/GUIDE_architecture.md) — Pattern A
+  (per-module ARCH files) and Pattern B (single-document
+  architecture) with worked examples.
+- **Visual workflow:** [`WORKFLOW.md`](WORKFLOW.md) — actor topology,
+  dispatch paths, action map.
 - **Waymark refit roadmap:**
-  [`FUTURE_waymark.md`](FUTURE_waymark.md) — VS Code extension over i2c
-  `.state/`, deferred until i2c is built and piloted.
-- **Source-of-truth source for replaced material:** the predecessor
-  framework lives at `p:\shared\e2e\` (DEVPLAN-frontmatter,
-  DEVLOG-markdown, COMMANDS/*.md). i2c is a clean break, not a
-  migration — existing e2e projects continue using e2e.
+  [`FUTURE_waymark.md`](FUTURE_waymark.md) — VS Code extension over
+  i2c `.state/`, deferred until pulled forward.
+- **Source-of-truth for replaced material:** the predecessor framework
+  lives at `p:\shared\e2e\` (DEVPLAN-frontmatter, DEVLOG-markdown,
+  COMMANDS/*.md). i2c is a clean break, not a migration — existing
+  e2e projects continue using e2e.

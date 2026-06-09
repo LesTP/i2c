@@ -14,8 +14,8 @@ graph TB
     end
 
     subgraph "Execution Layer"
-        LR["🔄 Loop Runner<br/>(run-iteration.sh)"]
-        SM["⚙️ State Machine<br/>(state_machine.sh)<br/>called by runner"]
+        LR["🔄 Loop Runner<br/>(run_iteration.py)"]
+        SM["⚙️ State Machine<br/>(state_machine.py)<br/>called by runner"]
         ASM["📦 Context Assembler<br/>(assemble_context.py)<br/>called by runner"]
         W["🔨 Worker<br/>(Claude or Codex session)<br/>receives assembled prompt"]
     end
@@ -29,9 +29,9 @@ graph TB
 
     H -- "Telegram commands<br/>/run /batch /status /close" --> CB
     H -- "Direct session<br/>(supervised mode)" --> CO
-    CB -- "Deterministic dispatch<br/>/run → shell exec" --> LR
+    CB -- "Deterministic dispatch<br/>/run → subprocess" --> LR
     CB -- "Reads .state/ for<br/>/status /audit /decisions" --> ST
-    CO -- "bash run-iteration.sh" --> LR
+    CO -- "python tools/run_iteration.py" --> LR
     CO -- "Reads logs for<br/>post-run analysis" --> LOG
     LR -- "1. determine action" --> SM
     SM -- "reads" --> ST
@@ -60,20 +60,20 @@ There are **two independent ways** to dispatch worker iterations:
 graph LR
     subgraph "Path A: Codexbot (automated)"
         H1["Human"] -->|"/run 3"| CB1["Codexbot"]
-        CB1 -->|"shell exec"| LR1["run-iteration.sh"]
+        CB1 -->|"subprocess"| LR1["run_iteration.py"]
         LR1 --> W1["Worker"]
     end
 
     subgraph "Path B: Orchestrator (interactive)"
         H2["Human"] -->|"run 3 loops"| CO2["Orchestrator"]
-        CO2 -->|"bash run-iteration.sh"| LR2["run-iteration.sh"]
+        CO2 -->|"python tools/run_iteration.py"| LR2["run_iteration.py"]
         LR2 --> W2["Worker"]
     end
 ```
 
-**Path A (Codexbot):** Deterministic. Codexbot receives a Telegram command, directly shells out to `run-iteration.sh`, reads results from files, formats a report. No LLM judgment in the dispatch path — codexbot is a Python app, not an AI session. It also handles `/status`, `/audit`, `/close` by reading `.state/` directly.
+**Path A (Codexbot):** Deterministic. Codexbot receives a Telegram command, directly shells out to `run_iteration.py`, reads results from files, formats a report. No LLM judgment in the dispatch path — codexbot is a Python app, not an AI session. It also handles `/status`, `/audit`, `/close` by reading `.state/` directly.
 
-**Path B (Orchestrator):** AI-mediated. An orchestrator session (Claude or Codex) receives freeform instructions, decides what to do, shells out to `run-iteration.sh`, then reads logs and reports back. The orchestrator makes judgment calls: "should I dispatch another iter?", "is this error worth escalating?", "what do I tell the human?"
+**Path B (Orchestrator):** AI-mediated. An orchestrator session (Claude or Codex) receives freeform instructions, decides what to do, shells out to `run_iteration.py`, then reads logs and reports back. The orchestrator makes judgment calls: "should I dispatch another iter?", "is this error worth escalating?", "what do I tell the human?"
 
 **Key insight:** Both paths use the same runner, same worker, same state files. The difference is who sits between the human and the runner: a deterministic bot or an AI session.
 
@@ -85,13 +85,13 @@ The key change from e2e: the runner assembles context *before* the worker starts
 
 ```mermaid
 sequenceDiagram
-    participant R as Runner<br/>(run-iteration.sh)
-    participant SM as State Machine<br/>(state_machine.sh)
+    participant R as Runner<br/>(run_iteration.py)
+    participant SM as State Machine<br/>(state_machine.py)
     participant ASM as Assembler<br/>(assemble_context.py)
     participant W as Worker<br/>(Claude / Codex)
     participant ST as .state/
 
-    R->>SM: 1. bash state_machine.sh
+    R->>SM: 1. python tools/state_machine.py
     SM->>ST: read project.json, steps.json
     SM-->>R: ACTION: EXECUTE, NEXT: review
 
@@ -153,7 +153,7 @@ stateDiagram-v2
 ```
 Dispatch request (human → codexbot/orch → runner)
   │
-  ├─ Runner calls: bash tools/state_machine.sh
+  ├─ Runner calls: python tools/state_machine.py
   │   ├─ Reads: .state/project.json, .state/steps.json
   │   ├─ Checks: blocked? budget exhausted?
   │   ├─ Computes: ACTION + NEXT
@@ -262,8 +262,8 @@ Dispatch request (human → codexbot/orch → runner)
 | PROJECT.md | PROJECT.md | Unchanged — scope, constraints, success criteria |
 | ARCHITECTURE.md | ARCHITECTURE.md | Unchanged — component map, contracts, impl sequence |
 | ARCH_*.md | ARCH_*.md | Unchanged — per-module interface specs |
-| run-iteration.sh | run-iteration.sh | Calls state_machine + assembler before invoking worker |
-| state_machine.sh | state_machine.sh | Reads .state/ JSON via jq. Called by runner, not worker. |
+| run-iteration.sh | run_iteration.py | Python rewrite. Calls state_machine + assembler before invoking worker; emits cost/budget halts; invariants check after every CLOSE. |
+| state_machine.sh | state_machine.py | Python rewrite. Reads `.state/` JSON via `tools/validate.py` (was: bash + jq). Called by runner, not worker. |
 | summary.log | summary.log | Unchanged — runner's per-iteration log |
 | parse_jsonl.py etc. | parse_jsonl.py etc. | Unchanged — log parsing tools |
 
@@ -314,7 +314,7 @@ In supervised mode, a human works directly with an AI assistant. The same tools 
 ```mermaid
 graph LR
     subgraph "Autonomous"
-        R["Runner"] -->|"calls"| SM2["state_machine.sh"]
+        R["Runner"] -->|"calls"| SM2["state_machine.py"]
         R -->|"calls"| ASM2["assemble_context.py"]
         R -->|"invokes with prompt"| W2["Worker"]
         W2 -->|"calls"| SP2["state.py"]
@@ -323,7 +323,7 @@ graph LR
     subgraph "Supervised"
         HA["Human + Assistant"] -->|"calls on demand"| ASM3["assemble_context.py<br/>--mode supervised"]
         HA -->|"calls"| SP3["state.py"]
-        HA -->|"optionally calls"| SM3["state_machine.sh"]
+        HA -->|"optionally calls"| SM3["state_machine.py"]
     end
 ```
 
