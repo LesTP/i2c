@@ -40,6 +40,11 @@
         "type": "string",
         "description": "Conditions that would warrant re-opening this decision."
       },
+      "phase": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Optional. Phase during which this decision was added. Enables per-phase filtering at boundary review (assembler --section phase-summary). Existing records without this field remain valid; new records may include it."
+      },
       "timestamp": {
         "type": "string",
         "format": "date-time"

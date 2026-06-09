@@ -228,6 +228,38 @@ class TestProjectSchemaBudgetFields(unittest.TestCase):
         v.validate_json_schema(self._project(), self.schema)
 
 
+class TestDecisionsPhaseField(unittest.TestCase):
+    """Δ1: optional `phase` field on decisions.schema.json."""
+
+    def setUp(self) -> None:
+        self.schema = v.load_schema("decisions.schema.json")
+
+    def _decision(self, **overrides):
+        base = {
+            "id": "D-1",
+            "title": "T",
+            "status": "closed",
+            "decision": "d",
+        }
+        base.update(overrides)
+        return [base]
+
+    def test_phase_field_accepted(self):
+        v.validate_json_schema(self._decision(phase=4), self.schema)
+
+    def test_phase_field_optional(self):
+        # Existing records without phase still validate (back-compat).
+        v.validate_json_schema(self._decision(), self.schema)
+
+    def test_phase_must_be_integer(self):
+        with self.assertRaisesRegex(ValueError, "phase"):
+            v.validate_json_schema(self._decision(phase="4"), self.schema)
+
+    def test_phase_must_be_positive(self):
+        with self.assertRaisesRegex(ValueError, "phase|minimum"):
+            v.validate_json_schema(self._decision(phase=0), self.schema)
+
+
 class TestDevlogActionEnumExtensions(unittest.TestCase):
     def setUp(self) -> None:
         self.schema = v.load_schema("devlog_entry.schema.json")

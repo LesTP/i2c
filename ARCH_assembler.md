@@ -53,6 +53,7 @@ assemble_context.py --section status
 assemble_context.py --section architecture
 assemble_context.py --section module --module NAME
 assemble_context.py --section devlog --phase N
+assemble_context.py --section phase-summary --phase N
 ```
 
 `--action` and `--section` are mutually exclusive. Exactly one must be specified.
@@ -62,9 +63,9 @@ assemble_context.py --section devlog --phase N
 | Flag | Required when | Accepted values | Default |
 |------|---------------|-----------------|---------|
 | `--action` | building a full prompt | `plan`, `execute`, `review`, `close` | — |
-| `--phase` | with `--action` (always); with `--section devlog` | positive integer | — |
+| `--phase` | with `--action` (always); with `--section devlog`; with `--section phase-summary` | positive integer | — |
 | `--mode` | optional with `--action` | `autonomous`, `supervised` | `autonomous` |
-| `--section` | building a single section | `status`, `architecture`, `module`, `devlog` | — |
+| `--section` | building a single section | `status`, `architecture`, `module`, `devlog`, `phase-summary` | — |
 | `--module` | only with `--section module` | non-empty module name | — |
 | `--step-budget` | optional with `--action` | positive integer | `1` |
 
@@ -97,6 +98,9 @@ python3 tools/assemble_context.py --action plan --phase 12 --mode supervised
 
 # Cold-start orientation (single-section)
 python3 tools/assemble_context.py --section status
+
+# Phase-boundary audit (operator-facing; see §8b)
+python3 tools/assemble_context.py --section phase-summary --phase 11
 
 # Mid-step context requests (worker, multi-step mode only)
 python3 tools/assemble_context.py --section architecture
@@ -397,6 +401,90 @@ If any optional section is empty (`gotchas: []`, no recent activity, no open dec
 
 ---
 
+## 8b. `--section phase-summary` Content Specification
+
+Operator's view at `state=audit_boundary`: “what happened in phase N?” Distinct from `--section status` (which is project-wide and current-state-focused) and from `--section devlog` (which is only the devlog tail). Designed to be the single thing a reviewer reads before clearing the gate.
+
+Requires `--phase N` (positive integer). The targeted phase may be any phase — most commonly the current one (under audit) or a recently-completed one (retrospective).
+
+Output:
+
+```
+## Phase 11 Summary — orchestrator: Pipeline + event loop (Build, complete)
+
+| Field | Value |
+|-------|-------|
+| Module | orchestrator |
+| Regime | build |
+| Dependencies | event_store |
+| Status | complete |
+| Spans | 2026-06-04T09:30:00Z — 2026-06-06T16:11:00Z (7 devlog entries) |
+
+## Steps
+
+| Step | Title | Status | Commit |
+|------|-------|--------|--------|
+| 11.1 | Pipeline topology with DI | complete | abc1234 |
+| 11.2 | Event loop with debounced extraction | complete | def5678 |
+| 11.3 | Slash command routing | complete | 9876fed |
+| 11.4 | End-to-end test | complete | 5432cba |
+
+## Decisions Added in This Phase
+
+- **D-18** [closed · medium] Title
+  Decision: …
+  Rationale: …
+- **D-19** [closed · low] Title
+  Decision: …
+
+<!-- N decision(s) in decisions.json lack the optional `phase` field and are excluded from this view. Back-fill via `state.py update-record decisions.json --match id=D-N phase=11` if any belong here. -->
+
+## Phase Devlog
+
+- 11.0 plan → complete — phase planned, 4 steps
+- 11.1 execute → complete (abc1234) — …
+- 11.2 execute → complete (def5678) — …
+- …
+- 11. review → complete — N findings, M Must applied
+- 11. close → complete — phase complete, gate set
+
+## Open Items for Boundary Decision
+
+- D-20 [high · open] Open thread — …
+```
+
+### 8b.1 Source mapping
+
+| Section | Source | Filter |
+|---------|--------|--------|
+| Header | `phases.json[id=N]` + `devlog.jsonl` timestamps for entries with `phase=N` | match phase id |
+| Steps | `steps.json` | `step.phase == N`, sorted by `step.step` |
+| Decisions Added in This Phase | `decisions.json` | `decision.phase == N` |
+| Phase Devlog | `devlog.jsonl` | `entry.phase == N`, in file order |
+| Open Items for Boundary Decision | `decisions.json` | `decision.phase == N AND decision.status == open` |
+
+### 8b.2 Decisions filter and back-fill note
+
+The Decisions Added in This Phase section relies on the optional `phase: integer` field on `decisions.schema.json` (added 2026-06-09 to support this section). Decisions authored before that field shipped lack it and will not appear, even if they were chronologically authored during the targeted phase.
+
+When `decisions.json` contains any records without the `phase` field, the section appends a footer comment naming the count and the `state.py update-record` command for back-filling. Reviewer chooses whether the missing records belong in this phase’s audit.
+
+### 8b.3 Deliberate exclusions
+
+Kept out to prevent excess:
+
+- **Full Module Contract** — the ARCH file is already large; reviewer pulls it via `--section module --module NAME` on demand.
+- **`ARCHITECTURE.md`** — reviewer reaches for it only if they suspect cross-module drift; pull via `--section architecture`.
+- **Project-wide decision history** — only phase-tagged decisions appear. Reviewer wants the audit scope, not the entire archive.
+- **`project.json.gotchas`** — not phase-tagged. CLOSE devlog entries typically mention new gotchas promoted; that signal lives in the Phase Devlog section.
+- **Deferred-work heuristics** (text-matching `Deferred:` in summaries) — too brittle for v1; operator greps `.state/devlog.jsonl` directly if needed.
+
+### 8b.4 Empty / unknown phase
+
+When `phases.json` has no record with `id == N`, the header renders `## Phase N Summary — (no phases.json record)` followed by an empty-marker comment; subsequent sections render with whatever data exists (typically all empty). Exit code remains 0 — unknown phases are not a required-input failure for this section (it’s a reporting tool; the operator is allowed to ask about a phase that doesn’t exist yet and get a clean empty response).
+
+---
+
 ## 9. Mode Framing
 
 `--mode {autonomous,supervised}` controls which subsections of the Worker Contract and the instructions are included.
@@ -495,6 +583,7 @@ Optional degradations all exit 0. The worker sees the placeholders and decides w
 | `--section` with unknown value | exit 2 (argparse `choices` enforces) |
 | `--phase` missing when `--action` is set | exit 2 |
 | `--phase` missing when `--section devlog` | exit 2 |
+| `--phase` missing when `--section phase-summary` | exit 2 |
 | `--module` missing when `--section module` | exit 2 |
 | `--mode` specified with `--section` | exit 2 |
 | `--phase` is not a positive integer | exit 2 |

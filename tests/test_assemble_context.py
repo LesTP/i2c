@@ -1196,5 +1196,111 @@ class TestSectionDevlog(unittest.TestCase):
             self.assertIn("<!-- empty -->", out)
 
 
+class TestSectionPhaseSummary(unittest.TestCase):
+    """`--section phase-summary --phase N` per ARCH_assembler.md §8b."""
+
+    def test_requires_phase(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary")
+            self.assertEqual(rc, 2)
+            self.assertIn("--phase is required", err)
+
+    def test_rejects_phase_zero(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "0")
+            self.assertEqual(rc, 2)
+            self.assertIn("positive integer", err)
+
+    def test_renders_header_with_module_title_regime_status(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Phase 1 Summary", out)
+            self.assertIn("bootstrap", out)
+            self.assertIn("Project scaffolding", out)
+            self.assertIn("Build", out)
+            self.assertIn("complete", out)
+
+    def test_renders_steps_table(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Steps", out)
+            self.assertIn("| Step |", out)
+            # Phase 1 in the fixture has 2 steps.
+            self.assertIn("| 1.1 |", out)
+            self.assertIn("| 1.2 |", out)
+
+    def test_renders_decisions_section_with_phase_filter(self):
+        # Fixture has D-1 + D-2 without phase field; nothing should show
+        # under phase 1, and the back-fill note must appear.
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Decisions Added in This Phase", out)
+            self.assertIn("<!-- empty -->", out)
+            self.assertIn("lack the optional `phase` field", out)
+
+    def test_phase_tagged_decisions_included(self):
+        # Inject a phase-tagged decision; it should appear under that phase.
+        with TempProject() as root:
+            decisions_path = root / ".state" / "decisions.json"
+            data = json.loads(decisions_path.read_text())
+            data.append({
+                "id": "D-3",
+                "title": "Test phase-tagged decision",
+                "status": "closed",
+                "decision": "this should appear in phase 2 summary",
+                "phase": 2,
+            })
+            decisions_path.write_text(json.dumps(data))
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("D-3", out)
+            self.assertIn("this should appear in phase 2 summary", out)
+
+    def test_renders_phase_devlog(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Phase Devlog", out)
+            self.assertIn("1.1 execute", out)
+            # Other phases' devlog should not bleed in.
+            self.assertNotIn("2.1 execute", out)
+
+    def test_open_items_lists_phase_tagged_open_decisions(self):
+        with TempProject() as root:
+            decisions_path = root / ".state" / "decisions.json"
+            data = json.loads(decisions_path.read_text())
+            data.append({
+                "id": "D-4",
+                "title": "Open question for phase 2",
+                "status": "open",
+                "priority": "high",
+                "decision": "TBD",
+                "phase": 2,
+            })
+            decisions_path.write_text(json.dumps(data))
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Open Items for Boundary Decision", out)
+            self.assertIn("D-4", out)
+            self.assertIn("Open question for phase 2", out)
+
+    def test_open_items_empty_when_no_phase_tagged_open(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Open Items for Boundary Decision", out)
+            # Fixture D-2 is open but not phase-tagged → not included.
+            self.assertNotIn("D-2", out)
+
+    def test_unknown_phase_renders_no_record_marker(self):
+        with TempProject():
+            rc, out, err = run_cli("--section", "phase-summary", "--phase", "99")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("(no phases.json record)", out)
+
+
 if __name__ == "__main__":
     unittest.main()
