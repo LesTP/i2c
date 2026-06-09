@@ -26,8 +26,9 @@ template authored at `ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md`,
 awaiting first-real-use validation on CC's next module.
 
 See `PILOT_clankercourts_phase1.md` for the original Phase 1 pilot debrief
-(2026-06-06 epistemic caveat still applies). `NEXT_STEPS_autonomous_plan.md`
-carries the live spec for FU-32's remaining work.
+(2026-06-06 epistemic caveat still applies). FU-32 below carries the live
+spec for the remaining autonomous-PLAN readiness work (Δ5 + CC ARCH
+validation).
 
 **Tooling now available:**
 - `python tools/state.py {append,append-record,update-record,append-gotcha} --from-file <path>` for `$`-laden / multi-line payloads (FU-21 closed).
@@ -73,8 +74,7 @@ python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 - Architectural rationale: `DESIGN_governance_v3.md`; state lifecycle: `DESIGN_state_lifecycle_v1.md`
 - ARCH-file authoring template: `ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md`
 - Workflow diagrams: `WORKFLOW.md`
-- Active spec for remaining FU-32 work: `NEXT_STEPS_autonomous_plan.md`
-- This file: the rolling backlog
+- This file: the rolling backlog + live spec for FU-32 (progress log below)
 - Pilot project: `p:\shared\clankercourts\` (first real consumer)
 
 ---
@@ -106,11 +106,13 @@ python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 | ID | Title | Status | Context | Trigger to address |
 |----|-------|--------|---------|--------------------|
 | FU-22 | Runner post-close invariant check - assert `blocked == true` + current phase `status: complete` after every CLOSE | **closed** (Phase 3.A) | See resolution note below. Shipped as `tools/invariants.py` (`check_post_action(root, action)`); the single-iteration runner calls it after every CLOSE dispatch and halts-and-surfaces on failure. Reusable from supervised tooling too. |
-| FU-32 | PLAN action not yet autonomous-capable; needs five framework deltas + ARCH-file discipline | **partially closed** (in progress; see progress log below) | After CC Phase 4 EXECUTE shipped supervised (commit `97e9ea4`), the meta-question surfaced: i2c's autonomous loop runs EXECUTE/REVIEW/CLOSE cleanly, but PLAN's step-breakdown step still requires human authoring because ARCH files aren't constrained enough to drive mechanical step decomposition. e2e solves this via a two-step workflow (pre-arch design separately, autonomous batch implementation); i2c lacks the ARCH-authoring discipline and the safety-net escalation triggers that make autonomous PLAN safe. Five deltas identified — see the progress log below for current state. Active items remain in `NEXT_STEPS_autonomous_plan.md` (which shrinks as items close and gets deleted when all of FU-32 lands). | Continue with CC Phase 5+ ARCH authoring against the new template; Δ2 then Δ5 follow. |
+| FU-32 | PLAN action not yet autonomous-capable; needs five framework deltas + ARCH-file discipline | **partially closed** (in progress; see progress log below) | After CC Phase 4 EXECUTE shipped supervised (commit `97e9ea4`), the meta-question surfaced: i2c's autonomous loop runs EXECUTE/REVIEW/CLOSE cleanly, but PLAN's step-breakdown step still requires human authoring because ARCH files aren't constrained enough to drive mechanical step decomposition. e2e solves this via a two-step workflow (pre-arch design separately, autonomous batch implementation); i2c lacks the ARCH-authoring discipline and the safety-net escalation triggers that make autonomous PLAN safe. Five deltas identified — see the progress log below for current state and the Δ5 spec. | Continue with CC Phase 5+ ARCH authoring against the new template; Δ5 follows once the template is validated. |
 
 ### FU-32 progress log
 
-**Plan source.** `NEXT_STEPS_autonomous_plan.md` carries the current active-item spec and implementation order. When all of FU-32 lands, that file is deleted and this entry flips to fully closed.
+This entry carries both the historical record and the live spec for any
+remaining deltas. When the last delta (Δ5) lands, FU-32 flips to fully
+closed and the live-spec subsection is dropped.
 
 **Decisions closed (Q1–Q5 from the original plan):**
 
@@ -128,7 +130,7 @@ python tools\run_iteration.py --backend claude --max-budget-usd 2.00
 - **Δ2 — `plan.md` escalation triggers enumeration.** ✓ Shipped 2026-06-09. Added step 2.5 to `instructions/plan.md`: 5 project-general triggers (source-vs-ARCH drift, multi-regime scope, cross-module breakage at plan time, step-shape ambiguity, dep-probe contract mismatch) in a table with detect-when / reason-string / resolution columns; plus module-specific triggers reference (pulls from ARCH's `## Escalation Triggers` section per Δ4 template); plus how-to-escalate snippet. Synced to CC. Verified via the `test_plan_autonomous_smoke` assembler test (asserts all 5 trigger names travel into the worker prompt). ~58 lines of doc; no code.
 - **Δ3 — `--section decisions --phase N`.** ✓ Obviated 2026-06-09 by the broader `--section phase-summary --phase N` (same filter + steps + devlog + open items + header). Δ3 dropped as a standalone deliverable.
 - **Δ4 — ARCH template port from e2e + augment.** ✓ Authored 2026-06-09 at `i2c/ref/SPEC_architecture.md` (360 lines) + `i2c/ref/GUIDE_architecture.md` (508 lines). Required / Recommended / Optional section taxonomy grounded in a 13-file ARCH review across CC (3), phosphene (5), toolkit (5). Required adds beyond e2e: `## Phasing in This Pilot` (3/11 organic), `## Escalation Triggers` (0/11 — genuinely novel), `## Inputs the [Module] Does Not Handle` (3/11 organic with three different names — convergent invention, standardized on CC wording). Recommended additions: `## Testing Strategy`, `## Provisional Contracts`, `## Dependencies`. Variant patterns documented: combined-spec single-file (e2e), MVP/full split (phosphene). **Awaiting first-real-use validation** on CC Phase 5+ ARCH.
-- **Δ5 — PLAN precondition check on ARCH completeness.** Deferred until Δ4 template validates. Active spec lives in `NEXT_STEPS_autonomous_plan.md`.
+- **Δ5 — PLAN precondition check on ARCH completeness.** Deferred until Δ4 template validates (≥1 real CC ARCH authored + 1 autonomous phase run under it). **Spec (lands in `instructions/plan.md` step 1 or 2):** PLAN reads the assembled `Module Contract` section; if it lacks `## Phasing in This Pilot` or `## Escalation Triggers`, worker writes a devlog entry naming the missing section (per Q2) and sets `state=audit_escalation` with reason `"ARCH lacks autonomous-PLAN-ready sections — needs collaborative authoring session per ref/SPEC_architecture.md"`. ~15 lines of doc; or ~10 LOC if enforced at the assembler level instead (worker procedure is simpler — defer the choice to implementation time). Cheap to add once Δ4 stabilizes.
 
 **Adjacent work shipped this session:**
 
