@@ -1,26 +1,28 @@
 # ARCHITECTURE.md — Output Spec
 
-Defines the required sections for `ARCHITECTURE.md` and per-module
-`ARCH_<module>.md` files in i2c projects. Produce them through whatever
-process works — structured decomposition, freeform analysis, research
-doc synthesis. See `ref/GUIDE_architecture.md` for the guided process.
+Defines the required sections for `ARCHITECTURE.md` and (when applicable)
+per-module `ARCH_<module>.md` files in i2c projects. Produce them through
+whatever process works — structured decomposition, freeform analysis,
+research doc synthesis. See `ref/GUIDE_architecture.md` for the guided
+process.
 
 **Audience.** Operator + assistant during collaborative architecture
-sessions. This file is *not* read by the assembler or included in
-worker prompts — it's a human-facing reference for authoring ARCH
-content that the framework will then assemble verbatim.
+sessions. This file is *not* read by the assembler or included in worker
+prompts — it's a human-facing reference for authoring ARCH content that
+the framework will then assemble verbatim.
 
 **Exit criterion (stability check).** Before architecture is done:
 
-- [ ] Every module has a clear, single responsibility
+- [ ] Every component has a clear, single responsibility
 - [ ] Data flow is mapped — you know what objects exist, who owns them, how they move
-- [ ] Interface contracts are defined for every module boundary
+- [ ] Interface contracts are defined for every boundary that crosses one
 - [ ] Provisional contracts are marked and have a plan for resolution
 - [ ] Implementation sequence is dependency-valid and risk-aware
 - [ ] Coupling is visible — you can quickly assess the impact of a change
 - [ ] Key decisions are recorded with revisit conditions
 - [ ] PROJECT.md's extension points are reflected in architectural choices
-- [ ] Every module to be implemented under i2c has an ARCH file with the **Required** sections complete (see per-module template below)
+- [ ] Pattern (A or B; see below) is chosen explicitly
+- [ ] Every module to be implemented under i2c has either a per-module ARCH file (Pattern A) or a Layer Contract section / Implementation Sequence row (Pattern B) with the Required content
 
 ---
 
@@ -29,94 +31,181 @@ content that the framework will then assemble verbatim.
 i2c is **two-layer**: prose contract on one side, structured state on
 the other. PLAN bridges them.
 
-- **Prose contract** — `PROJECT.md`, `ARCHITECTURE.md`, `ARCH_<module>.md`.
-  Loaded into the worker's prompt by the assembler. Read by the LLM
-  worker as authoritative spec. Authored in collaborative sessions
-  before any phase runs.
+- **Prose contract** — `PROJECT.md`, `ARCHITECTURE.md`, and (in Pattern A
+  only) `ARCH_<module>.md`. Loaded into the worker's prompt by the
+  assembler. Read by the LLM worker as authoritative spec.
 - **Structured state** — `.state/project.json`, `phases.json`,
   `steps.json`, `decisions.json`, `devlog.jsonl`. Read by the state
   machine, assembler, invariant checks. Written by the worker via
   `tools/state.py`. Source of truth for "what phase are we on, what
   step is next, what's complete."
-- **PLAN action** reads the ARCH file (specifically `## Phasing`) and
-  transcribes it into `steps.json` records. EXECUTE then works against
-  those structured records, not the prose.
+- **PLAN action** reads the relevant prose contract for the current
+  phase and transcribes its phase-level decomposition into
+  `.state/steps.json` records.
 
-So the ARCH file is the **input to PLAN** and the **contract the worker
-adheres to**. Its job is to be precise enough that PLAN can transcribe
-mechanically and EXECUTE can implement without re-deciding architecture.
+ARCHITECTURE.md is loaded for PLAN and REVIEW for every project.
+Per-module ARCH files (Pattern A only) are loaded whenever
+`phases.json[].module` is set to point at one. Pattern B projects leave
+`module` absent; PLAN works from ARCHITECTURE.md alone.
 
 Progress tracking is in `.state/phases.json` (each record carries
-`status: pending | complete`). `ARCHITECTURE.md`'s Implementation
+`status: pending | complete`). ARCHITECTURE.md's Implementation
 Sequence table is a human-readable mirror, kept in sync by
 `instructions/close.md` step 7. Both exist; the structured form is
 authoritative.
 
 ---
 
-## ARCHITECTURE.md Template (project-level)
+## Picking your pattern
 
-Compact summary, 1-2 pages. Loaded by the assembler for PLAN and REVIEW
-actions; visible to operators always.
+i2c supports two architecture-authoring patterns. The choice is binary
+and depends on whether your modules are decoupled enough to warrant
+separate files.
+
+### Pattern A: Per-module ARCH files
+
+- One `ARCH_<module>.md` per architecturally significant module.
+- `ARCHITECTURE.md` is a compact project-level summary.
+- `phases.json[].module` points to the file for the targeted module.
+
+**Use when:**
+- Modules have clean interfaces between them (typed signatures, schemas,
+  RPC contracts)
+- Each module is independently understandable and could plausibly be
+  implemented by someone who hasn't read the others
+- The total project has at least ~3 distinct modules
+
+**Examples in the workspace:** clankercourts (3 ARCH files: resolver,
+validator, bootstrap), phosphene (~9 ARCH files), toolkit (~13 ARCH
+files), diplomat (~15 ARCH files).
+
+### Pattern B: Single-document architecture
+
+- Only `ARCHITECTURE.md`. No `ARCH_<module>.md` files.
+- `phases.json[].module` is absent for all phases.
+- Content that would have lived in per-module files lives in
+  `ARCHITECTURE.md` instead — either as a single flat spec, or as
+  optional **Layer Contracts** subsections per architectural layer.
+
+**Use when:**
+- Modules share state extensively or are too coupled to factor cleanly
+- The project is small enough that separate files would be ceremony
+- You want vertical phase slices (a phase delivers a related group of
+  components together) rather than per-module slices
+
+**Examples (operator's prior projects):**
+- **Lyonel/workbench** (5 files, "no internal module boundaries"; D-4
+  explicitly chose Combined Spec). The flat-spec end of Pattern B.
+- **Noise-machine** (12 architectural components grouped into 6 phases;
+  one ARCHITECTURE.md, no per-module files). The medium-size end with
+  Component Map driving vertical phase slices.
+- **PoP_port** (20 modules across 3 tracks; one ARCHITECTURE.md with a
+  `## Layer Contracts` section where each Layer carries inline
+  Purpose / Provides / Consumes / Escalation Triggers / Source files).
+  The richest end of Pattern B.
+
+### Decision shortcut
+
+Ask: *if a new contributor joins the project, would they find it easier to navigate one big architecture document or many small ones?*
+
+- One big doc → Pattern B (you can still factor it into Layer Contracts internally)
+- Many small docs → Pattern A
+
+When in doubt, start with B; promote to A later if specific modules grow
+enough to deserve their own files. Going B → A is cheap (extract the
+relevant section into a new `ARCH_<module>.md`, set `phases.json[].module`).
+Going A → B (collapse separate ARCH files into one) is also cheap but
+rarely needed.
+
+---
+
+## ARCHITECTURE.md template (used by both patterns)
+
+The compact project-level summary. Always loaded into the PLAN and
+REVIEW worker prompts. Keep it readable end-to-end; the operator and
+the worker both consult it.
 
 ```markdown
 # [Project Name] — Architecture
 
-## Component Map
+## Overview                                                 [Required]
+[One paragraph — what this project is, what shape its architecture
+takes, whether it's Pattern A or B.]
+
+## Component Map                                            [Required]
 | Component | Responsibility | Dependencies |
 |-----------|---------------|--------------|
 | [Name] | [One sentence] | [List or "none"] |
 
-## Data Flow
+(For tiny single-file Pattern B projects, this can be a 1-3 row file
+list instead of a richer component map.)
 
+## Data Flow                                                [Required]
 ### Core Objects
 - **[ObjectName]** — [shape sketch: key fields and types]
 
 ### Flow
 [How objects move through components. Text, diagram, or arrow notation.]
 
-## Interaction Model
+## Interaction Model                                        [Optional]
 ### User Actions
-- [Primary action]
 ### UI States
-- [State] — [which components are active, what's visible]
 ### Layout Zones
-- [Zone] — [what it contains, which component owns it]
 
-(Omit this section for non-interactive projects)
+(Omit for non-interactive projects — libraries, agents, backends.)
 
-## Implementation Sequence
-| Order | Module | Rationale | Status |
-|-------|--------|-----------|--------|
-| 1 | [Name] | [Why first — leaf, highest risk, etc.] | Not started |
+## Implementation Sequence                                  [Required]
+| Order | Module / Phase | Rationale | Status |
+|-------|---------------|-----------|--------|
+| 1 | [Name] | [Why first] | Not started |
 
 (Human-readable mirror of `.state/phases.json`. Updated at CLOSE per
-`instructions/close.md` step 7. Status values: Not started | In progress | Complete.)
+`instructions/close.md` step 7. Status values: Not started | In progress
+| Complete.)
 
-## Coupling Notes
+(In Pattern B this table IS the authoritative phase decomposition that
+PLAN reads. In Pattern A it's a summary; the per-module ARCH file's
+`## Phasing in This Pilot` section carries the per-step detail.)
+
+## Coupling Notes                                           [Recommended]
 - [Component A] ↔ [Component B]: [tight/loose], [why, what to watch]
-- [Extension point] → affects [components], change is [additive/structural]
 
-## Key Decisions
+## Key Decisions                                            [Required]
 D-1: [Title]
 Date: YYYY-MM-DD | Status: Closed
 Decision: [What was chosen]
 Rationale: [Why]
 Revisit if: [Condition]
 
-## Provisional Contracts
-- [Contract between X and Y] — uncertain because [reason]. Resolve during [module].
+## Provisional Contracts                                    [Recommended]
+- [Contract between X and Y] — uncertain because [reason]. Resolve during [phase / module].
+
+## Layer Contracts                                          [Pattern B optional]
+[See "Pattern B: Layer Contracts subsection" below for the template
+when this section is used. Pattern A projects skip it — per-module
+ARCH files carry equivalent content.]
+
+## Public API                                               [Pattern B required when no Layer Contracts]
+[For flat Pattern B projects. Document the operative public interface
+here. Per-method signatures, parameters, returns, errors.]
+
+## Extension Points                                         [Optional]
+- [Structural observation about likely growth]
 ```
 
 ---
 
-## ARCH_[module].md Template (per-module)
+## Pattern A: Per-module ARCH files
 
-One per module. Loaded by the assembler into every worker prompt for
-the phase that targets this module. A downstream module should be able
-to integrate using only this file.
+When the project has modules with clean interfaces, ship one
+`ARCH_<module>.md` per module. Loaded by the assembler into every worker
+prompt for the phase targeting that module. A downstream module should
+be able to integrate using only this file.
 
-**Exclude:** implementation details, internal types, design rationale.
+**Exclude from ARCH files:** implementation details, internal types,
+design rationale (those belong in implementation docs, not contracts).
+
+### Per-module ARCH template
 
 Every section is tagged **Required**, **Recommended**, or **Optional**.
 
@@ -135,23 +224,20 @@ what it deliberately is not.]
 - **Returns:** [type, guarantees]
 - **Errors:** [what can fail, how failures surface]
 
-(Repeat for each public surface element. Types may be inlined here as
-code blocks or pulled into a separate `## Types` / `## Core Objects`
-section — both patterns are common in existing ARCH files. Pick what
-reads clearer for this module.)
+(Repeat for each public surface element. Types may be inlined or
+pulled into a separate `## Types` / `## Core Objects` section — both
+patterns are common.)
 
 ## Inputs                                                   [Required]
-[What this module accepts from outside — formats, valid ranges, edge
-cases. Often overlaps with Public API parameters; restate at the
-data-flow level here.]
+[What this module accepts — formats, valid ranges, edge cases. Often
+overlaps with Public API parameters; restate at the data-flow level.]
 
 ## Outputs                                                  [Required]
 [What this module produces — formats, guarantees, edge cases.]
 
 ## State                                                    [Required]
-[What state this module owns, if any. Where it lives, who can modify
-it. Write "None. [Module] is a pure function over typed inputs." if
-that's accurate.]
+[What state this module owns. Where it lives, who can modify it.
+Write "None. [Module] is a pure function over typed inputs." if true.]
 
 ## Usage Example                                            [Required]
 [Minimal working integration — enough to wire this module into a
@@ -159,177 +245,190 @@ consumer. Real code, not pseudocode.]
 
 ## Phasing in This Pilot                                    [Required]
 [Per-step or per-phase bullet list, ordered. This is what PLAN reads
-to author `.state/steps.json` records autonomously. Two valid shapes:]
+to author `.state/steps.json` records autonomously.]
 
-[Single-phase module (one phase, N steps):]
+[Single-phase module — one phase, N steps:]
 - **Step P.1** ships [scope]. ~N tests in `tests/test_X.py`.
 - **Step P.2** extends [prior step] to cover [scope]. ~N tests.
-- ...
 
-[Multi-phase module (delivered across N phases as subset → full):]
-- **Phase P implements:** [strict subset — what ships]. No [excluded scope].
-- **Phase P+1 implements:** [remainder — what completes the contract].
-- Both phases target this same ARCH_[module].md contract; Phase P
-  delivers a strict subset; Phase P+1 completes it.
+[Multi-phase module — delivered across phases as subset → full:]
+- **Phase P implements:** [strict subset]. No [excluded scope].
+- **Phase P+1 implements:** [remainder].
+- Both phases target this same ARCH_[module].md contract.
 
 ## Escalation Triggers                                      [Required]
 [Module-specific conditions under which PLAN or EXECUTE halts to
-`state=audit_escalation` and emits `EXIT 2`. Project-general triggers
-(three-strikes, cross-module breakage, contract drift affecting a
-built module) come from WORKER_SPEC — do not repeat. List only what is
-specific to this module.]
+`state=audit_escalation`. Project-general triggers (three-strikes,
+cross-module breakage, contract drift affecting a built module) come
+from WORKER_SPEC — do not repeat. List only what is module-specific.]
 
-- **[Trigger name]** — PLAN halts if [precondition that's specific to
-  this module]. Recovery: [what the operator does to clear it].
-- **[Trigger name]** — EXECUTE halts if [runtime condition specific to
-  this module]. Recovery: [what the operator does].
-
-[Examples for engine modules: "the canonical source (game rules doc,
-v9 §X) contradicts the rule mapping below." For LLM wrappers: "the
-provider's response shape differs from the schema." For data-access
-modules: "the storage backend lacks a capability the contract assumes."]
+- **[Trigger name]** — [PLAN | EXECUTE] halts if [precondition]. Recovery: [what unblocks].
 
 ## Inputs the [Module Name] Does Not Handle                 [Required]
 [Explicit non-scope. What this module deliberately does not do; what
-the caller / harness owns. Reduces the ambiguity that gets
-re-discovered every time a new consumer integrates.]
+the caller / harness owns.]
 
-- **[Capability]** — owned by [caller / other module]. [Module] assumes
-  input is already [validated / normalized / etc.].
-- **[Capability]** — handled by [downstream consumer]. Out of scope.
+- **[Capability]** — owned by [caller / other module]. [Module] assumes input is already [validated / normalized / etc.].
 
 ## Testing Strategy                                         [Recommended]
-[Informs PLAN's per-step test counts and shape. What tests do we
-expect this module to carry, and at what stages?]
-
-- **[Test category]** — [coverage description]. [Where: `tests/test_X.py`].
+[Informs PLAN's per-step test counts and shape.]
+- **[Test category]** — [coverage description]. [Where].
 - **Property tests** — [invariants the module promises].
-- **Phasing alignment** — [which test categories ship in which step].
 
 ## Provisional Contracts                                    [Recommended]
-[Things this ARCH commits to but expects to evolve. Marks where
-downstream consumers should not over-couple.]
-
-- **[Contract surface]** — [sketched here but may change]. Will firm up
-  when [trigger condition]. Until then, [consumer guidance].
+- **[Contract surface]** — [sketched here but may change]. Will firm up when [trigger condition].
 
 ## Dependencies                                             [Recommended]
-[Module-level coupling declaration. Mirror of
-`.state/phases.json[id=P].dependencies` for this module's phase(s),
-plus rationale.]
+[Mirror of `.state/phases.json[id=P].dependencies` for this module's
+phase(s), plus rationale.]
 
-- **[Other module]** — [what we import from it / what surface we depend on].
-- **External:** [third-party libraries, services, schemas this module needs].
+- **[Other module]** — [what surface we depend on].
+- **External:** [third-party libraries, services, schemas].
 
 ## [Domain-specific section]                                [Optional]
-[Free-form. Add as many domain-specific sections as the module
-warrants. Examples seen in existing ARCH files: lookup tables
-(Defense Bonus, Casualty Allocation, Importance Mapping), error
-hierarchies, ledger formats, schema definitions, activation types,
-behavior modes. The template explicitly permits these — existing ARCH
-files derive much of their value from this content.]
+[Free-form. Add any number of domain-specific sections. Examples seen
+in existing ARCH files: lookup tables (Defense Bonus, Casualty
+Allocation), error hierarchies, ledger formats, schema definitions,
+activation types, behavior modes.]
 ```
+
+### Variant: MVP / Full split (Pattern A sub-variant)
+
+For modules delivered across multiple phases as strict subset → full
+contract. Two ARCH files:
+
+- `ARCH_<module>_mvp.md` — strict subset; adds a `## Relationship to
+  ARCH_<module>.md` section that explicitly carries the
+  forward-compatibility commitment plus a "Deferred to the full module"
+  list.
+- `ARCH_<module>.md` — the full contract.
+
+`.state/phases.json` records target the MVP file first (`module:
+"<module>_mvp"`), then switch to the full file (`module: "<module>"`)
+when the full module ships. Both files reference each other.
+
+Use when the full contract is too large for one phase AND the MVP is
+genuinely useful before the full module ships. Phosphene's
+`ARCH_orchestrator.md` + `ARCH_orchestrator_mvp.md` is the worked
+example.
+
+### When in doubt
+
+Read for shape examples:
+- `clankercourts/ARCH_validator.md` — single-phase non-leaf module
+- `clankercourts/ARCH_resolver.md` — multi-phase module (Phase 2 + Phase 3 subset → full)
+- `toolkit/ARCH_embedding.md` — minimal leaf module
+- `phosphene/ARCH_orchestrator_mvp.md` — MVP / full split
 
 ---
 
-## Combined Spec Template (single-file project)
+## Pattern B: Single-document architecture
 
-For projects where internal boundaries aren't needed — one combined
-document covers architecture and module contract together.
+When modules are coupled enough that one doc reads better, or the
+project is small, everything lives in `ARCHITECTURE.md`. The assembler
+loads ARCHITECTURE.md for PLAN and REVIEW; PLAN reads the
+Implementation Sequence row for the current phase and (if present) the
+relevant Layer Contract subsection.
+
+### How phasing works under Pattern B
+
+`ARCHITECTURE.md`'s `## Implementation Sequence` table IS the
+authoritative phase decomposition. Format:
 
 ```markdown
-# [Project Name] — Spec
-
-## Overview                                                 [Required]
-[One paragraph — what this is and what it does]
-
-## Core Objects                                             [Required]
-- **[ObjectName]** — [shape sketch]
-
-## Interaction Model
-(Omit for non-interactive projects)
-
-## Public API / Interface                                   [Required]
-### [function/method name]
-- **Signature:** [typed signature]
-- **Parameters:** [name, type, valid ranges]
-- **Returns:** [type, guarantees]
-- **Errors:** [what can fail, how failures surface]
-
-## State                                                    [Required]
-[What state exists, where it lives]
-
-## Phasing in This Pilot                                    [Required]
-[Same shape as the per-module template's Phasing section. Single-file
-projects still need this — PLAN reads from here.]
-
-## Escalation Triggers                                      [Required]
-[Project-specific halt conditions for PLAN / EXECUTE.]
-
-## Inputs the [Project] Does Not Handle                     [Required]
-[Explicit non-scope.]
-
-## Key Decisions                                            [Required]
-D-1: [Title]
-Decision: [What was chosen]
-Rationale: [Why]
-Revisit if: [Condition]
-
-## Extension Points                                         [Recommended]
-- [Structural observation about likely growth]
-
-## Provisional Contracts                                    [Recommended]
-- [Anything uncertain that implementation will resolve]
-
-## Testing Strategy                                         [Recommended]
-[Project-level test posture.]
+| # | Module / Phase | Description | Regime | Depends on | Status |
+|---|---------------|-------------|--------|------------|--------|
+| 1 | Bootstrap | Project scaffolding + test harness | Build | — | Complete |
+| 2 | Core engine | DSP pipeline + parameter smoothing | Build | Bootstrap | Complete |
+| 3 | Productization | Timer, fade, settings, persistence | Build | Core engine | In progress |
+| ... |
 ```
 
+PLAN's job: find the row where `# == project.json.phase`, read its
+Description + Regime + Depends on, transcribe steps from that row's
+scope (using the Description as the high-level goal and the Layer
+Contract — if present — as the detail source).
+
+For projects that want **per-phase scoping detail** beyond what the
+table carries (additional triggers, deferred items, sub-decomposition),
+add an optional `### Phase N: <Title>` subsection elsewhere in
+ARCHITECTURE.md with the extra scoping.
+
+### Layer Contracts subsection (optional)
+
+For Pattern B projects whose modules are coupled enough to keep in one
+doc *but* distinct enough to benefit from named contract sections, add
+a `## Layer Contracts` section. Each Layer Contract is structurally
+what a per-module ARCH file would be in Pattern A, kept inline.
+
+```markdown
+## Layer Contracts
+
+### [Layer / Module Name]                                   [each Layer Contract]
+
+**Port strategy / Purpose:** [Required]
+[Translate? Refactor? Rewrite? What this layer does.]
+
+**Provides:**                                               [Required]
+[What this layer exposes to others.]
+
+**Consumes:**                                               [Required]
+[What this layer needs from others — state, APIs, types.]
+
+**Contract:**                                               [Required]
+[Invariants, constraints, performance budgets, determinism guarantees.]
+
+**Escalation Triggers:**                                    [Recommended]
+- [Trigger] — [when it fires; how to recover]
+
+**Source files:**                                           [Recommended]
+[Files this layer maps to, with line counts where useful.]
+
+**Validation:**                                             [Recommended]
+[How this layer's correctness gets checked — tests, oracles, manual.]
+```
+
+PoP_port's `## Layer Contracts` section is the worked exemplar.
+
+### Pattern B section taxonomy
+
+The `## Pattern B: Single-document architecture` section adds the
+following requirements to the base ARCHITECTURE.md template above:
+
+**Required in addition (because no per-module files spill out into):**
+- `## Public API` — operative interfaces consumers see. Can live in
+  Layer Contracts when used; otherwise as a top-level section.
+- `## State` — where the project's state lives (analogous to per-module
+  ARCH's `## State`).
+- `## Inputs the [Project] Does Not Handle` — explicit non-scope at the
+  project level.
+
+**Recommended:**
+- `## Escalation Triggers` — project-wide list (or distribute across
+  Layer Contracts when those are used).
+- `## Testing Strategy` — project-level test posture.
+
+**Optional:**
+- `## Layer Contracts` — see above.
+- `### Phase N: <Title>` subsections — per-phase scoping detail.
+- `## Extension Points` — likely growth directions.
+- Any domain-specific sections (lookup tables, error hierarchies, etc.).
+
+### When in doubt
+
+Read for shape examples (operator's prior projects):
+- **Lyonel/workbench** — flat single-doc Pattern B (3-phase
+  Implementation Sequence, no Layer Contracts, Public API directly in
+  the doc, D-4 captures the rationale).
+- **Noise-machine** — Pattern B with rich Component Map (12 components
+  in 6 vertical phases) and per-phase status in DEVPLAN equivalent.
+- **PoP_port** — Pattern B with Layer Contracts (6 layers each with
+  inline Purpose / Provides / Consumes / Escalation Triggers / Source
+  files; 20-module Implementation Sequence across 3 tracks).
+
 ---
 
-## Variant Pattern: MVP / Full Split
-
-For modules delivered in two stages — a strict forward-compatible
-subset first, the full contract later. Phosphene's
-`ARCH_orchestrator.md` + `ARCH_orchestrator_mvp.md` exemplifies.
-
-Two files:
-
-- `ARCH_<module>_mvp.md` — strict subset. All sections per the
-  per-module template. Adds one section near the top:
-
-  ```markdown
-  ## Relationship to ARCH_<module>.md                       [Required]
-  This spec is a strict subset of `ARCH_<module>.md`. Every type,
-  method, and behavior defined here is forward-compatible with the
-  full contract. When the full module ships, this MVP implementation
-  either extends in place or gets replaced — no downstream modules
-  change.
-
-  **Deferred to the full module:** [explicit list of full-contract
-  features excluded from MVP].
-  ```
-
-- `ARCH_<module>.md` — full contract. Standard per-module template.
-
-Both reference each other. `.state/phases.json` records which file the
-current phase targets via the `module` field (`module: "orchestrator_mvp"`
-vs `module: "orchestrator"`).
-
-Use when:
-- The full contract is large enough that delivering it as one phase
-  doesn't fit a reasonable step budget.
-- The MVP is genuinely useful before the full module ships (i.e., the
-  subset is releasable, not a half-built thing).
-- The forward-compatibility commitment is real and can be verified by
-  the MVP's Phasing section explicitly excluding anything that would
-  break the contract later.
-
-Skip this pattern unless all three apply.
-
----
-
-## Section Naming Convention
+## Section naming convention
 
 Use Title Case for all section headings (`## Phasing in This Pilot`,
 not `## phasing in this pilot`). Match the templates above verbatim
@@ -343,18 +442,39 @@ verbatim in the worker's prompt.
 
 ---
 
-## When in Doubt
+## Pattern choice and i2c machinery
 
-- Read `clankercourts/ARCH_validator.md` for a single-phase non-leaf
-  module with explicit Phasing per step.
-- Read `clankercourts/ARCH_resolver.md` for a multi-phase module with
-  Phasing per phase (subset → full).
-- Read `phosphene/ARCH_orchestrator_mvp.md` for the MVP / full split
-  pattern.
-- Read `toolkit/ARCH_embedding.md` for a minimal leaf module ARCH —
-  what the Required sections look like when there's no domain content
-  to embellish with.
+The schema and assembler handle both patterns transparently:
 
-These were the seed examples for this template; they predate the
-Required / Recommended / Optional taxonomy but otherwise represent
-the shape this spec codifies.
+| Aspect | Pattern A | Pattern B |
+|---|---|---|
+| `.state/phases.json[].module` | Set per phase | Absent |
+| Assembler loads `ARCH_<module>.md` | Yes | N/A |
+| Assembler omits Module Contract section | Only when module absent | Always |
+| Assembler loads ARCHITECTURE.md | For PLAN + REVIEW | For PLAN + REVIEW |
+| PLAN reads phase decomposition from | `ARCH_<module>.md` `## Phasing in This Pilot` | `ARCHITECTURE.md` `## Implementation Sequence` |
+| `## Escalation Triggers` lives in | Per-module ARCH | ARCHITECTURE.md (or per-Layer Contract) |
+
+No schema changes, no assembler changes needed for either pattern. The
+distinction is entirely in *where the content lives* and *how PLAN
+finds it*.
+
+---
+
+## Switching patterns later
+
+Projects can start in one pattern and migrate:
+
+- **B → A (extract a module):** create a new `ARCH_<module>.md` carrying
+  the extracted content; update the relevant phases.json record to set
+  `module: "<module>"`; trim the source content from ARCHITECTURE.md
+  (or leave it as a stub summary). Useful when one component grows
+  enough to deserve its own document.
+- **A → B (collapse modules):** consolidate the per-module ARCH file
+  content into ARCHITECTURE.md (either flat or as a Layer Contract);
+  remove the `module` field from the relevant phases.json records;
+  delete the per-module file. Useful when modules turn out to be more
+  coupled than the original split anticipated.
+
+Neither migration is structural. The cost is the doc edit; nothing in
+the assembler, runner, or state machine changes.
