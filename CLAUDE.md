@@ -58,6 +58,15 @@ short and prescriptive. Examples:
   direct file edits on `.state/` files. The CLI guarantees atomic writes
   and schema validation; bypassing it can silently corrupt state for
   downstream consumers.
+- **Use `state.py --from-file` for multi-line or `$`-laden payloads.**
+  When the payload to `append`, `append-record`, `update-record`, or
+  `append-gotcha` contains newlines or `$` characters (`$defs`,
+  `$refs`, `$id`, etc.), write it to a temp file first and pass
+  `--from-file <path>`. Inline-quoting works for short one-line JSON
+  without `$`, but shell quoting rules vary across bash and PowerShell
+  — PowerShell on Windows silently interpolates `$variables` inside
+  double-quoted strings, which has bitten production twice (FU-12).
+  The `--from-file` path bypasses shell quoting entirely.
 
 ### Non-interactive shell discipline
 
