@@ -961,6 +961,13 @@ class TestFullPromptAssembly(unittest.TestCase):
             self.assertIn("Decisions", out)
             # Phase 4 is non-leaf — dep-probe should be present in instructions.
             self.assertIn("Dependency Probe", out)
+            # FU-32 Δ2: escalation triggers section must travel into the prompt.
+            self.assertIn("Escalation triggers", out)
+            self.assertIn("Source-vs-ARCH drift", out)
+            self.assertIn("Multi-regime scope", out)
+            self.assertIn("Cross-module breakage", out)
+            self.assertIn("Step-shape ambiguity", out)
+            self.assertIn("Dep-probe contract mismatch", out)
             # Autonomous-only worker spec sections present.
             self.assertIn("Output Contract", out)
             self.assertIn("Autonomous Behavioral Rules", out)
