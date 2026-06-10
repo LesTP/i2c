@@ -322,10 +322,12 @@ claude --max-budget-usd 5.00` (and see the Invocation guidance in
 ## Build status
 
 The framework is functionally complete for single-iteration autonomous
-runs. CC (clankercourts) is the first real consumer; it ran Phases 2–4
-end-to-end autonomously (Codex and Claude backends both proven in
-production). Remaining work is incremental — multi-iteration loop,
-codexbot integration, ARCH-authoring discipline (FU-32).
+runs. CC (clankercourts) is the first real consumer; it has run Phases
+2–7 end-to-end autonomously across both Claude and Codex backends.
+Codexbot integration MVP shipped 2026-06-09 (Telegram surface for i2c
+projects). Remaining work is incremental — multi-iteration loop,
+FU-32 Δ5 (PLAN precondition check), and the deferred codexbot commands
+(`/decisions`, `/escalation`, `/logs`, `/review`) blocked on FU-34.
 
 | Phase | Deliverable | Status |
 |-------|-------------|--------|
@@ -334,61 +336,71 @@ codexbot integration, ARCH-authoring discipline (FU-32).
 | 1.2.5 | `ARCH_assembler.md` contract spec | ✅ |
 | 1.2.6 | `templates/.claude/commands/` slash wrappers | ✅ |
 | 1.3 | `assemble_context.py` — context assembler | ✅ |
-| 2 | Clankercourts pilot (Phases 1–4 shipped; Phase 1 supervised, Phases 2–4 autonomous) | ✅ |
+| 2 | Clankercourts pilot (Phases 1–7 shipped; Phase 1 supervised, Phases 2–7 autonomous) | ✅ |
 | 3.A | `state_machine.py`, `run_iteration.py`, `invariants.py` — single-iteration autonomous loop | ✅ |
 | 3.A.1 | Prompt compaction + region reorder (Worker Contract → Tool Rules → Project Context → Action Context) | ✅ |
 | 3.A.2 | EXECUTE recipe trim (drop project-wide decisions table) | ✅ |
-| 3.B | First real autonomous run (CC Phases 2–4 on Claude + Codex) | ✅ |
+| 3.B | First real autonomous run (CC Phases 2–7 on Claude + Codex) | ✅ |
 | 3.D | Codex backend (`--backend codex` in runner) | ✅ |
 | State lifecycle v1 | 7-state enum replaces `(state, blocked)` overload (FU-30) | ✅ |
 | FU-32 Δ1, Δ2, Δ4 + phase-summary | autonomous-PLAN readiness work | ✅ |
+| FU-32 Δ4 v2 | Pattern A/B template collapse + worked examples (lyonel, noise-machine, PoP_port) | ✅ |
+| Codexbot Phase 18a MVP | Telegram surface for i2c projects (`/start`, `/run`, `/close`, `/audit`) | ✅ |
+| FU-33 | Per-iter token telemetry (`tokens_in/out/cached`) in `summary.log` for both backends | ✅ |
 | 3.C | Multi-iteration loop (`--step-budget > 1`) | upcoming |
-| 4 | Codexbot StateReader + dispatcher for i2c projects | upcoming |
-| FU-32 Δ5 | PLAN precondition check on ARCH completeness | deferred (after CC Phase 5+ validates template) |
+| FU-32 Δ5 | PLAN precondition check on ARCH completeness | deferred (after Pattern A/B template proves out further) |
+| Codexbot 18a remainder | `/decisions`, `/escalation`, `/logs`, `/review` for i2c | deferred (blocked on FU-34) |
 | 5 | (Optional) Diplomat migration from e2e | deferred |
 
 ### What works today
 
-- All `.state/` operations through `state.py` with atomic writes,
-  schema validation, and `--from-file` payload paths (FU-21 closed).
+- All `.state/` operations through `state.py` with atomic writes, schema
+  validation, and `--from-file` payload paths (FU-21 closed). Adapter
+  Tool Rules in CLAUDE.md / CODEX.md recommend `--from-file` for any
+  payload with `$` characters or newlines (FU-12 closed 2026-06-09).
 - Schema validation on every write; `validate.py` re-validates any
-  existing file.
-- Worker prompt assembly through `assemble_context.py` — full
-  per-action prompts (`--action {plan,execute,review,close}` with
-  `--mode {autonomous,supervised}`), status snapshots
-  (`--section status`), phase-boundary audit view
-  (`--section phase-summary --phase N`, ARCH_assembler.md §8b), and
-  mid-step single-section requests (`--section {architecture,module,devlog}`).
-  Conditional sections strip deterministically per
-  `ARCH_assembler.md` §7.
+  existing file. Optional `phase: integer` field on decision records
+  (FU-32 Δ1) lets phase-summary filter cleanly; instruction examples
+  in `plan.md` and `review.md` tell workers to include it.
+- Worker prompt assembly through `assemble_context.py` — full per-action
+  prompts, status snapshots (`--section status`), phase-boundary audit
+  view (`--section phase-summary --phase N`), and mid-step single-section
+  requests (`--section {architecture,module,devlog}`). Conditional
+  sections strip deterministically per `ARCH_assembler.md` §7.
 - Single-iteration autonomous loop: `python tools/run_iteration.py
   [--backend claude|codex] [--model sonnet] [--max-budget-usd 5.00]`
-  dispatches one worker invocation with full state-machine +
-  invariants checking. **Both backends proven in production** on CC
-  Phases 2–4.
-- Supervised CLI use of the same assembler output (via slash command
-  wrappers or direct invocation).
+  dispatches one worker invocation with state-machine + invariants
+  checking. Both backends proven in production on CC Phases 2–7. Per-iter
+  token usage (`tokens_in / tokens_out / tokens_cached`) is appended to
+  `summary.log` for both backends (FU-33).
+- **Telegram control surface for i2c projects** via codexbot: `/start`,
+  `/run N`, `/run N to-review`, `/batch N to-review`, `/close`, `/audit`.
+  `/close` clears `audit_boundary` by advancing `phase=N+1 state=plan`
+  atomically; `/audit` renders the assembler's phase-summary. Restart
+  the service per `~/claude-code-workspace/projects/pirozhok/README.md`.
 - ARCH-file authoring template at `ref/SPEC_architecture.md` +
-  `ref/GUIDE_architecture.md` (Pattern A / Pattern B; see FU-32 D4
-  progress in `FOLLOWUPS.md`).
-- Cross-platform (Windows / PowerShell + Python 3.12; Linux server
-  via SSH-into-container for autonomous loops, since Meta-issued
-  laptops can't host the subprocess chain — FU-28).
+  `ref/GUIDE_architecture.md` (Pattern A: per-module ARCH files;
+  Pattern B: single-document architecture with optional Layer
+  Contracts). Worked examples cover both patterns including lyonel,
+  noise-machine, and PoP_port from the operator's prior work.
+- Cross-platform (Windows / PowerShell + Python 3.12 for supervised
+  use; Linux server via SSH-into-container for autonomous loops, since
+  Meta-issued laptops can't host the subprocess chain — FU-28 wontfix).
 
 ### What doesn't work yet
 
 - **No multi-iteration loop.** Runner hard-codes `--step-budget 1`;
-  one worker invocation = one ACTION. Phase 3.C is to wrap it with a
+  one worker invocation = one ACTION. Phase 3.C wraps it with a
   multi-step driver. The `multi_step_only` marker mechanism in
   WORKER_SPEC and instructions is already forward-compatible.
-- **No remote dispatch surface.** Codexbot integration (Phase 4) is
-  designed but not built. The current operator UX is direct CLI or
-  SSH-into-container; codexbot would add Telegram `/status`, `/run`,
-  `/close`, etc. backed by a StateReader over `.state/`.
-- **No autonomous-capable PLAN yet.** PLAN runs work but step
-  decomposition is human-assisted. FU-32 Δ5 (PLAN precondition check
-  on ARCH completeness) lands after the Pattern A template validates
-  on CC Phase 5+.
+- **Codexbot's `/decisions`, `/escalation`, `/logs`, `/review`** don't
+  branch for i2c yet (currently e2e-only). Blocked on FU-34 upstream
+  (`--section escalation`, `--section iteration`).
+- **No autonomous-capable PLAN-precondition enforcement.** Today the
+  worker reads the ARCH template's Required sections by prose discipline.
+  FU-32 Δ5 would make absence of `## Phasing in This Pilot` or
+  `## Escalation Triggers` a hard halt at PLAN time. Deferred until
+  more ARCH files are authored under the v2 template.
 
 For the rolling state-of-the-project view (what's pending, what's been
 shipped recently, what the next steps are), see the cold-start summary

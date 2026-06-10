@@ -15,15 +15,20 @@ to a phase) / `partially closed` / `closed` / `wontfix`.
 
 ## Cold-start summary (next session entry point)
 
-**Where we are (2026-06-09).** i2c data foundation, prose layer,
+**Where we are (2026-06-10).** i2c data foundation, prose layer,
 autonomous-loop foundation, **state lifecycle v1** (FU-30 closed; 7-state
 enum: `plan`, `execute`, `review`, `close`, `audit_boundary`,
-`audit_escalation`, `done`), and **autonomous-PLAN readiness work**
-(FU-32 Δ1/Δ2/Δ4 + `--section phase-summary`) all shipped. CC has run
-Phases 2–4 autonomously; Phase 4 is currently at `state=audit_boundary,
-phase=4` awaiting the boundary-clear decision before Phase 5+. ARCH
-template authored at `ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md`,
-awaiting first-real-use validation on CC's next module.
+`audit_escalation`, `done`), **autonomous-PLAN readiness work** (FU-32
+Δ1/Δ2/Δ4 + Δ4 v2 Pattern A/B collapse + `--section phase-summary`),
+and **codexbot Phase 18a MVP** (i2c-aware `/start`, `/run` via shim,
+`/close`, `/audit`) all shipped. CC has run Phases 2–7 autonomously
+across both backends (claude + codex); Phase 7 close validated all four
+new i2c handlers end-to-end from Telegram. ARCH template at
+`ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md` (Pattern A /
+Pattern B variants); phases 5–7 authored against it on CC.
+
+`FOLLOWUPS.md` is the rolling backlog + live spec for the remaining
+FU-32 Δ5 work (deferred until template proves out further).
 
 **Epistemic note (carried over from the original Phase 1 pilot debrief,
 2026-06-06):** the original clankercourts Phase 1 ran inside the same
@@ -38,23 +43,22 @@ FU-32 below carries the live spec for the remaining autonomous-PLAN
 readiness work (Δ5 + CC ARCH validation).
 
 **Tooling now available:**
-- `python tools/state.py {append,append-record,update-record,append-gotcha} --from-file <path>` for `$`-laden / multi-line payloads (FU-21 closed).
+- `python tools/state.py {append,append-record,update-record,append-gotcha} --from-file <path>` for `$`-laden / multi-line payloads (FU-21 closed). Adapter Tool Rules in CLAUDE.md / CODEX.md now recommend it for any payload with `$` or newlines (FU-12 closed).
 - Bare schema filenames (`steps.json`, `phases.json`, ...) auto-resolve to `.state/<name>` when CWD has `.state/` (FU-19 closed).
 - `python tools/state_machine.py` outputs ACTION + NEXT (read-only).
 - `python tools/invariants.py --action <name>` checks the post-action invariants from FU-22.
-- `python tools/run_iteration.py [--backend claude|codex] [--model sonnet] [--max-budget-usd 5.00]` drives one cold-start worker invocation end-to-end. **Codex backend is functional** (Phase 3.D shipped, modulo the FU-29 Output Contract issue that's been partially patched in adapters).
+- `python tools/run_iteration.py [--backend claude|codex] [--model sonnet] [--max-budget-usd 5.00]` drives one cold-start worker invocation end-to-end. **Codex backend** is functional (Phase 3.D shipped). Per-iter `tokens_in / tokens_out / tokens_cached` appended to `summary.log` for both backends (FU-33 closed 2026-06-10).
 - `python tools/assemble_context.py --section status | architecture | module | devlog | phase-summary` for single-section views. `--section phase-summary --phase N` is the operator's audit_boundary view (ARCH_assembler.md §8b).
 - `python tools/assemble_context.py --step-budget N` controls whether `multi_step_only` subsections appear (default 1 strips; >1 keeps). Runner still hard-codes 1 — multi-iteration loop is Phase 3.C, not yet shipped.
+- **Codexbot Telegram surface for i2c projects** (`75ca84e`, 2026-06-09): `/start` renders assembler status, `/run N [to-review]` invokes the consumer-local shim, `/close` advances `phase=N+1 state=plan`, `/audit` renders phase-summary. Restart per `~/claude-code-workspace/projects/pirozhok/README.md`.
 
 **Active priorities (smallest → largest scope):**
-1. **FU-32 Δ4 validation** — author CC Phase 5+ ARCH against the new template (`ref/SPEC_architecture.md`). First real exercise of `## Phasing in This Pilot` + `## Escalation Triggers` in collaborative authoring. Feeds template refinement before Δ5.
-2. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes. ~15 lines of doc once we know what works.
-3. **Phase 3.C** — multi-iteration loop. Wrap `run_iteration.py` once we have real data on what single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
-4. **FU-7** — tighten `exit_signal.schema.json`. CC has accumulated real exit-signal samples in `logs/loop/iteration_*.txt`; the contract can now be locked from observed shapes.
+1. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes (≥1 more CC ARCH authored under the Pattern A/B v2 template). ~15 lines of doc once we know what works.
+2. **Phase 3.C** — multi-iteration loop. Wrap `run_iteration.py` once we have real data on what single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
+3. **FU-7** — tighten `exit_signal.schema.json`. CC has accumulated real exit-signal samples across phases 2–7; the contract can now be locked from observed shapes.
+4. **Codexbot follow-up surface (deferred parts of 18a)** — `/decisions, /escalation, /logs, /review` on i2c projects. Blocked on FU-34 upstream (`--section escalation`, `--section iteration`).
 
 **Pending operational items:**
-- **FU-12** — verified `--from-file` shipped, but adapter `CLAUDE.md` / `CODEX.md` Tool Rules don't recommend it yet. Doc update only.
-- **FU-28** — "laptop = supervised-only; server = autonomous" note still missing from Invocation guidance section below.
 - **FU-29** — CODEX/CLAUDE adapter Output Contract patched in all four files; full closure waits for a `templates/` layer for adapters.
 
 **Quick orientation commands** (from a project root that already has
@@ -288,7 +292,7 @@ Items resolved, with a one-line resolution note. Historical context is cheap.
 | FU-30 | Stack A–D of the state-lifecycle redesign (DESIGN_state_lifecycle_v1.md, 2026-06-08) replaced the three-way overload of `blocked` with the 7-state `state` enum (`plan`, `execute`, `review`, `close`, `audit_boundary`, `audit_escalation`, `done`). State machine returns `ACTION: EXIT` for all three halt states; `audit_boundary` covers post-CLOSE gate (was: `state=close, blocked=true`); `audit_escalation` covers mid-phase halts (was: any `blocked=true` set by EXECUTE/REVIEW escalations); `done` is the terminal state — distinct from `audit_boundary`, recoverable only by deliberate `set state=plan` write. The terminus ambiguity FU-30 originally flagged is gone: `done` and `audit_boundary` are different enum values with different machine behavior and different human-recovery procedures. Conservative closure per D-state-3: CLOSE worker always transitions to `audit_boundary` and never sets `done` directly — the human/wrapper makes the "more phases or terminate" call. Files touched: schema, state_machine, invariants, assembler renderer + tolerance, every instruction file, WORKER_SPEC, CLAUDE/CODEX adapters, slash-command templates, DESIGN_governance_v3 banner, fixture + smoke test + 50+ tests; mirrored to clankercourts with `.state/project.json` migrated in place. Commits: i2c 224aaf5 (memo), e2a71ec (Stack A), 9e53e62 (Stack B), a4d88b5 (Stack C); CC 1c126db (Stack D). |
 | FU-26 | Lifecycle redesign (FU-30) collapsed the contradiction. Today's procedure: `close.md` step 12 sets `state=audit_boundary` and does NOT touch `phase`; the human/wrapper clears the gate by setting `phase=N+1 state=plan` atomically; `plan.md` step 1 catches mis-dispatch against a completed phase by escalating to `audit_escalation` (reason "plan called on completed phase"). All three positions now agree. No code changes beyond the lifecycle work itself; verified in current `instructions/{close,plan}.md` (2026-06-09). |
 | FU-27 | `tools/assemble_context.py::find_project_root` switched to `.absolute()` instead of `.resolve()` (2026-06-06). `.absolute()` preserves the mapped-drive letter (avoids UNC expansion that breaks Windows CMD `cwd=` for `claude.exe`'s plugin loader); doesn't normalize `..` segments but that's irrelevant for CWD-derived paths. POSIX behavior unchanged. |
-| FU-33 | Shipped 2026-06-10. Switched claude invocation to `--output-format json` (was plain text) so the JSON `usage` block is extractable; codex JSONL already exposed usage via `turn.completed` events. Added `parse_claude_output(raw) -> (text, usage)` and `parse_codex_usage(jsonl) -> usage` helpers with a normalized usage shape across providers: `{input: gross, output: M, cached: K}` where `input` is the API's total view of input (fresh + cache_read + cache_creation for claude; codex's `input_tokens` is already gross). `write_summary_line` accepts an optional `tokens=None` kwarg and emits `\| tokens_in=N tokens_out=M tokens_cached=K` between exit and reason when present; backward-compatible (existing pre-FU-33 callers pass None, line shape unchanged). 15 new tests cover both helpers, the format helper, and end-to-end summary integration. Codexbot's `/run` and `/batch` handlers already reply with the runner's stdout (which is the summary line), so token fields surface in Telegram automatically with no codexbot-side changes. Stretch goals from the original FU-33 framing (rolling-window cumulative, quota remaining) deliberately deferred: rolling-window is a small follow-on (~30 LOC `/audit tokens 5h`-style); quota remaining requires either CLI-wrapper surgery to capture rate-limit headers or fragile dashboard scraping — not worth building. |
+| FU-33 | Shipped 2026-06-10. Switched claude invocation to `--output-format json` (was plain text) so the JSON `usage` block is extractable; codex JSONL already exposed usage via `turn.completed` events. Added `parse_claude_output(raw) -> (text, usage)` and `parse_codex_usage(jsonl) -> usage` helpers with a normalized usage shape across providers: `{input: gross, output: M, cached: K}` where `input` is the API's total view of input (fresh + cache_read + cache_creation for claude; codex's `input_tokens` is already gross). `write_summary_line` accepts an optional `tokens=None` kwarg and emits `\| tokens_in=N tokens_out=M tokens_cached=K` between exit and reason when present; backward-compatible (existing pre-FU-33 callers pass None, line shape unchanged). 15 new tests cover both helpers, the format helper, and end-to-end summary integration. Codexbot's `/run` and `/batch` handlers already reply with the runner's stdout (which is the summary line), so token fields surface in Telegram automatically with no codexbot-side changes. **Stretch goals not planned:** rolling-window cumulative and quota-remaining. Rolling-window adds ~30 LOC but the operator has not surfaced demand; quota-remaining requires either CLI-wrapper surgery for rate-limit headers or fragile dashboard scraping. Operator can `tail summary.log` for cumulative ballpark when needed. |
 | FU-12 | Code fix shipped via FU-21 (Phase 3.A: `--from-file PATH` on `append`, `append-record`, `update-record`, `append-gotcha`). Doc fix shipped 2026-06-09: all four CLAUDE.md / CODEX.md adapters (i2c + CC) now carry a Tool Rules bullet recommending `--from-file` for multi-line or `$`-laden payloads, with a one-sentence pointer to the PowerShell interpolation gotcha. Closes the production hazard end-to-end. |
 | FU-28 | **Wontfix** (2026-06-09). The technical constraint is real: Meta-issued Windows laptops cannot run `claude -p` as a subprocess (sandbox restricts non-interactive child-process semantics; CC autonomous-loop iteration 1 attempt hung 25min before manual kill). The standard operational practice — invoke `run_iteration.py` from `pirozhok` over SSH, Samba-mounted shared disk so `.state/` is seen by both laptop and server — has been in production since 2026-06-06 and worked cleanly for CC Phases 2–4. Original incident was a miscommunication about where the loop was running, not a missing constraint doc. Operator has internalized the laptop-vs-server rule and explicitly declined the doc-side fix. |
 
