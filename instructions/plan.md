@@ -259,6 +259,7 @@ show → react → adjust cycles. Plan a **time budget**, not a step count.
    ```bash
    python3 tools/state.py append-record decisions.json '{
      "id": "D-14",
+     "phase": 14,
      "title": "Phase 14 goal: telegram message formatting",
      "status": "closed",
      "priority": "high",
@@ -286,6 +287,7 @@ show → react → adjust cycles. Plan a **time budget**, not a step count.
    ```bash
    python3 tools/state.py append-record decisions.json '{
      "id": "D-15",
+     "phase": 14,
      "title": "First item: render a 3-paragraph workflow update",
      "status": "open",
      "priority": "high",
@@ -307,6 +309,7 @@ the decision the phase must produce.
    ```bash
    python3 tools/state.py append-record decisions.json '{
      "id": "D-16",
+     "phase": 16,
      "title": "Storage backend for clankercourts events",
      "status": "open",
      "priority": "critical",
@@ -348,6 +351,7 @@ to know about → append to `decisions.json`. Examples:
 ```bash
 python3 tools/state.py append-record decisions.json '{
   "id": "D-17",
+  "phase": 11,
   "title": "Phase 11 split: pipeline vs. control loop",
   "status": "closed",
   "priority": "medium",
@@ -355,6 +359,13 @@ python3 tools/state.py append-record decisions.json '{
   "rationale": "Pipeline is testable in isolation; control-loop needs the pipeline to exist before its tests make sense."
 }'
 ```
+
+**Always include `phase: <current phase id>`** — read the current phase
+from the assembled `Project State` section of your prompt. Decisions
+without `phase` do not appear in the phase's audit view
+(`--section phase-summary --phase N`); the operator has to back-fill
+later. Project-wide architectural decisions (rare — bootstrap-only)
+may omit `phase`, but during a phase, default to including it.
 
 Trivial decisions (file naming, comment style, formatter choice) do not
 need a decision record. Use judgment.
@@ -456,7 +467,7 @@ python3 tools/state.py append-record phases.json '{"id":11,"module":"orchestrato
 # Probe finds idempotency_key kwarg is in the real surface but not the fake.
 python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"probe","outcome":"complete","summary":"Probed event_store: append() takes idempotency_key kwarg in real impl; fake omits it. Will adapt orchestrator to pass it; bug logged for fake.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T07:30:00Z"}'
 
-python3 tools/state.py append-record decisions.json '{"id":"D-22","title":"Orchestrator passes idempotency_key","status":"closed","priority":"high","decision":"Generate idempotency_key from (worker_id, action_id, timestamp_minute). Pass through on every event_store.append call.","rationale":"Probe surfaced gap; adopting the real surface now avoids a retrofit."}'
+python3 tools/state.py append-record decisions.json '{"id":"D-22","phase":11,"title":"Orchestrator passes idempotency_key","status":"closed","priority":"high","decision":"Generate idempotency_key from (worker_id, action_id, timestamp_minute). Pass through on every event_store.append call.","rationale":"Probe surfaced gap; adopting the real surface now avoids a retrofit."}'
 
 python3 tools/state.py append-record steps.json '{"phase":11,"step":1,"title":"Pipeline topology with DI","status":"pending"}'
 python3 tools/state.py append-record steps.json '{"phase":11,"step":2,"title":"Event loop with debounced extraction","status":"pending"}'

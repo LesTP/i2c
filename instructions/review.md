@@ -96,6 +96,7 @@ decision record so the choice survives the session:
 ```bash
 python3 tools/state.py append-record decisions.json '{
   "id": "D-25",
+  "phase": 11,
   "title": "Skip rename: tmp -> events_to_retry in event_loop",
   "status": "closed",
   "priority": "low",
@@ -107,6 +108,12 @@ python3 tools/state.py append-record decisions.json '{
 
 Decision ID convention: continue the project's `D-N` sequence (look at
 the `Decisions` section of your prompt for the current high-water mark).
+
+**Always include `phase: <current phase id>`** — read the current phase
+from the assembled `Project State` section of your prompt. Skipped-Optional
+decisions belong to the phase being reviewed; without the `phase` tag they
+won't surface in the phase audit view (`--section phase-summary --phase N`)
+and the operator has to back-fill.
 
 If you apply an Optional finding instead of skipping it, no decision
 record is needed — the commit speaks for itself.
