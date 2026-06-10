@@ -109,11 +109,10 @@ python3 tools/state.py append-record decisions.json '{
 Decision ID convention: continue the project's `D-N` sequence (look at
 the `Decisions` section of your prompt for the current high-water mark).
 
-**Always include `phase: <current phase id>`** — read the current phase
-from the assembled `Project State` section of your prompt. Skipped-Optional
-decisions belong to the phase being reviewed; without the `phase` tag they
-won't surface in the phase audit view (`--section phase-summary --phase N`)
-and the operator has to back-fill.
+`phase: <current phase id>` — marks the skipped-Optional as belonging
+to the phase being reviewed, so it appears in that phase's audit
+(`--section phase-summary --phase N`). Read the current phase from
+the `Project State` section of your prompt.
 
 If you apply an Optional finding instead of skipping it, no decision
 record is needed — the commit speaks for itself.

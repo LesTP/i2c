@@ -360,12 +360,10 @@ python3 tools/state.py append-record decisions.json '{
 }'
 ```
 
-**Always include `phase: <current phase id>`** — read the current phase
-from the assembled `Project State` section of your prompt. Decisions
-without `phase` do not appear in the phase's audit view
-(`--section phase-summary --phase N`); the operator has to back-fill
-later. Project-wide architectural decisions (rare — bootstrap-only)
-may omit `phase`, but during a phase, default to including it.
+`phase: <current phase id>` — marks the decision as belonging to this
+phase, so it appears in the phase audit (`--section phase-summary --phase
+N`). Read the current phase from the `Project State` section of your
+prompt.
 
 Trivial decisions (file naming, comment style, formatter choice) do not
 need a decision record. Use judgment.
