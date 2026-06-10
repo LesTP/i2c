@@ -315,5 +315,152 @@ class TestSummaryLog(unittest.TestCase):
             self.assertIn('reason="ok"', summary)
 
 
+# ---------------------------------------------------------------------------
+# FU-33: per-iter token telemetry in summary.log
+# ---------------------------------------------------------------------------
+
+
+class TestParseClaudeOutput(unittest.TestCase):
+    def test_extracts_result_and_usage_from_json(self):
+        raw = json.dumps({
+            "type": "result",
+            "result": "the prose with the 5-line exit signal",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_read_input_tokens": 800,
+                "cache_creation_input_tokens": 200,
+            },
+        })
+        text, usage = ri.parse_claude_output(raw)
+        self.assertEqual(text, "the prose with the 5-line exit signal")
+        # gross input = fresh + cache_read + cache_creation = 100 + 800 + 200
+        self.assertEqual(usage, {"input": 1100, "output": 50, "cached": 800})
+
+    def test_returns_text_only_when_usage_missing(self):
+        raw = json.dumps({"type": "result", "result": "no usage field here"})
+        text, usage = ri.parse_claude_output(raw)
+        self.assertEqual(text, "no usage field here")
+        self.assertIsNone(usage)
+
+    def test_falls_back_to_raw_on_plain_text(self):
+        raw = "I did some work.\n\nEXIT: 0\nREASON: ok\n..."
+        text, usage = ri.parse_claude_output(raw)
+        self.assertEqual(text, raw)
+        self.assertIsNone(usage)
+
+    def test_falls_back_to_raw_on_malformed_json(self):
+        raw = "{not valid json"
+        text, usage = ri.parse_claude_output(raw)
+        self.assertEqual(text, raw)
+        self.assertIsNone(usage)
+
+    def test_falls_back_when_top_level_isnt_object(self):
+        # Defensive: top-level array (unusual but possible).
+        raw = '["just", "a", "list"]'
+        text, usage = ri.parse_claude_output(raw)
+        self.assertEqual(text, raw)
+        self.assertIsNone(usage)
+
+
+class TestParseCodexUsage(unittest.TestCase):
+    def test_sums_usage_across_turn_completed_events(self):
+        events = [
+            {"type": "turn.started"},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "..."}},
+            {"type": "turn.completed", "usage": {
+                "input_tokens": 1000, "output_tokens": 50, "cached_input_tokens": 800,
+            }},
+        ]
+        jsonl = "\n".join(json.dumps(e) for e in events)
+        usage = ri.parse_codex_usage(jsonl)
+        self.assertEqual(usage, {"input": 1000, "output": 50, "cached": 800})
+
+    def test_sums_across_multiple_turns(self):
+        # Hypothetical multi-turn iteration; helper should sum defensively.
+        events = [
+            {"type": "turn.completed", "usage": {
+                "input_tokens": 100, "output_tokens": 10, "cached_input_tokens": 80,
+            }},
+            {"type": "turn.completed", "usage": {
+                "input_tokens": 200, "output_tokens": 20, "cached_input_tokens": 150,
+            }},
+        ]
+        jsonl = "\n".join(json.dumps(e) for e in events)
+        usage = ri.parse_codex_usage(jsonl)
+        self.assertEqual(usage, {"input": 300, "output": 30, "cached": 230})
+
+    def test_returns_none_when_no_turn_completed_event(self):
+        events = [
+            {"type": "turn.started"},
+            {"type": "item.completed", "item": {"type": "agent_message", "text": "..."}},
+        ]
+        jsonl = "\n".join(json.dumps(e) for e in events)
+        self.assertIsNone(ri.parse_codex_usage(jsonl))
+
+    def test_returns_none_on_empty_input(self):
+        self.assertIsNone(ri.parse_codex_usage(""))
+
+    def test_ignores_malformed_lines(self):
+        jsonl = (
+            '{not valid json\n'
+            + json.dumps({"type": "turn.completed", "usage": {
+                "input_tokens": 5, "output_tokens": 1, "cached_input_tokens": 0,
+            }}) + "\n"
+        )
+        usage = ri.parse_codex_usage(jsonl)
+        self.assertEqual(usage, {"input": 5, "output": 1, "cached": 0})
+
+
+class TestFormatTokensSegment(unittest.TestCase):
+    def test_empty_when_usage_is_none(self):
+        self.assertEqual(ri.format_tokens_segment(None), "")
+
+    def test_empty_when_usage_is_falsy(self):
+        # {} is falsy; treat as "no telemetry."
+        self.assertEqual(ri.format_tokens_segment({}), "")
+
+    def test_emits_three_fields_with_leading_separator(self):
+        seg = ri.format_tokens_segment({"input": 1100, "output": 50, "cached": 800})
+        self.assertEqual(seg, " | tokens_in=1100 tokens_out=50 tokens_cached=800")
+
+
+class TestSummaryLogTokens(unittest.TestCase):
+    def test_summary_includes_tokens_when_claude_emits_json(self):
+        # Fake invoker returns a JSON response with usage; runner extracts
+        # tokens and appends them to the summary line.
+        with TempProject() as p:
+            raw = json.dumps({
+                "type": "result",
+                "result": signal_block(exit_code=0, reason="ok"),
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_read_input_tokens": 800,
+                    "cache_creation_input_tokens": 200,
+                },
+            })
+            invoker = make_fake_invoker(raw)
+            run_iter(invoker=invoker)
+            summary = read_summary(p.root).strip().splitlines()[-1]
+            # gross input = 100 + 800 + 200 = 1100
+            self.assertIn("tokens_in=1100", summary)
+            self.assertIn("tokens_out=50", summary)
+            self.assertIn("tokens_cached=800", summary)
+            # tokens segment should sit between exit= and reason=, not after.
+            self.assertLess(summary.index("tokens_"), summary.index("reason="))
+
+    def test_summary_omits_tokens_when_claude_emits_plain_text(self):
+        # Backward-compat: plain-text claude output -> no tokens segment.
+        with TempProject() as p:
+            invoker = make_fake_invoker(
+                signal_block(exit_code=0, reason="plain")
+            )
+            run_iter(invoker=invoker)
+            summary = read_summary(p.root).strip().splitlines()[-1]
+            self.assertNotIn("tokens_in=", summary)
+            self.assertNotIn("tokens_out=", summary)
+
+
 if __name__ == "__main__":
     unittest.main()

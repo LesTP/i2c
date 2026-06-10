@@ -218,14 +218,29 @@ def invoke_claude(
 ) -> tuple[int, str]:
     """Run ``claude -p`` with the prompt on stdin; return (rc, stdout).
 
+    Uses ``--output-format json`` so the runner can extract usage telemetry
+    (input/output/cache token counts) alongside the result text. The JSON
+    response shape is::
+
+        {"type": "result", "result": "...prose...",
+         "usage": {"input_tokens": N, "output_tokens": M,
+                   "cache_read_input_tokens": K,
+                   "cache_creation_input_tokens": J}, ...}
+
+    ``parse_claude_output`` extracts the ``result`` (the prose that carries
+    the 5-line exit signal) and the usage block. If claude ever emits
+    something that isn't valid JSON, the parser falls back to treating the
+    raw stdout as plain text — the loop keeps working, just without
+    per-iter token telemetry.
+
     stderr is merged into stdout because some shells split surprisingly
-    and the only signal the runner needs is the final 5 lines, which
-    Claude reliably puts at the end of stdout in plain-text mode.
+    and the only signal the runner needs is the final agent message.
     """
     cmd = [
         "claude",
         "-p",
         "--dangerously-skip-permissions",
+        "--output-format", "json",
         "--model", model,
         "--max-budget-usd", f"{max_budget_usd:.2f}",
     ]
@@ -304,6 +319,102 @@ def invoke_codex(
 
 
 # ---------------------------------------------------------------------------
+# Usage / token extraction (FU-33)
+#
+# Normalized shape across providers: {"input": int, "output": int, "cached": int}
+#   input  = gross input tokens (everything the API processed, incl. cache)
+#   output = output tokens
+#   cached = cache-read subset of input (discounted portion)
+#
+# Both claude and codex report usage but with different field shapes:
+#   claude:  input_tokens is FRESH only; cache_read and cache_creation are
+#            separate fields. Gross = input + cache_read + cache_creation.
+#   codex:   input_tokens is already GROSS (includes cache); cached_input_tokens
+#            is the subset.
+# ---------------------------------------------------------------------------
+
+
+def parse_claude_output(raw: str) -> tuple[str, dict | None]:
+    """Extract (result_text, usage_dict) from claude --output-format json output.
+
+    If ``raw`` isn't valid JSON or doesn't have the expected fields, returns
+    ``(raw, None)`` — fallback for plain-text mode or malformed output. The
+    exit-signal parser still runs on the returned text either way.
+
+    usage_dict shape (when present): {"input": gross, "output": M, "cached": K}.
+    """
+    try:
+        obj = json.loads(raw.strip())
+    except (json.JSONDecodeError, ValueError):
+        return raw, None
+    if not isinstance(obj, dict):
+        return raw, None
+    result = obj.get("result")
+    if not isinstance(result, str):
+        return raw, None
+    usage = obj.get("usage")
+    if not isinstance(usage, dict):
+        return result, None
+    fresh_in = int(usage.get("input_tokens", 0) or 0)
+    cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
+    cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
+    out = int(usage.get("output_tokens", 0) or 0)
+    return result, {
+        "input": fresh_in + cache_creation + cache_read,
+        "output": out,
+        "cached": cache_read,
+    }
+
+
+def parse_codex_usage(jsonl_raw: str) -> dict | None:
+    """Sum usage across all turn.completed events in a codex JSONL stream.
+
+    Returns ``None`` if no turn.completed events were found. Codex emits one
+    turn.completed per turn; in single-step mode that's one per iteration,
+    but the helper sums defensively in case the runner ever does multi-turn.
+
+    usage_dict shape: {"input": gross, "output": M, "cached": K}.
+    """
+    total_in = total_out = total_cached = 0
+    found = False
+    for line in jsonl_raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") != "turn.completed":
+            continue
+        usage = obj.get("usage")
+        if not isinstance(usage, dict):
+            continue
+        total_in += int(usage.get("input_tokens", 0) or 0)
+        total_out += int(usage.get("output_tokens", 0) or 0)
+        total_cached += int(usage.get("cached_input_tokens", 0) or 0)
+        found = True
+    if not found:
+        return None
+    return {"input": total_in, "output": total_out, "cached": total_cached}
+
+
+def format_tokens_segment(usage: dict | None) -> str:
+    """Render a usage dict as a summary.log segment.
+
+    Returns the empty string when ``usage`` is None so the line shape
+    stays backward-compatible (no token fields appear).
+    """
+    if not usage:
+        return ""
+    return (
+        f" | tokens_in={int(usage.get('input', 0))} "
+        f"tokens_out={int(usage.get('output', 0))} "
+        f"tokens_cached={int(usage.get('cached', 0))}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Summary log
 # ---------------------------------------------------------------------------
 
@@ -316,13 +427,22 @@ def write_summary_line(
     action: str,
     exit_code: int,
     reason: str,
+    tokens: dict | None = None,
 ) -> str:
-    """Append (and return) a one-line summary entry."""
+    """Append (and return) a one-line summary entry.
+
+    When ``tokens`` is provided (FU-33), inserts ``| tokens_in=N tokens_out=M
+    tokens_cached=K`` between the exit code and the reason. When ``tokens``
+    is None, the line shape is unchanged from pre-FU-33 callers.
+    """
     ts = datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds")
     safe_reason = reason.replace("\n", " ").strip() or "(no reason given)"
+    tokens_segment = format_tokens_segment(tokens)
     line = (
         f"{ts} | iter={iteration} | backend={backend} | "
-        f"action={action} | exit={exit_code} | reason=\"{safe_reason}\""
+        f"action={action} | exit={exit_code}"
+        f"{tokens_segment}"
+        f" | reason=\"{safe_reason}\""
     )
     summary = log_dir / SUMMARY_LOG_NAME
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -419,8 +539,17 @@ def run_iteration(
         return 2
     output_path.write_text(captured, encoding="utf-8")
 
+    # 6b. Extract per-iter usage telemetry (FU-33). Both backends emit
+    # token counts in their JSON output; usage stays None for plain-text
+    # claude (fallback) or empty codex streams.
+    if backend == "claude":
+        signal_text, usage = parse_claude_output(captured)
+    else:
+        signal_text = captured  # codex agent_message text
+        usage = parse_codex_usage(jsonl_raw)
+
     # 7. Parse + validate the exit signal.
-    signal = parse_exit_signal(captured)
+    signal = parse_exit_signal(signal_text)
     if signal is None:
         worker_exit = 2
         reason = (
@@ -453,6 +582,7 @@ def run_iteration(
                 action=action,
                 exit_code=2,
                 reason=invariant_reason,
+                tokens=usage,
             )
             sys.stdout.write(line + "\n")
             sys.stderr.write(f"ERROR: {invariant_reason}\n")
@@ -466,6 +596,7 @@ def run_iteration(
         action=action,
         exit_code=worker_exit,
         reason=reason,
+        tokens=usage,
     )
     sys.stdout.write(line + "\n")
     return worker_exit
