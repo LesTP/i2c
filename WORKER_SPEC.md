@@ -118,14 +118,6 @@ script.
 - *Claude iter (e2e):* self-judged "STEP_BUDGET of 5 exhausted (used 3
   actions)" and exited with 2 actions still available.
 
-### Shell command discipline
-
-See your adapter's Tool Rules for non-interactive shell discipline (banned
-commands like `git add -p` / `git commit` without `-m`, pager-bypass
-requirements, alternatives for editor-opening operations). Those rules
-are environment-specific (Claude Code vs. Codex sandbox) and live with
-the adapter.
-
 ---
 
 ## 3. Escalation Conditions
