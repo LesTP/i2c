@@ -197,11 +197,8 @@ output is treated as `EXIT 2`.
 - Do **not** skip the exit signal.
 - Do **not** write to `.state/` files directly with `sed`, `echo >`,
   text editors, or any tool other than `tools/state.py`. The CLI
-  guarantees atomicity and schema validation; bypassing it can corrupt
-  state for downstream consumers (assembler, codexbot StateReader,
-  waymark).
+  guarantees atomic, schema-validated writes.
 - Do **not** read governance files (this spec, instruction files,
   adapter files, ARCH files) as if you needed to "look them up" —
   everything you need arrived in your prompt. If something seems
-  missing, the assembler made a choice; escalate via EXIT 2 rather
-  than going hunting.
+  missing, escalate via EXIT 2.

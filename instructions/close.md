@@ -34,8 +34,7 @@ Run the full test suite for the phase's module (and any boundary tests
 that exercise the module from outside). All must pass. If any fail:
 
 - Tests broken by something review missed: **stop**, log via devlog
-  `outcome: "failed"`, `EXIT 2`. Do not "fix and continue" — review
-  already had its chance.
+  `outcome: "failed"`, `EXIT 2`.
 - Tests broken by ambient state (network, environment): note in the
   devlog summary, but do not block close on flakes. If you cannot tell
   the difference, stop.

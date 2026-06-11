@@ -70,9 +70,8 @@ contract and code; restoring `state=review` resumes.
 ### 4. Apply Must fixes and Should fixes
 
 For each Must finding and each Should finding, apply the fix. Run tests
-after each fix or batch (your judgment on batching). **Do not skip a Must
-finding** — that's a hard rule. Skipping a Should requires logging the
-skip decision in step 5.
+after each fix or batch (your judgment on batching). Apply every Must
+finding; skipped Shoulds log a decision per step 5.
 
 Commit per logical batch of fixes (one Must fix, one Should refactor, or
 one related set of cleanups). Commit message format: `phase: review — short title`.
@@ -86,7 +85,7 @@ If a Must fix balloons in scope mid-fix (you start fixing a bug and find
 the bug needs an architecture change to address): stop, set
 `state=audit_escalation` via `state.py`, and **escalate** (`EXIT 2`,
 reason "review surfaced architecture issue"). The fix becomes a new
-phase or a contract change, not a sneaked refactor.
+phase or a contract change.
 
 ### 5. Log skipped Optional items as decisions
 

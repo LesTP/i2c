@@ -31,13 +31,13 @@ in the assembled `Current Phase` section, then follow the matching branch.
    5.
 
 2. **Read context.** Read the source files and tests relevant to the step.
-   Re-read **immediately before editing** — stale context causes lost updates.
-   Governance state already arrived fresh in your prompt; this rule applies to
-   source files only.
+   Re-read **immediately before editing** so edits reflect the latest
+   source. Governance state already arrived fresh in your prompt; this
+   rule applies to source files only.
 
 3. **Implement and test.** Make the change. Run the test suite (or the
-   relevant subset). **Do not proceed to step 4 unless tests pass.** If they
-   fail, fix in place or escalate per the rules in Escalation Conditions.
+   relevant subset). Passing tests is the gate to commit. If they fail,
+   fix in place or escalate per the rules in Escalation Conditions.
 
 4. **Commit.** Default to a **new commit**, message format `phase.step: short
    title` (e.g., `11.3: Wire orchestrator slash commands`). Use
@@ -49,7 +49,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
    git commit -m "11.3: Wire orchestrator slash commands"
    ```
 
-   Always pass `-m`. Never let git open `$EDITOR`. See the `Shell command
+   Always pass `-m` to keep git non-interactive. See the `Shell command
    discipline` section in your Worker Contract for the full prohibitions list.
 
 5. **Mark the step complete.** Capture the commit hash and write it:
@@ -58,8 +58,8 @@ in the assembled `Current Phase` section, then follow the matching branch.
    python3 tools/state.py complete steps.json --phase N --step M --commit <hash>
    ```
 
-   The CLI atomically rewrites `steps.json` after validating the schema.
-   Bad hash format → exit 1, file untouched.
+   The CLI atomically rewrites `steps.json` after validating the schema
+   and the commit-hash format.
 
 6. **Append a devlog entry.** One entry per step, JSON envelope matching
    `schemas/devlog_entry.schema.json`. Required fields: `phase`, `step`,
@@ -220,8 +220,7 @@ If, mid-step, you discover work that wasn't in the original step plan:
 - **Beyond this phase's scope:** hard stop. Emit `EXIT 2` with reason
   "scope expansion". Log via devlog entry `outcome: "escalate"`.
 
-Do **not** silently absorb new work into the current step. Scope drift is one
-of the documented failure modes the loop was built to prevent.
+Do **not** silently absorb new work into the current step.
 
 ---
 
