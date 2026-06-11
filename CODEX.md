@@ -66,25 +66,17 @@ short and prescriptive. Examples:
   re-read it immediately — not at the start of the iteration. Governance
   arrived fresh in your prompt; this rule applies to source files only.
 - **State writes go through `state.py`.** Never use `sed`, `echo >`, or
-  direct file edits on `.state/` files. The CLI guarantees atomic writes
-  and schema validation; bypassing it can silently corrupt state for
-  downstream consumers.
+  direct file edits on `.state/` files. The CLI guarantees atomic,
+  schema-validated writes.
 - **Use `state.py --from-file` for multi-line or `$`-laden payloads.**
-  When the payload to `append`, `append-record`, `update-record`, or
-  `append-gotcha` contains newlines or `$` characters (`$defs`,
-  `$refs`, `$id`, etc.), write it to a temp file first and pass
-  `--from-file <path>`. Inline-quoting works for short one-line JSON
-  without `$`, but shell quoting rules vary across bash and PowerShell
-  — PowerShell on Windows silently interpolates `$variables` inside
-  double-quoted strings, which has bitten production twice (FU-12).
-  The `--from-file` path bypasses shell quoting entirely.
+  Write the JSON to a temp file and pass `--from-file <path>`; bypasses
+  shell quoting entirely. Inline-quoting works for short one-line JSON
+  without `$` or newlines.
 
 ### Non-interactive shell discipline
 
-The loop invokes bash non-interactively — no stdin, no editor, no human
-at the keyboard. Any command that waits for input, opens `$EDITOR`, or
-pipes through a pager will **hang the loop indefinitely** until the
-operator manually kills the process tree.
+The loop invokes bash non-interactively. Commands that wait on input,
+open `$EDITOR`, or pipe through a pager will hang.
 
 **Git — banned (always hang):**
 
@@ -114,12 +106,9 @@ operator manually kills the process tree.
 - `ssh` without `-o BatchMode=yes` — may prompt for host-key acceptance
   or a password.
 
-**If you need to stage only part of a file's diff:** don't reach for
-`git add -p` as a workaround — there's no way for the loop to provide
-hunk-by-hunk stdin. Instead, split the change into separate edits so
-each file change is a discrete commit's worth, or revert unwanted parts
-with `git restore <file>` before `git add <file>`. The working tree is
-the source of truth; shape it correctly before staging.
+**To stage only part of a file's diff:** split the change into
+separate edits, or use `git restore <file>` to revert unwanted parts
+before `git add <file>`. (`git add -p` is interactive-only.)
 
 <!-- Add project-specific tool rules below. -->
 
