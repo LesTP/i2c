@@ -106,8 +106,7 @@ For each name in `dependencies`:
 
 If integration-check finds critical issues: stop the close. Do not
 promote gotchas or mark the phase complete with a known
-cross-module bug. The escalation routes the issue back to plan or human
-decision.
+cross-module bug.
 
 ### 4. DEVLOG learning review — promote gotchas
 
@@ -160,8 +159,6 @@ the ARCH file now or escalate (your judgment on severity).
 
 If a contract change in this phase affects a **downstream module that is
 already built** (not just this module's own ARCH file): **escalate**.
-Cross-module propagation isn't close's job; it requires planning for the
-downstream module's update.
 
 ### 6. Close decisions resolved by this phase
 
@@ -289,23 +286,11 @@ python3 tools/state.py append devlog.jsonl '{
 python3 tools/state.py set project.json state=audit_boundary
 ```
 
-Leaves the project in `audit_boundary`, where the state machine returns
-EXIT (loop halts, awaiting human/wrapper). The human (or autonomous
-wrapper) transitions out of `audit_boundary` by writing one of:
+`state=audit_boundary` halts the loop; the operator (or wrapper)
+advances from there. **Do not advance `phase`** in this close action.
 
-- `set project.json phase=N+1 state=plan` — advance to the next phase
-  (atomic two-key write).
-- `set project.json state=done` — declare the project terminal (no more
-  phases planned). `done` is recoverable only by a later deliberate
-  `set phase=M state=plan` write.
-
-**Do not advance `phase`** in this close action — the human/wrapper does
-that at the `audit_boundary` clear. See `DESIGN_state_lifecycle_v1.md`
-§3.1 for the full state model.
-
-Then emit the exit signal (5-line block, see Worker Contract §6). Exit
-code is `0` for a clean close (per the Output Contract — close always
-terminates an invocation normally).
+Then emit the exit signal (5-line block, see Worker Contract §6).
+Exit code is `0` — close always terminates normally.
 
 ---
 
@@ -314,10 +299,8 @@ terminates an invocation normally).
 - Implement code (that was EXECUTE)
 - Find and apply code review fixes (that was REVIEW)
 - Plan the next phase (that's the next PLAN, after the human audit)
-- Advance `project.json.phase` (the human / autonomous wrapper does that
-  at the `audit_boundary` clear, atomic with `state=plan`)
-- Declare project terminus (`state=done`) on its own (that's the
-  human/wrapper at the `audit_boundary` clear)
+- Advance `project.json.phase`
+- Declare project terminus (`state=done`) on its own
 
 ---
 

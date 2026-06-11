@@ -56,18 +56,17 @@ Beyond "unclear spec" (step 2) and "plan called on completed phase"
 (step 1), the following conditions warrant immediate escalation. If you
 detect any during the rest of this procedure, stop, write a devlog
 entry naming the trigger, set `state=audit_escalation`, and emit
-`EXIT 2` with a `REASON` matching the trigger. The human/wrapper
-resolves before the loop resumes.
+`EXIT 2` with a `REASON` matching the trigger.
 
 **Project-general triggers (apply to every PLAN run):**
 
-| Trigger | Detect when | Reason string | Resolution path |
-|---------|-------------|---------------|-----------------|
-| Source-vs-ARCH drift | The canonical source (rules doc, external spec, sibling project ARCH, upstream API) contradicts what `ARCH_<module>.md` claims. | `"source-arch drift: <where>"` | Operator reconciles source vs. ARCH; commits corrected ARCH; re-plans. |
-| Multi-regime scope | Phase as scoped mixes regimes (Build + Refine, Build + Explore, etc.). | `"multi-regime scope: split needed"` | Operator splits into sequential single-regime phases; re-plans phase N. |
-| Cross-module breakage at plan time | This phase as scoped would change a contract that another *built* module already depends on. `close.md` step 8 handles this at close time; surfacing it at plan time saves the rewind. | `"cross-module breakage: <module>"` | Operator picks: (a) defer this phase, (b) plan a contract-update phase for the affected module first, or (c) restrict scope so the contract is untouched. |
-| Step-shape ambiguity (Build only) | ARCH's `## Phasing in This Pilot` lacks discrete steps, or multiple equally-good decompositions exist with no objective tiebreaker. | `"step-shape ambiguity"` | Collaborative ARCH-authoring session to refine Phasing per `ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md`. |
-| Dep-probe contract mismatch (non-leaf only) | Step 5 dep probe surfaces a Mismatch on a critical dependency interface — not a minor signature drift the plan can absorb as one extra step. | `"dep probe: <module> contract mismatch"` | Operator picks: (a) update ARCH and re-plan, (b) adapt the fake first, or (c) defer the phase. |
+| Trigger | Detect when | Reason string |
+|---------|-------------|---------------|
+| Source-vs-ARCH drift | The canonical source (rules doc, external spec, sibling project ARCH, upstream API) contradicts what `ARCH_<module>.md` claims. | `"source-arch drift: <where>"` |
+| Multi-regime scope | Phase as scoped mixes regimes (Build + Refine, Build + Explore, etc.). | `"multi-regime scope: split needed"` |
+| Cross-module breakage at plan time | This phase as scoped would change a contract that another *built* module already depends on. `close.md` step 8 handles this at close time; surfacing it at plan time saves the rewind. | `"cross-module breakage: <module>"` |
+| Step-shape ambiguity (Build only) | ARCH's `## Phasing in This Pilot` lacks discrete steps, or multiple equally-good decompositions exist with no objective tiebreaker. | `"step-shape ambiguity"` |
+| Dep-probe contract mismatch (non-leaf only) | Step 5 dep probe surfaces a Mismatch on a critical dependency interface — not a minor signature drift the plan can absorb as one extra step. | `"dep probe: <module> contract mismatch"` |
 
 **Module-specific triggers.** Your assembled `Module Contract` section
 may include a `## Escalation Triggers` list — module-specific
@@ -79,8 +78,7 @@ If the assembled Module Contract has no `## Escalation Triggers`
 section at all, that is itself a yellow flag — the ARCH may not be
 authored under the autonomous-PLAN-ready template
 (`ref/SPEC_architecture.md`). Continue planning but note the gap in
-your plan devlog summary; FU-32 Δ5 (deferred) will turn the absence
-into a hard precondition check.
+your plan devlog summary.
 
 **How to escalate:**
 
