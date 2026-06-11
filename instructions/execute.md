@@ -24,11 +24,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
    target. Refer to it as **`phase.step`** in commits and devlog entries
    (e.g., `11.3`).
 
-   Step status is binary (`pending` until `complete`). If you want a
-   visible "started" signal for supervised observers, append a devlog entry
-   with `outcome: "partial"` mid-step, then the normal completion entry at
-   the end. For unattended runs, skip the marker and just complete in step
-   5.
+   Step status is binary (`pending` until `complete`).
 
 2. **Read context.** Read the source files and tests relevant to the step.
    Re-read **immediately before editing** so edits reflect the latest

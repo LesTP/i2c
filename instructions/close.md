@@ -39,10 +39,8 @@ that exercise the module from outside). All must pass. If any fail:
   devlog summary, but do not block close on flakes. If you cannot tell
   the difference, stop.
 
-For Build phases, "phase-level tests" usually means `pytest tests/<module>`
-or the project's equivalent. For Refine phases, this step may be a human
-sign-off the orchestrator handles — if your prompt's mode framing
-indicates that, defer the check (devlog `outcome: "blocked"`, reason
+For Build phases, run `pytest tests/<module>` or equivalent. For
+Refine phases, defer the check (devlog `outcome: "blocked"`, reason
 "awaiting Refine sign-off") and continue to step 3.
 
 ### 3. *(Conditional)* Pre-close: Integration Check - non-leaf modules only
@@ -219,8 +217,7 @@ If this phase resolved an item listed in `PROJECT.md`'s Risks section,
 edit the file to move that risk to Resolved (or remove). `PROJECT.md` is
 markdown, not structured state — direct file edit, no `state.py` call.
 
-This step is **optional** in the sense that not all phases touch risks.
-If yours didn't, skip.
+Skip if this phase didn't touch risks.
 
 ### 9. Mark the phase complete
 
@@ -244,15 +241,6 @@ git commit -m "11: close — propagate orchestrator contract, promote 2 gotchas"
 
 Always pass `-m`. The full prohibitions on interactive git commands
 apply (see the Shell command discipline section in your Worker Contract).
-
-If close made no other doc edits (no `ARCH_<module>.md` propagation, no
-PROJECT.md change), the minimum commit is the Implementation Sequence
-status flip plus `.state/`:
-
-```bash
-git add ARCHITECTURE.md .state/
-git commit -m "11: close — mark phase complete, promote 1 gotcha"
-```
 
 ### 11. Append a CLOSE devlog entry
 

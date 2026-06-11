@@ -113,8 +113,7 @@ to the phase being reviewed, so it appears in that phase's audit
 (`--section phase-summary --phase N`). Read the current phase from
 the `Project State` section of your prompt.
 
-If you apply an Optional finding instead of skipping it, no decision
-record is needed — the commit speaks for itself.
+If you apply an Optional finding, no decision record needed.
 
 ### 6. Append a devlog entry for the review
 
