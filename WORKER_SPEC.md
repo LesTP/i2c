@@ -67,11 +67,16 @@ State writes go through `python3 tools/state.py` — never through `sed`,
 never through direct file edits. The CLI guarantees atomic writes and
 schema validation; ad-hoc edits don't.
 
-Between steps, you may also call `python3 tools/assemble_context.py
---section X` for fresh single-section governance context (architecture,
-module contract, an older phase's devlog, or a status snapshot). See
-`ARCH_assembler.md` §10 for the bounded set of mid-step section
-requests. Mid-step assembler calls do not decrement the step budget.
+Between steps, you may also call `python3 tools/assemble_context.py` for
+fresh single-section context. Bounded set:
+
+- `--section architecture` — full ARCHITECTURE.md
+- `--section module --module $NAME` — a different module's contract
+- `--section devlog --phase $PHASE` — an older phase's devlog
+- `--section status` — project snapshot for re-orientation
+
+`--action` is not callable mid-step. Mid-step calls do not decrement
+the step budget.
 
 ### Loop discipline — multi-step only
 <!-- assembler:multi_step_only -->
