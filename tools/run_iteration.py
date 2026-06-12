@@ -16,7 +16,7 @@ Pipeline (per the plan):
 6. Write the prompt to ``logs/loop/iteration_NNN_prompt.md``.
 7. Run ``claude -p`` with the prompt on stdin; capture stdout to
    ``logs/loop/iteration_NNN.txt``.
-8. Parse the 5-line exit signal from the captured output; validate
+8. Parse the 2-line exit signal from the captured output; validate
    against ``schemas/exit_signal.schema.json``. Malformed signal →
    treated as ``exit_code: 2`` (halt-and-surface).
 9. If ``ACTION == CLOSE``, run ``check_post_action(root, "close")``;
@@ -55,13 +55,10 @@ DEFAULT_MAX_BUDGET_USD = 5.00
 LOG_DIR_NAME = "logs/loop"
 SUMMARY_LOG_NAME = "summary.log"
 
-# Regexes for the 5-line exit signal. Tolerant to surrounding whitespace
+# Regexes for the 2-line exit signal. Tolerant to surrounding whitespace
 # so the parser succeeds when claude pads with trailing blank lines.
-RE_EXIT = re.compile(r"^EXIT:\s*([0-2])\s*$", re.MULTILINE)
+RE_EXIT = re.compile(r"^EXIT:\s*([02])\s*$", re.MULTILINE)
 RE_REASON = re.compile(r"^REASON:\s*(.+?)\s*$", re.MULTILINE)
-RE_ACTION_TYPE = re.compile(r"^ACTION_TYPE:\s*(\w+)\s*$", re.MULTILINE)
-RE_ACTION_ID = re.compile(r"^ACTION_ID:\s*(\S+)\s*$", re.MULTILINE)
-RE_STEPS_COMPLETED = re.compile(r"^STEPS_COMPLETED:\s*(\d+)\s*$", re.MULTILINE)
 
 
 # ---------------------------------------------------------------------------
@@ -158,12 +155,13 @@ def next_iteration_number(log_dir: Path) -> int:
 
 
 def parse_exit_signal(output: str) -> dict[str, Any] | None:
-    """Extract the 5-line exit signal from worker output.
+    """Extract the 2-line exit signal from worker output.
 
-    Returns a dict with ``exit_code``, ``reason``, ``next_action`` (when
-    derivable from ACTION_TYPE), plus auxiliary ``action_id`` and
-    ``steps_completed`` for telemetry. Returns ``None`` when the EXIT
-    line is missing (caller treats as exit_code 2).
+    Returns a dict with ``exit_code`` and ``reason``. Returns ``None`` when
+    the EXIT line is missing (caller treats as exit_code 2). The structured
+    state in ``.state/project.json`` is the canonical source for everything
+    else — action_type, action_id, step counts are recoverable from there
+    or from what the runner dispatched.
     """
     m_exit = RE_EXIT.search(output)
     if not m_exit:
@@ -172,32 +170,16 @@ def parse_exit_signal(output: str) -> dict[str, Any] | None:
     m_reason = RE_REASON.search(output)
     if m_reason:
         signal["reason"] = m_reason.group(1)
-    m_action = RE_ACTION_TYPE.search(output)
-    if m_action:
-        action_type = m_action.group(1).lower()
-        if action_type in ("plan", "execute", "review", "close"):
-            signal["next_action"] = action_type
-        signal["action_type"] = m_action.group(1)
-    m_id = RE_ACTION_ID.search(output)
-    if m_id:
-        signal["action_id"] = m_id.group(1)
-    m_steps = RE_STEPS_COMPLETED.search(output)
-    if m_steps:
-        signal["steps_completed"] = int(m_steps.group(1))
     return signal
 
 
 def validate_exit_signal(signal: dict[str, Any]) -> list[str]:
     """Validate the parsed signal against exit_signal.schema.json.
 
-    Returns a list of error messages (empty = valid). Schema is permissive
-    today (FU-7 will tighten); failure here is rare and indicates the
-    worker emitted something structurally weird.
+    Returns a list of error messages (empty = valid).
     """
     schema = v.load_schema(v.EXIT_SIGNAL_SCHEMA)
     try:
-        # Filter to schema-known fields to avoid additionalProperties chatter
-        # — though the schema is currently `additionalProperties: true`.
         v.validate_json_schema(signal, schema, label="exit signal")
     except ValueError as e:
         return [str(e)]
@@ -228,7 +210,7 @@ def invoke_claude(
                    "cache_creation_input_tokens": J}, ...}
 
     ``parse_claude_output`` extracts the ``result`` (the prose that carries
-    the 5-line exit signal) and the usage block. If claude ever emits
+    the 2-line exit signal) and the usage block. If claude ever emits
     something that isn't valid JSON, the parser falls back to treating the
     raw stdout as plain text — the loop keeps working, just without
     per-iter token telemetry.
@@ -268,7 +250,7 @@ def invoke_codex(
     arg). This avoids ARG_MAX risks and shell-quoting hazards with the
     ~40-65 KB assembled prompts the i2c assembler emits.
 
-    Codex emits JSONL events to stdout. The 5-line exit signal lives in
+    Codex emits JSONL events to stdout. The 2-line exit signal lives in
     the LAST event whose shape is::
 
         {"type": "item.completed", "item": {"type": "agent_message", "text": "..."}}
@@ -308,7 +290,7 @@ def invoke_codex(
             item = obj.get("item", {})
             if item.get("type") == "agent_message":
                 # Keep overwriting; the LAST agent_message is the one
-                # that carries the 5-line exit signal.
+                # that carries the 2-line exit signal.
                 last_agent_text = item.get("text", "") or last_agent_text
     # Fallback: if no agent_message was emitted (worker died early or
     # auth failed before any output), surface combined stdout+stderr so
@@ -553,7 +535,7 @@ def run_iteration(
     if signal is None:
         worker_exit = 2
         reason = (
-            "exit signal missing or malformed (5-line block not found in "
+            "exit signal missing or malformed (2-line block not found in "
             "worker output)"
         )
     else:

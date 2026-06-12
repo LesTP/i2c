@@ -672,14 +672,11 @@ def render_worker_spec(ctx: AssemblerContext) -> str:
 
 
 _OUTPUT_CONTRACT_REMINDER = """\
-**End your response with EXACTLY these five lines. No prose after.**
+**End your response with EXACTLY these two lines. No prose after.**
 
 ```
-EXIT: 0 | 1 | 2
+EXIT: 0 | 2
 REASON: <one-line summary>
-ACTION_TYPE: PLAN | EXECUTE | REVIEW | CLOSE
-ACTION_ID: <phase.step>
-STEPS_COMPLETED: <number of actions performed in this invocation>
 ```
 
 The runner parses these via line-anchored regex. Omitting them causes the
@@ -1106,7 +1103,7 @@ def build_full_prompt(ctx: AssemblerContext) -> str:
 
     # Region 5: Output Contract reminder (absolute tail — recency anchor so
     # workers whose model defaults conversational, like newer codex, are
-    # less likely to skip the 5-line exit signal). Autonomous-only,
+    # less likely to skip the 2-line exit signal). Autonomous-only,
     # matching the existing autonomous_only convention for Output Contract
     # in WORKER_SPEC — supervised reviewers read the worker output directly
     # and don't need a parseable signal block.

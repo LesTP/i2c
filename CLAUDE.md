@@ -87,23 +87,19 @@ already in your assembled prompt via `instructions/*.md`.
 
 ## Output Contract
 
-End every invocation with exactly these five lines — no additional text after:
+End every invocation with exactly these two lines — no additional text after:
 
 ```
-EXIT: 0 | 1 | 2
+EXIT: 0 | 2
 REASON: <one-line summary>
-ACTION_TYPE: PLAN | EXECUTE | REVIEW | CLOSE
-ACTION_ID: <phase.step>
-STEPS_COMPLETED: <number of actions performed in this invocation>
 ```
 
 | Code | Meaning |
 |------|---------|
 | 0 | Normal completion — runner reads `.state/project.json` to decide next dispatch |
-| 1 | Halt state on entry (`audit_boundary`/`audit_escalation`/`done`) — nothing to do |
 | 2 | Error — judgment-based escalation or health check tripped |
 
-The runner's parser uses line-anchored regexes on each field. The block can be plain or inside a fenced code block; both work. **Do not omit it** — prose-only output causes the runner to report `exit=2 "signal missing or malformed"` even when the work landed correctly in `.state/` and the commit.
+The runner's parser uses line-anchored regexes. The block can be plain or inside a fenced code block; both work. **Do not omit it** — prose-only output causes the runner to report `exit=2 "signal missing or malformed"` even when the work landed correctly in `.state/` and the commit. Everything else the runner needs (action, phase, step, status) it reads from `.state/project.json` and from what it dispatched.
 
 ## Mode
 

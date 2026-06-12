@@ -253,7 +253,7 @@ python3 tools/state.py append devlog.jsonl '{"phase":11,"step":3,"action":"execu
 # Last step of the phase? Transition:
 python3 tools/state.py set project.json state=review
 
-# Emit exit signal (5-line block, see Worker Contract §6).
+# Emit exit signal (2-line block, see Worker Contract §4).
 ```
 
 ### Step with an immediate-propagation contract change

@@ -148,24 +148,21 @@ machine script. When any fires, EXIT 2 with a reason.
 The **final lines** of every invocation must be:
 
 ```
-EXIT: 0 | 1 | 2
+EXIT: 0 | 2
 REASON: <one-line summary>
-ACTION_TYPE: PLAN | EXECUTE | REVIEW | CLOSE
-ACTION_ID: <phase.step — e.g., 10.3>
-STEPS_COMPLETED: <number of actions performed in this invocation>
 ```
 
 | Code | Meaning |
 |------|---------|
-| 0 | Normal completion — runner reads `.state/` to decide next dispatch |
-| 1 | Blocked on entry — nothing to do |
+| 0 | Normal completion — runner reads `.state/project.json` to decide next dispatch |
 | 2 | Error — judgment-based escalation (§3) or backend health-check |
 
-`ACTION_TYPE`, `ACTION_ID`, and `STEPS_COMPLETED` are telemetry for
-`summary.log`. The runner uses exit code + `.state/project.json` state
-for control decisions, not these fields. The runner validates the
-emitted block against `schemas/exit_signal.schema.json`; malformed
-output is treated as `EXIT 2`.
+The runner uses exit code + `.state/project.json` state for control
+decisions. Action type, current phase/step, and progress counters are all
+recoverable from `.state/` (which the worker already writes atomically
+before exit) and from what the runner dispatched, so they are not
+duplicated in the signal. The runner validates the emitted block against
+`schemas/exit_signal.schema.json`; malformed output is treated as `EXIT 2`.
 
 ---
 

@@ -347,6 +347,7 @@ FU-32 Δ5 (PLAN precondition check), and the deferred codexbot commands
 | FU-32 Δ4 v2 | Pattern A/B template collapse + worked examples (lyonel, noise-machine, PoP_port) | ✅ |
 | Codexbot Phase 18a MVP | Telegram surface for i2c projects (`/start`, `/run`, `/close`, `/audit`) | ✅ |
 | FU-33 | Per-iter token telemetry (`tokens_in/out/cached`) in `summary.log` for both backends | ✅ |
+| FU-7 | Exit signal trimmed to 2-line block (`exit_code` + `reason`); schema strict | ✅ |
 | 3.C | Multi-iteration loop (`--step-budget > 1`) | upcoming |
 | FU-32 Δ5 | PLAN precondition check on ARCH completeness | deferred (after Pattern A/B template proves out further) |
 | Codexbot 18a remainder | `/decisions`, `/escalation`, `/logs`, `/review` for i2c | deferred (blocked on FU-34) |

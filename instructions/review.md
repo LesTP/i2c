@@ -155,7 +155,7 @@ Set `project.json.state=close`. The state machine will dispatch CLOSE next.
 python3 tools/state.py set project.json state=close
 ```
 
-Then emit the exit signal (5-line block, see Worker Contract §6).
+Then emit the exit signal (2-line block, see Worker Contract §4).
 
 ---
 

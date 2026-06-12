@@ -408,7 +408,7 @@ next invocation as EXECUTE.
 python3 tools/state.py set project.json state=execute
 ```
 
-Then emit the exit signal (5-line block, see Worker Contract §6). Do not
+Then emit the exit signal (2-line block, see Worker Contract §4). Do not
 start the first execute step in this invocation.
 
 ---

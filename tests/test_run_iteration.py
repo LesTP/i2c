@@ -88,7 +88,7 @@ class TempProject:
 
 
 # ---------------------------------------------------------------------------
-# Synthetic 5-line exit signals
+# Synthetic exit signals (2-line block)
 # ---------------------------------------------------------------------------
 
 
@@ -96,18 +96,12 @@ def signal_block(
     *,
     exit_code: int = 0,
     reason: str = "did the thing",
-    action_type: str = "EXECUTE",
-    action_id: str = "2.2",
-    steps_completed: int = 1,
 ) -> str:
     return (
         "I did some work.\n"
         "\n"
         f"EXIT: {exit_code}\n"
         f"REASON: {reason}\n"
-        f"ACTION_TYPE: {action_type}\n"
-        f"ACTION_ID: {action_id}\n"
-        f"STEPS_COMPLETED: {steps_completed}\n"
     )
 
 
@@ -239,18 +233,26 @@ class TestExitSignalParsing(unittest.TestCase):
             self.assertIn("exit=2", read_summary(p.root))
 
     def test_parse_exit_signal_pure_helper(self):
-        # Sanity: pure-function parser extracts every field correctly.
-        text = signal_block(
-            exit_code=1, reason="phase done", action_type="CLOSE",
-            action_id="2.4", steps_completed=4,
-        )
+        # Sanity: pure-function parser extracts the two fields.
+        text = signal_block(exit_code=2, reason="phase escalated")
         signal = ri.parse_exit_signal(text)
         self.assertIsNotNone(signal)
-        self.assertEqual(signal["exit_code"], 1)
-        self.assertEqual(signal["reason"], "phase done")
-        self.assertEqual(signal["next_action"], "close")
-        self.assertEqual(signal["action_id"], "2.4")
-        self.assertEqual(signal["steps_completed"], 4)
+        self.assertEqual(signal["exit_code"], 2)
+        self.assertEqual(signal["reason"], "phase escalated")
+        # No legacy fields leak through.
+        self.assertNotIn("action_type", signal)
+        self.assertNotIn("action_id", signal)
+        self.assertNotIn("steps_completed", signal)
+        self.assertNotIn("next_action", signal)
+
+    def test_parse_exit_signal_rejects_legacy_exit_code_one(self):
+        # exit_code 1 was the pre-lifecycle-v1 "blocked on entry" value;
+        # the state machine now short-circuits halt states before dispatch,
+        # so the worker never has a reason to emit 1. Schema enum is {0, 2}.
+        text = "EXIT: 1\nREASON: stale halt-on-entry meaning\n"
+        signal = ri.parse_exit_signal(text)
+        # Parser is strict (regex only matches 0 or 2).
+        self.assertIsNone(signal)
 
     def test_parse_exit_signal_returns_none_when_missing(self):
         self.assertIsNone(ri.parse_exit_signal("nothing relevant"))
@@ -268,10 +270,7 @@ class TestCloseInvariantHalt(unittest.TestCase):
             # state to audit_boundary or mark phase complete. Runner must
             # detect via invariants.
             invoker = make_fake_invoker(
-                signal_block(
-                    exit_code=0, reason="closed it",
-                    action_type="CLOSE", action_id="2.4",
-                )
+                signal_block(exit_code=0, reason="closed it")
             )
             rc, out, err = run_iter(invoker=invoker)
             self.assertEqual(rc, 2, msg=err)
@@ -289,10 +288,7 @@ class TestCloseInvariantHalt(unittest.TestCase):
             p.patch_project(state="audit_boundary", phase=2)
             p.patch_phase_status(2, "complete")
             invoker = make_fake_invoker(
-                signal_block(
-                    exit_code=0, reason="closed it cleanly",
-                    action_type="CLOSE", action_id="2.4",
-                )
+                signal_block(exit_code=0, reason="closed it cleanly")
             )
             rc, _, err = run_iter(invoker=invoker)
             self.assertEqual(rc, 0, msg=err)
@@ -324,7 +320,7 @@ class TestParseClaudeOutput(unittest.TestCase):
     def test_extracts_result_and_usage_from_json(self):
         raw = json.dumps({
             "type": "result",
-            "result": "the prose with the 5-line exit signal",
+            "result": "the prose with the 2-line exit signal",
             "usage": {
                 "input_tokens": 100,
                 "output_tokens": 50,
@@ -333,7 +329,7 @@ class TestParseClaudeOutput(unittest.TestCase):
             },
         })
         text, usage = ri.parse_claude_output(raw)
-        self.assertEqual(text, "the prose with the 5-line exit signal")
+        self.assertEqual(text, "the prose with the 2-line exit signal")
         # gross input = fresh + cache_read + cache_creation = 100 + 800 + 200
         self.assertEqual(usage, {"input": 1100, "output": 50, "cached": 800})
 
