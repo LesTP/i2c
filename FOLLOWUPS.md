@@ -21,13 +21,26 @@ enum: `plan`, `execute`, `review`, `close`, `audit_boundary`,
 `audit_escalation`, `done`), **autonomous-PLAN readiness work** (FU-32
 Δ1/Δ2/Δ4 + Δ4 v2 Pattern A/B collapse + `--section phase-summary`),
 **codexbot Phase 18a MVP** (i2c-aware `/start`, `/run` via shim,
-`/close`, `/audit`), and **exit-signal trim to 2 lines** (FU-7 closed;
-schema now requires only `exit_code` + `reason`, `additionalProperties:
-false`, `exit_code` enum trimmed to `[0, 2]`) all shipped. CC has run
-Phases 2–7 autonomously across both backends (claude + codex); Phase 7
-close validated all four new i2c handlers end-to-end from Telegram. ARCH
-template at `ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md`
-(Pattern A / Pattern B variants); phases 5–7 authored against it on CC.
+`/close`, `/audit`), and **exit-signal trim to 2 lines** (FU-7 closed
+2026-06-12; schema requires only `exit_code` + `reason`,
+`additionalProperties: false`, `exit_code` enum `[0, 2]`) all shipped. CC
+has run **Phases 2–14** autonomously across both backends (claude +
+codex); Phase 7 close validated all four new i2c handlers end-to-end
+from Telegram; Phase 14 (extraction commitments-only) validated FU-7's
+2-line block across 7 iterations on both backends with zero malformed
+signals. ARCH template at `ref/SPEC_architecture.md` +
+`ref/GUIDE_architecture.md` (Pattern A / Pattern B variants); phases
+5–7 authored against it on CC.
+
+**Recent cleanups (2026-06-12):** dead-surface audit prompted by FU-7
+surfaced and removed (a) `STOP_BEFORE_REVIEW` env var (parallel mechanism
+to the shim's `--to-review` flag; never set in production) — ~60 LOC
+removed across `state_machine.py`, tests, and prose; (b) stale
+`state_machine.sh` active-tense references in worker-facing prose
+(WORKER_SPEC.md, README.md, schema description, assembler docstring) —
+the bash script was rewritten as `state_machine.py` during Phase 3.A but
+prose hadn't caught up. **FU-37** added to capture the practice
+(opportunistic dead-surface mining at session starts).
 
 `FOLLOWUPS.md` is the rolling backlog + live spec for the remaining
 FU-32 Δ5 work (deferred until template proves out further).
