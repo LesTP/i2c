@@ -13,15 +13,11 @@ The runner's FU-22 post-close invariant check (``tools/invariants.py``)
 replaces the small ``state=audit_boundary`` side-effect that e2e's
 ``state_machine.sh`` had on CLOSE dispatch.
 
-Environment variables (mirroring e2e for forward compatibility):
+Environment variables:
 
 - ``STEP_BUDGET`` (default ``1``) — number of steps the worker may take
   this invocation. Reserved for multi-step mode; v1 runner always passes
   ``1`` so this script never decrements anything.
-
-- ``STOP_BEFORE_REVIEW`` (default ``false``) — when ``true``, a dispatch
-  that would have been ``REVIEW`` becomes ``EXIT`` instead. NEXT is set to
-  ``review`` so a follow-up invocation resumes there.
 
 Exit codes:
 
@@ -44,9 +40,6 @@ Decision matrix (per DESIGN_state_lifecycle_v1.md §4):
 ``audit_escalation``          (any)                        EXIT     audit_escalation
 ``done``                      (any)                        EXIT     done
 ============================  ===========================  =======  ================
-
-``STOP_BEFORE_REVIEW=true`` short-circuits any REVIEW dispatch to
-``ACTION: EXIT`` with ``NEXT: review``.
 """
 
 from __future__ import annotations
@@ -84,13 +77,6 @@ VALID_STATES = (
 HALT_STATES = ("audit_boundary", "audit_escalation", "done")
 
 
-def _parse_bool_env(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in ("true", "1", "yes")
-
-
 def _parse_int_env(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None:
@@ -113,8 +99,6 @@ def count_pending_steps(steps: list[dict[str, Any]], phase: int) -> int:
 def decide(
     project: dict[str, Any],
     steps: list[dict[str, Any]],
-    *,
-    stop_before_review: bool = False,
 ) -> tuple[str, str]:
     """Apply the dispatch matrix and return ``(ACTION, NEXT)``.
 
@@ -135,21 +119,14 @@ def decide(
     if state == "execute":
         pending = count_pending_steps(steps, phase)
         if pending == 0:
-            if stop_before_review:
-                return "EXIT", "review"
             return "REVIEW", "close"
         next_state = "review" if pending == 1 else "execute"
         return "EXECUTE", next_state
     if state == "review":
-        if stop_before_review:
-            return "EXIT", "review"
         return "REVIEW", "close"
     if state == "close":
         return "CLOSE", "audit_boundary"
     # Unreachable — VALID_STATES + HALT_STATES guards above. Defensive raise.
-    raise ValueError(f"unreachable state {state!r}")  # pragma: no cover
-
-    # Unreachable — VALID_STATES guards above. Defensive raise.
     raise ValueError(f"unreachable state {state!r}")  # pragma: no cover
 
 
@@ -180,7 +157,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"ERROR: state file schema-invalid\nFile: {root}\nDetail: {e}\n")
         return 2
 
-    stop_before_review = _parse_bool_env("STOP_BEFORE_REVIEW", default=False)
     # STEP_BUDGET is read for forward compatibility with multi-step mode
     # (D-r-4 / D-r-7). v1 single-iteration runner always passes 1 and we
     # never decrement here; honored so an operator can preview multi-step
@@ -188,9 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     _ = _parse_int_env("STEP_BUDGET", default=1)
 
     try:
-        action, next_state = decide(
-            project, steps, stop_before_review=stop_before_review,
-        )
+        action, next_state = decide(project, steps)
     except ValueError as e:
         sys.stderr.write(f"ERROR: invalid state\nFile: {root / '.state' / 'project.json'}\nDetail: {e}\n")
         return 2

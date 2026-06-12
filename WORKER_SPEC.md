@@ -28,7 +28,7 @@ and emit the exit signal defined in §4.
 ## 2. Main Loop
 
 The state machine decides what action you perform. **The runner has
-already called `state_machine.sh` before invoking you**, and the result —
+already called `state_machine.py` before invoking you**, and the result —
 `ACTION` and `NEXT` — arrived in your prompt's `Action Context` section.
 For single-step invocations (the common case, `STEP_BUDGET = 1`), this is
 all the state-machine interaction you need: do the action, emit the exit
@@ -83,10 +83,10 @@ the step budget.
 
 Two contracts you must NOT break. Both have already cost work in
 production loops. They apply when you are the one calling
-`state_machine.sh` (multi-step mode); in single-step mode the runner
+`state_machine.py` (multi-step mode); in single-step mode the runner
 calls it and you never invoke it.
 
-**1. Single call per loop iteration.** Call `state_machine.sh` exactly
+**1. Single call per loop iteration.** Call `state_machine.py` exactly
 ONCE per iteration — at the top, before the action. Never re-call inside
 or after the action. The script decrements budget on every call.
 "Defensive" re-calls ("let me check the controller before touching
@@ -95,15 +95,15 @@ files") drop a step.
 If your context feels fuzzy mid-action — long file read, session resume,
 internal recovery moment — assume the action the script dispatched is
 **still in flight** and complete it. Re-read your own previous tool
-output to reorient if needed. Only call `state_machine.sh` again after
+output to reorient if needed. Only call `state_machine.py` again after
 you have completed steps 4–7 of the LOOP (action writes via state.py,
 state transition via state.py).
 
 **2. Trust the script's verdict; never self-judge.** The script decides
-EXIT, REVIEW, EXECUTE, etc. — based on `STEP_BUDGET`,
-`STOP_BEFORE_REVIEW`, pending-step count, and the `state` value
-(including halt states `audit_boundary`, `audit_escalation`, `done`). Your
-job is to do what it returns and then call it again. Do NOT:
+EXIT, REVIEW, EXECUTE, etc. — based on `STEP_BUDGET`, pending-step count,
+and the `state` value (including halt states `audit_boundary`,
+`audit_escalation`, `done`). Your job is to do what it returns and then
+call it again. Do NOT:
 
 - Pre-compute budget exhaustion (`"5 - 3 = exhausted, stopping"` is
   wrong arithmetic AND wrong process — `5 - 3 = 2`)

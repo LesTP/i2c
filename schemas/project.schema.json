@@ -28,7 +28,7 @@
     "steps_remaining": {
       "type": "integer",
       "minimum": 0,
-      "description": "Step budget remaining for the current invocation. Decremented by state_machine.sh."
+      "description": "Step budget remaining for the current invocation. Reserved for multi-step mode (Phase 3.C)."
     },
     "gotchas": {
       "type": "array",

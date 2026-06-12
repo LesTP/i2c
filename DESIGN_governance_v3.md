@@ -16,6 +16,12 @@
 > → `state=audit_escalation`; project terminus → `state=done`. The rest of
 > this doc (file layout, dispatch flow, four worker actions, schema
 > validation, e2e comparison, etc.) is unchanged.
+>
+> **Rename note (2026-06-12):** active-tense references below to
+> `state_machine.sh` are stale — the v2.5 bash script was rewritten as
+> `tools/state_machine.py` during Phase 3.A. The lineage breadcrumb at the
+> top of this header keeps `.sh` as accurate history; in-doc procedural
+> references should be read as `.py`. Same interface, same dispatch matrix.
 
 ---
 

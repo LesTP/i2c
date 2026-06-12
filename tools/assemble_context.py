@@ -697,7 +697,7 @@ def render_action_heading(ctx: AssemblerContext) -> str:
 def compute_next_state(ctx: AssemblerContext) -> str:
     """Default NEXT computation per D-impl-3 (Phase 3 may override via --next).
 
-    The current state-transition table mirrors what state_machine.sh will
+    The current state-transition table mirrors what state_machine.py
     eventually emit. EXECUTE → execute (loop) by default; the worker
     transitions to review on the last step via state.py.
     """

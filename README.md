@@ -203,7 +203,7 @@ just stops.
 The loop runner (`run-iteration.sh`, not yet built — Phase 3) invokes
 the worker repeatedly. Before each invocation it:
 
-1. Calls `state_machine.sh` to determine the next ACTION
+1. Calls `state_machine.py` to determine the next ACTION
 2. Calls `assemble_context.py` to build the full prompt (instructions,
    adapter, project state, project docs, devlog tail)
 3. Pipes the prompt into `claude -p` or `codex exec`

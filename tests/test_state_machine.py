@@ -1,10 +1,9 @@
 """Tests for tools/state_machine.py — dispatch decision matrix.
 
-Read-only; exercises every cell of the matrix plus STOP_BEFORE_REVIEW and
-the halt-state short-circuits (audit_boundary, audit_escalation, done).
-Subprocess-level test verifies the script walks up from a sub-directory
-CWD via find_project_root. Schema/state model per
-DESIGN_state_lifecycle_v1.md.
+Read-only; exercises every cell of the matrix plus the halt-state
+short-circuits (audit_boundary, audit_escalation, done). Subprocess-level
+test verifies the script walks up from a sub-directory CWD via
+find_project_root. Schema/state model per DESIGN_state_lifecycle_v1.md.
 """
 
 from __future__ import annotations
@@ -198,27 +197,6 @@ class TestDecideMatrix(unittest.TestCase):
         action, nxt = sm.decide(proj, [])
         self.assertEqual((action, nxt), ("CLOSE", "audit_boundary"))
 
-    # ---- STOP_BEFORE_REVIEW -----------------------------------------------
-
-    def test_stop_before_review_short_circuits_review_state(self):
-        proj = self._project(state="review")
-        action, nxt = sm.decide(proj, [], stop_before_review=True)
-        self.assertEqual((action, nxt), ("EXIT", "review"))
-
-    def test_stop_before_review_short_circuits_execute_to_review(self):
-        proj = self._project(state="execute", phase=2)
-        steps = self._steps(2, pending=0, total=3)
-        action, nxt = sm.decide(proj, steps, stop_before_review=True)
-        self.assertEqual((action, nxt), ("EXIT", "review"))
-
-    def test_stop_before_review_leaves_execute_alone_when_pending(self):
-        # Pending > 0 → still dispatches EXECUTE; only REVIEW dispatches
-        # are short-circuited.
-        proj = self._project(state="execute", phase=2)
-        steps = self._steps(2, pending=2, total=3)
-        action, nxt = sm.decide(proj, steps, stop_before_review=True)
-        self.assertEqual((action, nxt), ("EXECUTE", "execute"))
-
     # ---- unknown state ----------------------------------------------------
 
     def test_unknown_state_raises(self):
@@ -290,20 +268,6 @@ class TestStateMachineCli(unittest.TestCase):
             rc, out, err = run_main()
             self.assertEqual(rc, 0, msg=err)
             self.assertEqual(parse_output(out), ("EXIT", "done"))
-
-    def test_stop_before_review_env(self):
-        # Mark all phase 2 steps complete so EXECUTE state with 0 pending
-        # would dispatch REVIEW; STOP_BEFORE_REVIEW=true → EXIT/review.
-        with TempProject() as p:
-            steps = json.loads((p.root / ".state" / "steps.json").read_text())
-            for s in steps:
-                if s["phase"] == 2:
-                    s["status"] = "complete"
-                    s.setdefault("commit", "abc1234")
-            p.set_steps(steps)
-            rc, out, err = run_main(env={"STOP_BEFORE_REVIEW": "true"})
-            self.assertEqual(rc, 0, msg=err)
-            self.assertEqual(parse_output(out), ("EXIT", "review"))
 
     def test_step_budget_env_does_not_perturb_decision(self):
         # v1: STEP_BUDGET is forward-compat only; same inputs same decision
