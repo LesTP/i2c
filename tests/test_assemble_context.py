@@ -346,6 +346,16 @@ class TestCliArgumentErrors(unittest.TestCase):
         rc, _, err = run_cli("--section", "status", "--emit", "user")
         self.assertEqual(rc, 2)
 
+    def test_phase_with_section_status_rejected(self):
+        # FU-17: status always reports project.json.phase; --phase is a
+        # silent no-op there, so reject it.
+        rc, _, err = run_cli("--section", "status", "--phase", "3")
+        self.assertEqual(rc, 2)
+
+    def test_phase_with_section_architecture_rejected(self):
+        rc, _, err = run_cli("--section", "architecture", "--phase", "3")
+        self.assertEqual(rc, 2)
+
     def test_unknown_action_rejected(self):
         rc, _, err = run_cli("--action", "bogus", "--phase", "1")
         self.assertEqual(rc, 2)

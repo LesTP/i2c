@@ -13,12 +13,6 @@ The runner's FU-22 post-close invariant check (``tools/invariants.py``)
 replaces the small ``state=audit_boundary`` side-effect that e2e's
 ``state_machine.sh`` had on CLOSE dispatch.
 
-Environment variables:
-
-- ``STEP_BUDGET`` (default ``1``) — number of steps the worker may take
-  this invocation. Reserved for multi-step mode; v1 runner always passes
-  ``1`` so this script never decrements anything.
-
 Exit codes:
 
 - ``0`` — clean decision (including ``ACTION: EXIT``)
@@ -44,7 +38,6 @@ Decision matrix (per DESIGN_state_lifecycle_v1.md §4):
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -75,16 +68,6 @@ VALID_STATES = (
 # States that dispatch EXIT regardless of phase/steps content. The loop halts
 # at these; humans or an autonomous wrapper transition out.
 HALT_STATES = ("audit_boundary", "audit_escalation", "done")
-
-
-def _parse_int_env(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw.strip())
-    except ValueError:
-        return default
 
 
 def count_pending_steps(steps: list[dict[str, Any]], phase: int) -> int:
@@ -156,12 +139,6 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as e:
         sys.stderr.write(f"ERROR: state file schema-invalid\nFile: {root}\nDetail: {e}\n")
         return 2
-
-    # STEP_BUDGET is read for forward compatibility with multi-step mode
-    # (D-r-4 / D-r-7). v1 single-iteration runner always passes 1 and we
-    # never decrement here; honored so an operator can preview multi-step
-    # decisions later without code changes.
-    _ = _parse_int_env("STEP_BUDGET", default=1)
 
     try:
         action, next_state = decide(project, steps)

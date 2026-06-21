@@ -77,26 +77,17 @@ class TempProject:
         self._write("steps.json", steps)
 
 
-def run_main(env: dict | None = None) -> tuple[int, str, str]:
-    """Run state_machine.main() with patched environment; capture i/o."""
+def run_main() -> tuple[int, str, str]:
+    """Run state_machine.main(); capture i/o."""
     out, err = io.StringIO(), io.StringIO()
-    saved_env = os.environ.copy()
-    try:
-        if env is not None:
-            for k, v in env.items():
-                os.environ[k] = v
-        # Clear cached env-derived values per call.
-        with redirect_stdout(out), redirect_stderr(err):
-            try:
-                rc = sm.main([])
-                if rc is None:
-                    rc = 0
-            except SystemExit as e:
-                rc = e.code if isinstance(e.code, int) else 2
-        return rc, out.getvalue(), err.getvalue()
-    finally:
-        os.environ.clear()
-        os.environ.update(saved_env)
+    with redirect_stdout(out), redirect_stderr(err):
+        try:
+            rc = sm.main([])
+            if rc is None:
+                rc = 0
+        except SystemExit as e:
+            rc = e.code if isinstance(e.code, int) else 2
+    return rc, out.getvalue(), err.getvalue()
 
 
 def parse_output(stdout: str) -> tuple[str, str]:
@@ -268,17 +259,6 @@ class TestStateMachineCli(unittest.TestCase):
             rc, out, err = run_main()
             self.assertEqual(rc, 0, msg=err)
             self.assertEqual(parse_output(out), ("EXIT", "done"))
-
-    def test_step_budget_env_does_not_perturb_decision(self):
-        # v1: STEP_BUDGET is forward-compat only; same inputs same decision
-        # regardless of budget.
-        with TempProject() as p:
-            p.set_project(state="plan")
-            rc_a, out_a, _ = run_main(env={"STEP_BUDGET": "1"})
-            rc_b, out_b, _ = run_main(env={"STEP_BUDGET": "10"})
-            self.assertEqual(rc_a, 0)
-            self.assertEqual(rc_b, 0)
-            self.assertEqual(parse_output(out_a), parse_output(out_b))
 
     def test_walks_up_from_subdirectory(self):
         """find_project_root walks up; CWD inside .state/ still finds project."""

@@ -595,6 +595,7 @@ Optional degradations all exit 0. The worker sees the placeholders and decides w
 | `--phase` missing when `--section phase-summary` | exit 2 |
 | `--module` missing when `--section module` | exit 2 |
 | `--mode` specified with `--section` | exit 2 |
+| `--phase` specified with `--section {status,architecture,module}` | exit 2 (these sections don't consume `--phase`; FU-17) |
 | non-default `--emit` specified with `--section` | exit 2 |
 | `--phase` is not a positive integer | exit 2 |
 

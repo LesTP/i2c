@@ -1490,6 +1490,12 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
             parser.error("--mode is only valid with --action")
         if getattr(args, "emit", "full") != "full":
             parser.error("--emit is only valid with --action")
+        # --phase is consumed only by devlog and phase-summary. The other
+        # sections (status, architecture, module) always report on
+        # project.json.phase or ignore phase entirely (ARCH §8); accepting
+        # --phase there silently misleads the caller (FU-17).
+        if args.section not in ("devlog", "phase-summary") and args.phase is not None:
+            parser.error(f"--phase is not valid with --section {args.section}")
         if args.section == "devlog":
             if args.phase is None:
                 parser.error("--phase is required with --section devlog")
