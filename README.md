@@ -323,7 +323,7 @@ claude --max-budget-usd 5.00` (and see the Invocation guidance in
 
 The framework is functionally complete for single-iteration autonomous
 runs. CC (clankercourts) is the first real consumer; it has run Phases
-2–7 end-to-end autonomously across both Claude and Codex backends.
+2–14 end-to-end autonomously across both Claude and Codex backends.
 Codexbot integration MVP shipped 2026-06-09 (Telegram surface for i2c
 projects). Remaining work is incremental — multi-iteration loop,
 FU-32 Δ5 (PLAN precondition check), and the deferred codexbot commands
@@ -336,11 +336,11 @@ FU-32 Δ5 (PLAN precondition check), and the deferred codexbot commands
 | 1.2.5 | `ARCH_assembler.md` contract spec | ✅ |
 | 1.2.6 | `templates/.claude/commands/` slash wrappers | ✅ |
 | 1.3 | `assemble_context.py` — context assembler | ✅ |
-| 2 | Clankercourts pilot (Phases 1–7 shipped; Phase 1 supervised, Phases 2–7 autonomous) | ✅ |
+| 2 | Clankercourts pilot (Phases 1–14 shipped; Phase 1 supervised, Phases 2–14 autonomous) | ✅ |
 | 3.A | `state_machine.py`, `run_iteration.py`, `invariants.py` — single-iteration autonomous loop | ✅ |
 | 3.A.1 | Prompt compaction + region reorder (Worker Contract → Tool Rules → Project Context → Action Context) | ✅ |
 | 3.A.2 | EXECUTE recipe trim (drop project-wide decisions table) | ✅ |
-| 3.B | First real autonomous run (CC Phases 2–7 on Claude + Codex) | ✅ |
+| 3.B | First real autonomous run (CC Phases 2–14 on Claude + Codex) | ✅ |
 | 3.D | Codex backend (`--backend codex` in runner) | ✅ |
 | State lifecycle v1 | 7-state enum replaces `(state, blocked)` overload (FU-30) | ✅ |
 | FU-32 Δ1, Δ2, Δ4 + phase-summary | autonomous-PLAN readiness work | ✅ |
@@ -371,7 +371,7 @@ FU-32 Δ5 (PLAN precondition check), and the deferred codexbot commands
 - Single-iteration autonomous loop: `python tools/run_iteration.py
   [--backend claude|codex] [--model sonnet] [--max-budget-usd 5.00]`
   dispatches one worker invocation with state-machine + invariants
-  checking. Both backends proven in production on CC Phases 2–7. Per-iter
+  checking. Both backends proven in production on CC Phases 2–14. Per-iter
   token usage (`tokens_in / tokens_out / tokens_cached`) is appended to
   `summary.log` for both backends (FU-33).
 - **Telegram control surface for i2c projects** via codexbot: `/start`,
