@@ -1,0 +1,59 @@
+# Packaging descriptor for i2c.
+#
+# Phase 1 (current): this declares the project's identity, license, runtime
+# dependency, and supported Python versions so the repository is a
+# well-formed, installable Python project. It is intentionally
+# **metadata-only** — it does not yet ship the framework code as an
+# importable package or expose console-script commands.
+#
+# Why not yet: the tools/ modules are flat scripts that import each other as
+# siblings and are invoked by path (`python3 tools/state.py ...`). Packaging
+# them properly — a single `i2c` package namespace, console entry points
+# (`i2c ...`), and bundling schemas/instructions as package data — is a
+# planned packaging milestone. Shipping them now as flat top-level
+# modules (`state`, `validate`, ...) would risk import-name collisions, so
+# that is deferred rather than done badly.
+#
+# Until Phase 2, projects use i2c via the copy model documented in README.md.
+#
+# Not finalized before any real publish:
+#   - the public distribution name (working name `i2c`; leaning `idea2code`)
+#   - the [project.urls] entries (added once the public repo exists)
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "i2c"
+version = "0.1.0"
+description = "A governance framework for AI-driven software development: structured on-disk state and pre-assembled worker prompts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Mike Yeluashvili" }]
+keywords = ["ai", "agents", "governance", "llm", "code-generation", "workflow"]
+dependencies = ["jsonschema>=4"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+]
+
+# [project.urls]
+# Homepage = "..."      # add when the public repository exists
+# Repository = "..."
+
+# [project.scripts]
+# i2c = "i2c.cli:main"  # Phase 2: console entry point over the i2c package
+
+[tool.setuptools]
+# Phase 1 is metadata-only; there are no Python modules to install yet.
+# Phase 2 replaces this with real package discovery for the `i2c` package.
+py-modules = []
