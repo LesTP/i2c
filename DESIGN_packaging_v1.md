@@ -206,6 +206,51 @@ the existing two backends still hard-branched, and land the abstraction in
 Phase 3. But the capability-flag framing should be designed in from the
 start so the split logic isn't re-tangled.
 
+### 6.1 Two backend *kinds* (the real scoping fork)
+
+Not every "backend" is the same shape, and this materially affects the
+protocol:
+
+- **Agentic-CLI backends** (today's `claude -p`, `codex exec`): the CLI
+  *is* the agent — it runs tools itself (edits files, runs tests, calls
+  `state.py`, commits) from a single piped prompt. i2c just hands it a
+  prompt and reads the result.
+- **Raw-API backends** (Gemini API, **OpenRouter**, plain
+  chat-completions): text-in / text-out only. They do **not** run tools.
+  To use one as a worker, i2c (or the adapter) must supply the agentic
+  harness — parse tool calls, execute them, loop — which the CLIs give us
+  for free.
+
+So "add Gemini / OpenRouter" is two different sizes of job depending on
+the path:
+- Use a provider's **agentic CLI/SDK** where one exists (e.g., the Gemini
+  CLI) → fits the existing agentic-CLI shape; small.
+- Point an **existing agentic harness** (aider/opencode/etc.) at
+  OpenRouter, or grow a **minimal i2c agentic loop** for raw APIs → larger,
+  but unlocks *every* OpenRouter-hosted model through one adapter.
+
+This is the substance of Q-pkg-4: the protocol must model the agentic
+harness as a backend responsibility (or an i2c-provided shim), not assume
+every backend is a self-driving CLI.
+
+### 6.2 Candidate backends (roadmap)
+
+- **Gemini** — high value; the operator keeps hitting per-backend limits
+  and wants a third. Prefer the agentic Gemini CLI path if viable.
+- **OpenRouter** — one adapter, *many* models (already used in the
+  operator's Diplomat experiments). Highest leverage, but raw-API → needs
+  the harness per §6.1.
+
+> **Weaker-model hypothesis (worth validating):** i2c's governance is
+> deterministic and structurally rigid — the model only ever performs one
+> bounded ACTION with pre-assembled context and writes through a validated
+> CLI. That rigidity may let *non-frontier* models drive real builds where
+> they'd flounder in an open-ended agent loop. The governance constraint
+> helps; the open risk is **agentic reliability** (e.g., FU-29: codex
+> skipping the exit signal) and tool-call fidelity, not governance
+> comprehension. Validating "how weak a model can i2c carry?" is a
+> genuinely interesting experiment OpenRouter makes cheap to run.
+
 ## 7. Control surface & orchestration
 
 i2c already runs this architecture informally — codexbot drives it with
@@ -337,7 +382,8 @@ policy.
   package-data schemas/instructions. **Design `i2c.control` (§7.5 #1) here**
   so the Phase-2 CLI is a thin caller of it, not a parallel path. Delivers
   true clone-and-go and eliminates the sync pain.
-- **Phase 3 — polish:** backend abstraction (§6); control surface &
+- **Phase 3 — polish:** backend abstraction (§6) incl. candidate backends
+  Gemini and OpenRouter (§6.2); control surface &
   orchestration (§7) — FU-34 projections, transport extras (TG/Discord),
   orchestrator protocol + reference drivers; CI matrix (Linux/macOS/Windows
   — FU-27 cross-platform, FU-18 test speed off the share); semver +
@@ -345,15 +391,23 @@ policy.
 
 ## 11. Open questions
 
-- **Q-pkg-1:** package/repo name and PyPI availability (`i2c` is likely
-  taken on PyPI; needs a distinct distribution name).
-- **Q-pkg-2:** do instructions/adapters ship *only* as package data, or
-  always scaffold editable copies on `init`? (§5.3 proposes
-  override-then-default; default-to-scaffold vs default-to-hidden is a UX
-  call.)
+- **Q-pkg-1:** package/repo name and PyPI availability. **Leaning
+  `idea2code`** (tentative). Deferrable to publish time with zero rework:
+  Python lets the PyPI distribution name, import package, and CLI command
+  differ, so keep the import package + console command as `i2c` and decide
+  the public distribution/repo name at Phase-1 publish (check PyPI
+  availability then).
+- **Q-pkg-2:** ~~package-data only vs scaffold copies on `init`~~ —
+  **resolved (D-pkg-11):** split by file type. Instructions ship as
+  package-data with per-file override (`i2c eject`); adapters are
+  scaffolded on `init` (they carry per-project content).
 - **Q-pkg-3:** ~~license choice~~ — **resolved: MIT** (D-pkg-6).
-- **Q-pkg-4:** how much of the backend protocol to design up front vs
-  defer (§6 deferral note).
+- **Q-pkg-4:** ~~how much of the backend protocol to design up front vs
+  defer~~ — **resolved (D-pkg-12):** defer the full protocol until the
+  third backend (Gemini) is added; design against three real backends
+  rather than two-plus-a-guess. Keep the capability-flag shape (D-pkg-5)
+  now. Open sub-point: the protocol must model the agentic harness for
+  raw-API backends (§6.1).
 - **Q-pkg-5:** transition plan for the existing internal consumers
   (clankercourts) — adopt the package, or stay on the copy model until
   the package stabilizes?
@@ -378,3 +432,6 @@ policy.
 | D-pkg-8 | An orchestrator is an optional, pluggable driver over `i2c.control`; reference impls: Human (default), Policy (deterministic), Agent (LLM). | decided |
 | D-pkg-9 | Three independent pluggable axes: transport/surface, worker backend, orchestrator. Surfaces and orchestrators are both drivers over the same command API. | decided |
 | D-pkg-10 | Transport adapters (Telegram, Discord, …) are thin optional extras over `i2c.control`, not Meta-coupled. | decided |
+| D-pkg-11 | Instructions ship as package-data with per-file override (`i2c eject`); adapters are scaffolded into the project on `init`. | decided |
+| D-pkg-12 | Defer the full backend protocol until the 3rd backend (Gemini) lands; design it against three real backends. Keep the capability-flag shape now. Protocol must model an agentic harness for raw-API backends (Gemini API / OpenRouter), not assume self-driving CLIs. | decided |
+| D-pkg-13 | Roadmap backends: **Gemini** (prefer agentic CLI path) and **OpenRouter** (one adapter, many models; raw-API → needs harness). Validate the weaker-model hypothesis (§6.2) once a raw-API path exists. | decided (roadmap) |
