@@ -75,9 +75,9 @@ separate files.
   implemented by someone who hasn't read the others
 - The total project has at least ~3 distinct modules
 
-**Examples in the workspace:** clankercourts (3 ARCH files: resolver,
-validator, bootstrap), phosphene (~9 ARCH files), toolkit (~13 ARCH
-files), diplomat (~15 ARCH files).
+**Typical shape:** a Pattern A project carries on the order of 3–15
+per-module ARCH files — for example a project split into `resolver`,
+`validator`, and `bootstrap` modules, each with its own contract.
 
 ### Pattern B: Single-document architecture
 
@@ -93,16 +93,17 @@ files), diplomat (~15 ARCH files).
 - You want vertical phase slices (a phase delivers a related group of
   components together) rather than per-module slices
 
-**Examples (operator's prior projects):**
-- **Lyonel/workbench** (5 files, "no internal module boundaries"; D-4
-  explicitly chose Combined Spec). The flat-spec end of Pattern B.
-- **Noise-machine** (12 architectural components grouped into 6 phases;
-  one ARCHITECTURE.md, no per-module files). The medium-size end with
-  Component Map driving vertical phase slices.
-- **PoP_port** (20 modules across 3 tracks; one ARCHITECTURE.md with a
-  `## Layer Contracts` section where each Layer carries inline
-  Purpose / Provides / Consumes / Escalation Triggers / Source files).
-  The richest end of Pattern B.
+**The Pattern B spectrum (archetypes):**
+- **Flat example** — a small tool (~5 files, no internal module
+  boundaries; an architecture decision explicitly chose a combined spec).
+  The flat-spec end of Pattern B.
+- **Multi-phase example** — a medium project (~12 architectural components
+  grouped into 6 phases; one ARCHITECTURE.md, no per-module files). The
+  medium-size end, with a Component Map driving vertical phase slices.
+- **Layered example** — a larger project (~20 modules across 3 tracks; one
+  ARCHITECTURE.md with a `## Layer Contracts` section where each Layer
+  carries inline Purpose / Provides / Consumes / Escalation Triggers /
+  Source files). The richest end of Pattern B.
 
 ### Decision shortcut
 
@@ -308,17 +309,17 @@ contract. Two ARCH files:
 when the full module ships. Both files reference each other.
 
 Use when the full contract is too large for one phase AND the MVP is
-genuinely useful before the full module ships. Phosphene's
-`ARCH_orchestrator.md` + `ARCH_orchestrator_mvp.md` is the worked
-example.
+genuinely useful before the full module ships. The worked example is an
+`ARCH_orchestrator.md` + `ARCH_orchestrator_mvp.md` pair: the MVP file
+ships first, the full file supersedes it.
 
 ### When in doubt
 
-Read for shape examples:
-- `clankercourts/ARCH_validator.md` — single-phase non-leaf module
-- `clankercourts/ARCH_resolver.md` — multi-phase module (Phase 2 + Phase 3 subset → full)
-- `toolkit/ARCH_embedding.md` — minimal leaf module
-- `phosphene/ARCH_orchestrator_mvp.md` — MVP / full split
+Shapes to model an ARCH file on:
+- a **single-phase non-leaf module** — built in one phase, consumed by others
+- a **multi-phase module** — a Phase-N subset ships first, a later phase completes it
+- a **minimal leaf module** — no dependencies; the smallest viable contract
+- an **MVP / full split** — an `_mvp` file ships first, the full file supersedes it
 
 ---
 
@@ -388,7 +389,8 @@ what a per-module ARCH file would be in Pattern A, kept inline.
 [How this layer's correctness gets checked — tests, oracles, manual.]
 ```
 
-PoP_port's `## Layer Contracts` section is the worked exemplar.
+A layered project's `## Layer Contracts` section is the worked exemplar
+(see the Guide for a full one).
 
 ### Pattern B section taxonomy
 
@@ -416,15 +418,15 @@ following requirements to the base ARCHITECTURE.md template above:
 
 ### When in doubt
 
-Read for shape examples (operator's prior projects):
-- **Lyonel/workbench** — flat single-doc Pattern B (3-phase
-  Implementation Sequence, no Layer Contracts, Public API directly in
-  the doc, D-4 captures the rationale).
-- **Noise-machine** — Pattern B with rich Component Map (12 components
-  in 6 vertical phases) and per-phase status in DEVPLAN equivalent.
-- **PoP_port** — Pattern B with Layer Contracts (6 layers each with
+Shapes to model an ARCHITECTURE.md on:
+- **Flat** — flat single-doc Pattern B (a 3-phase Implementation
+  Sequence, no Layer Contracts, Public API directly in the doc; an
+  architecture decision captures the flat-spec rationale).
+- **Multi-phase** — Pattern B with a rich Component Map (~12 components
+  in 6 vertical phases) and per-phase status tracked alongside.
+- **Layered** — Pattern B with Layer Contracts (~6 layers each with
   inline Purpose / Provides / Consumes / Escalation Triggers / Source
-  files; 20-module Implementation Sequence across 3 tracks).
+  files; a 20-module Implementation Sequence across 3 tracks).
 
 ---
 

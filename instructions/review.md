@@ -215,14 +215,14 @@ Should; skipped Optional.
 
 ```bash
 # Apply Must fix:
-git add codexbot/orchestrator.py
+git add src/orchestrator.py
 git commit -m "11: review — check return path in dispatch_action"
 
 # Apply Should fixes:
-git add codexbot/event_loop.py
+git add src/event_loop.py
 git commit -m "11: review — drop dead helper from event loop"
 
-git add codexbot/orchestrator.py
+git add src/orchestrator.py
 git commit -m "11: review — remove redundant null check"
 
 # Log skipped Optional:

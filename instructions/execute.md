@@ -243,7 +243,7 @@ Worker Contract (regime shift, unclear spec, all modules complete, etc.).
 Step 11.3 in phase 11 (orchestrator). All tests pass. No contract changes.
 
 ```bash
-git add codexbot/orchestrator.py tests/test_orchestrator.py
+git add src/orchestrator.py tests/test_orchestrator.py
 git commit -m "11.3: Wire orchestrator slash commands"
 # captured hash: 9876abc
 
@@ -289,7 +289,7 @@ python3 tools/state.py append devlog.jsonl '{"phase":8,"step":4,"action":"execut
 Phase 14, message formatting Refine. Iteration 3 of N.
 
 ```bash
-git add diplomat/formatting.py
+git add src/formatting.py
 git commit -m "14.iter3: Tighten markdown escape edge cases"
 
 python3 tools/state.py append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outcome":"partial","summary":"Iteration 3: closed the parens-in-link bug. Still surfacing one MarkdownV2 edge case with nested code blocks.","commit":"abc1234","timestamp":"2026-06-04T05:00:00Z"}'

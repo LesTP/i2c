@@ -80,18 +80,18 @@ Full template details + worked examples are in
 - Modules pass typed data across boundaries (CC: resolver ↔ validator
   via dataclasses)
 - Each module could be implemented by someone who hasn't read the
-  others (toolkit's embedding, clustering, etc.)
+  others (e.g. separate embedding and clustering modules)
 - The project has > ~3 distinct modules
 
 **Lean Pattern B when:**
-- Modules share extensive global/runtime state (PoP_port's 344
-  globals; noise-machine's render-pipeline buffers)
+- Modules share extensive global/runtime state (e.g. hundreds of shared
+  globals, or a render pipeline's shared buffers)
 - The project is small enough that separate files feel like ceremony
-  (lyonel's 5 Python files)
+  (e.g. a 5-file tool)
 - Phases are vertical slices — a phase delivers a group of related
-  components together (noise-machine's "Phase 2: Color Engine"
-  delivering SpectralShaper + ParameterSmoother + GainSafety as one
-  unit)
+  components together (e.g. a "Phase 2: Color Engine" that delivers
+  several related components — a shaper, a smoother, a safety clamp — as
+  one unit)
 
 If you can't decide, **start with B**. Promotion to A later is cheap
 (extract content into a new `ARCH_<module>.md`, set
@@ -292,8 +292,9 @@ collide.
 
 **Record the pattern choice as a decision.** Operators reading the
 architecture later need to know why the project is structured the way
-it is. Lyonel's D-4 ("Single-module / 5 files: ... Separate ARCH files
-would add ceremony without benefit") is the model.
+it is. A flat project's pattern-choice decision ("Single-module / 5
+files: separate ARCH files would add ceremony without benefit") is the
+model.
 
 ---
 
@@ -360,8 +361,9 @@ phase.
 ### Authoring `## Escalation Triggers`
 
 This was a new addition to the i2c template, though the pattern exists
-organically in some real ARCH files (PoP_port's Layer 1 has explicit
-"Escalation triggers:" with three module-specific triggers). The
+organically in some real ARCH files (the layered example's Layer 1 has
+an explicit "Escalation triggers:" list with three module-specific
+triggers). The
 section lists **module-specific conditions** under which PLAN or
 EXECUTE halts to `state=audit_escalation` and emits `EXIT 2`.
 
@@ -407,7 +409,7 @@ them here.
   the budget or split the call.
 ```
 
-*Translation / porting module* (PoP_port's Layer 1 verbatim):
+*Translation / porting module* (a layered porting project's Layer 1):
 
 ```markdown
 - State trace divergence after two different fix attempts
@@ -566,8 +568,8 @@ per-module ARCH file would be in Pattern A, kept inline.
 | ... |
 ```
 
-(This example is PoP_port's Layer 1 verbatim. See its full
-ARCHITECTURE.md for the canonical pattern.)
+(This example is a layered porting project's Layer 1 — a Pattern B Layer
+Contract with full inline detail.)
 
 Within each Layer Contract:
 
@@ -579,8 +581,8 @@ Within each Layer Contract:
 ### Per-phase scoping subsections (optional)
 
 When the Implementation Sequence row + Layer Contract aren't enough to
-fully scope a phase — for instance when a phase has sub-phases (PoP_port's
-Module 16 has 16a, 16b, 16c, 16d), or when one phase has its own
+fully scope a phase — for instance when a phase has sub-phases (e.g. a
+Module 16 with sub-phases 16a, 16b, 16c, 16d), or when one phase has its own
 escalation triggers distinct from the Layer's — add a `### Phase N:
 <Title>` subsection elsewhere in ARCHITECTURE.md:
 
@@ -608,7 +610,7 @@ Three valid placements, used in combination:
 1. **Project-wide** — a top-level `## Escalation Triggers` section in
    ARCHITECTURE.md. Lists conditions that apply to any phase.
 2. **Per-layer** — inside each Layer Contract's `**Escalation Triggers:**`
-   subsection. PoP_port's exemplar.
+   subsection (as in the Layer 1 example above).
 3. **Per-phase** — inside a `### Phase N: <Title>` subsection. For
    phase-specific risks.
 
@@ -644,8 +646,9 @@ In `ARCHITECTURE.md`:
 ## Variant: MVP / Full Split (Pattern A sub-variant)
 
 For modules delivered across multiple phases as strict subset → full
-contract. Phosphene's `ARCH_orchestrator.md` + `ARCH_orchestrator_mvp.md`
-exemplifies. Spec in `ref/SPEC_architecture.md`.
+contract. An `ARCH_orchestrator.md` + `ARCH_orchestrator_mvp.md` pair
+exemplifies it — the MVP file ships first, the full file supersedes it.
+Spec in `ref/SPEC_architecture.md`.
 
 Use when:
 - The full contract is too large to land in one phase at a reasonable
@@ -722,28 +725,25 @@ not). Better to land the discipline up front.
 
 ## When in Doubt
 
-Worked examples covering the expressive range:
+Shapes covering the expressive range:
 
-**Pattern A:**
-- `clankercourts/ARCH_resolver.md` — multi-phase non-leaf module (Phase 2 + Phase 3 subset → full)
-- `clankercourts/ARCH_validator.md` — single-phase non-leaf module
-- `clankercourts/ARCH_bootstrap.md` — bootstrap module
-- `phosphene/ARCH_orchestrator.md` — composing orchestrator with deferred behavior
-- `phosphene/ARCH_orchestrator_mvp.md` — MVP / full split exemplar
-- `phosphene/ARCH_memory_store.md` — stateful storage module
-- `phosphene/ARCH_generator.md` — LLM-wrapper module
-- `toolkit/ARCH_embedding.md` — minimal leaf library
-- `toolkit/ARCH_cost_accountant.md` — stateful library with explicit error hierarchy
-- `toolkit/ARCH_edit_classifier.md` — LLM-as-judge classifier
-- `toolkit/ARCH_feedback_collector.md` — feedback / signal-processing module
+**Pattern A module shapes:**
+- a **multi-phase non-leaf module** — a Phase-N subset ships first, a later phase completes it
+- a **single-phase non-leaf module** — built in one phase, consumed by others
+- a **bootstrap module** — wires the project together / entry point
+- a **composing orchestrator** — depends on other modules; may carry deferred behavior
+- an **MVP / full split** — an `_mvp` file ships first, the full file supersedes it
+- a **stateful storage module** — owns persistent state
+- an **LLM-wrapper module** — wraps a model call behind a typed contract
+- a **minimal leaf library** — no dependencies; the smallest viable contract
+- a **stateful library with an explicit error hierarchy**
 
-**Pattern B:**
-- **lyonel/workbench/ARCHITECTURE.md** — flat single-doc Pattern B. 3-phase Implementation Sequence with `| Phase | Files | Status |`; Public API + Core Objects + State directly in the doc; no Layer Contracts. D-4 captures the choice rationale.
-- **noise-machine/ARCHITECTURE.md** — Pattern B with rich Component Map (12 components in 6 vertical phases); per-phase status carried in DEVPLAN equivalent rather than in ARCHITECTURE.md itself.
-- **PoP_port/ARCHITECTURE.md** — Pattern B with full Layer Contracts. 6 layers each with inline Purpose / Provides / Consumes / Escalation Triggers / Source files; 20-module Implementation Sequence across 3 Tracks; sub-phases (16a/b/c/d) tracked in `## Status` prose.
+**Pattern B architecture shapes:**
+- **Flat** — flat single-doc Pattern B: a 3-phase Implementation Sequence (`| Phase | Files | Status |`), Public API + Core Objects + State directly in the doc, no Layer Contracts; a decision records the flat-spec rationale.
+- **Multi-phase** — Pattern B with a rich Component Map (~12 components in 6 vertical phases); per-phase status tracked alongside ARCHITECTURE.md.
+- **Layered** — Pattern B with full Layer Contracts: ~6 layers each with inline Purpose / Provides / Consumes / Escalation Triggers / Source files; a 20-module Implementation Sequence across 3 tracks; sub-phases (16a/b/c/d) tracked in `## Status` prose.
 
-These predate the Pattern A/B taxonomy but otherwise represent the
-shapes this guide codifies. Use them as reference for what good
-content looks like in each section; expect to back-fill any missing
-sections (Escalation Triggers, Inputs Does Not Handle) when their
-phases come up under the new template.
+These shapes cover the expressive range this guide codifies. Use the
+nearest shape as a reference for what good content looks like in each
+section; expect to back-fill any missing sections (Escalation Triggers,
+Inputs Does Not Handle) as their phases come up.

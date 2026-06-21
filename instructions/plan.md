@@ -308,7 +308,7 @@ the decision the phase must produce.
    python3 tools/state.py append-record decisions.json '{
      "id": "D-16",
      "phase": 16,
-     "title": "Storage backend for clankercourts events",
+     "title": "Storage backend for domain events",
      "status": "open",
      "priority": "critical",
      "decision": "TBD — one of: SQLite local file, JSONL append-only files, embedded LMDB.",
@@ -377,7 +377,7 @@ python3 tools/state.py append devlog.jsonl '{
   "step": null,
   "action": "plan",
   "outcome": "complete",
-  "summary": "Phase 11 (orchestrator, Build): 4 steps covering pipeline, event loop, slash commands, E2E test. Dependency probe on event_store: 2 matches, 1 mismatch logged. Decisions D-17 records the split with phase 12.",
+  "summary": "Phase 11 (orchestrator, Build): 4 steps covering pipeline, event loop, slash commands, end-to-end test. Dependency probe on event_store: 2 matches, 1 mismatch logged. Decisions D-17 records the split with phase 12.",
   "contracts": [],
   "timestamp": "2026-06-04T07:45:00Z"
 }'

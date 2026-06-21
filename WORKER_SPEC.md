@@ -117,10 +117,10 @@ script.
 
 **Documented incidents these rules address (real production failures):**
 
-- *Codex iter (e2e):* re-called `state_machine.sh` after a 105k-char `cat`
-  read; lost the final budgeted action (budget=8, only 7 actions
+- *A Codex iteration:* re-ran the state-machine check after a 105k-char
+  file read; lost the final budgeted action (budget=8, only 7 actions
   performed).
-- *Claude iter (e2e):* self-judged "STEP_BUDGET of 5 exhausted (used 3
+- *A Claude iteration:* self-judged "STEP_BUDGET of 5 exhausted (used 3
   actions)" and exited with 2 actions still available.
 
 ---

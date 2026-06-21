@@ -9,7 +9,7 @@ graph TB
     end
 
     subgraph "Dispatch Layer"
-        CB["🤖 Codexbot<br/>(Telegram bot)<br/>Python app-server"]
+        CB["🤖 Chat-ops Bot<br/>(e.g. Telegram / Discord)<br/>deterministic driver"]
         CO["🎯 Orchestrator<br/>(Claude or Codex session)<br/>Reads: ORCH adapter"]
     end
 
@@ -27,7 +27,7 @@ graph TB
         LOG["logs/loop/<br/>summary.log<br/>iteration_NNN.*"]
     end
 
-    H -- "Telegram commands<br/>/run /batch /status /close" --> CB
+    H -- "chat commands<br/>/run /batch /status /close" --> CB
     H -- "Direct session<br/>(supervised mode)" --> CO
     CB -- "Deterministic dispatch<br/>/run → subprocess" --> LR
     CB -- "Reads .state/ for<br/>/status /audit /decisions" --> ST
@@ -58,8 +58,8 @@ There are **two independent ways** to dispatch worker iterations:
 
 ```mermaid
 graph LR
-    subgraph "Path A: Codexbot (automated)"
-        H1["Human"] -->|"/run 3"| CB1["Codexbot"]
+    subgraph "Path A: Deterministic driver (chat-ops)"
+        H1["Human"] -->|"/run 3"| CB1["Chat-ops bot"]
         CB1 -->|"subprocess"| LR1["run_iteration.py"]
         LR1 --> W1["Worker"]
     end
@@ -71,17 +71,17 @@ graph LR
     end
 ```
 
-**Path A (Codexbot):** Deterministic. Codexbot receives a Telegram command, directly shells out to `run_iteration.py`, reads results from files, formats a report. No LLM judgment in the dispatch path — codexbot is a Python app, not an AI session. It also handles `/status`, `/audit`, `/close` by reading `.state/` directly.
+**Path A (deterministic driver):** A chat-ops bot (e.g. a Telegram or Discord bot) receives a command, directly shells out to `run_iteration.py`, reads results from files, and formats a report. No LLM judgment in the dispatch path — the bot is a plain program, not an AI session. It also handles `/status`, `/audit`, `/close` by reading `.state/` directly.
 
 **Path B (Orchestrator):** AI-mediated. An orchestrator session (Claude or Codex) receives freeform instructions, decides what to do, shells out to `run_iteration.py`, then reads logs and reports back. The orchestrator makes judgment calls: "should I dispatch another iter?", "is this error worth escalating?", "what do I tell the human?"
 
-**Key insight:** Both paths use the same runner, same worker, same state files. The difference is who sits between the human and the runner: a deterministic bot or an AI session.
+**Key insight:** Both paths use the same runner, same worker, same state files. The difference is who sits between the human and the runner: a deterministic program or an AI session.
 
 ---
 
 ## Invocation Flow
 
-The key change from e2e: the runner assembles context *before* the worker starts. The worker reads zero governance files.
+The runner assembles context *before* the worker starts, so the worker reads zero governance files.
 
 ```mermaid
 sequenceDiagram
@@ -118,7 +118,7 @@ python3 tools/assemble_context.py --action execute --phase 11
 
 # Or request a single section:
 python3 tools/assemble_context.py --section architecture
-python3 tools/assemble_context.py --section module event_store
+python3 tools/assemble_context.py --section module --module event_store
 ```
 
 ---
@@ -132,7 +132,8 @@ stateDiagram-v2
     execute --> execute: steps remaining > 1
     execute --> review: all steps complete
     review --> close: fixes applied
-    close --> [*]: blocked=true, awaiting human audit
+    close --> audit_boundary: phase complete
+    audit_boundary --> [*]: awaiting human audit
 ```
 
 | State | Assembled into prompt | Worker reads directly | Worker writes |
@@ -140,9 +141,11 @@ stateDiagram-v2
 | **plan** | instructions/plan.md, PROJECT.md, ARCHITECTURE.md, ARCH_module.md | — | steps.json, project.json, devlog.jsonl |
 | **execute** | instructions/execute.md, ARCH_module.md, steps.json, recent devlog | source files, test files | steps.json, devlog.jsonl, project.json |
 | **review** | instructions/review.md, ARCH_module.md, ARCHITECTURE.md, phase devlog, decisions | source files | devlog.jsonl, project.json |
-| **close** | instructions/close.md, ARCH_module.md, phase devlog, decisions | source/test files | phases.json, project.json (gotchas, blocked) |
+| **close** | instructions/close.md, ARCH_module.md, phase devlog, decisions | source/test files | phases.json, project.json (gotchas; state→audit_boundary) |
 
 **Always assembled** (every action): WORKER_SPEC (identity, loop, escalation, output contract, prohibitions), adapter (tool rules, project notes), project.json (state, gotchas), module list.
+
+After CLOSE the worker leaves the project in `audit_boundary`; the human (or an autonomous wrapper) clears the gate — see below.
 
 ---
 
@@ -151,11 +154,11 @@ stateDiagram-v2
 ### What happens BEFORE the worker starts
 
 ```
-Dispatch request (human → codexbot/orch → runner)
+Dispatch request (human → driver/orchestrator → runner)
   │
   ├─ Runner calls: python tools/state_machine.py
   │   ├─ Reads: .state/project.json, .state/steps.json
-  │   ├─ Checks: blocked? budget exhausted?
+  │   ├─ Checks: halt state (audit_boundary / audit_escalation / done)? budget exhausted?
   │   ├─ Computes: ACTION + NEXT
   │   └─ If EXIT → runner stops, no worker invocation
   │
@@ -218,10 +221,10 @@ Dispatch request (human → codexbot/orch → runner)
 |------|-------------|-------------|---------------|
 | 1 | Run phase-level tests | source/test files | — |
 | 2 | **If non-leaf module:** integration check | consumer source/test files | devlog.jsonl |
-| 3 | DEVLOG learning review | (in prompt: devlog.jsonl) | project.json (gotchas[]) |
+| 3 | Devlog learning review | (in prompt: devlog.jsonl) | project.json (gotchas[]) |
 | 4 | Contract scan + propagation | (in prompt: devlog.jsonl) | ARCH_*.md (if needed) |
 | 5 | Update phase status | — | phases.json (phase→complete) |
-| 6 | Set blocked | — | project.json (blocked=true) |
+| 6 | Set the human gate | — | project.json (state→audit_boundary) |
 | 7 | Commit | — | git commit |
 | 8 | Exit | — | EXIT signal |
 
@@ -229,81 +232,15 @@ Dispatch request (human → codexbot/orch → runner)
 
 | Step | Who | What happens | Reads | Writes |
 |------|-----|-------------|-------|--------|
-| 1 | Codexbot/Orch | Report phase complete | .state/, logs/ | Telegram message |
+| 1 | Driver/Orch | Report phase complete | .state/, logs/ | chat message |
 | 2 | Human | Audit: review commits, decisions, contracts | git log, decisions.json | — |
 | 3 | Human | `/close` command | — | — |
-| 4 | Codexbot/Orch | Clear gate | — | project.json (blocked=false, state=plan) |
-| 5 | Codexbot/Orch | Append audit record | — | audits.log |
+| 4 | Driver/Orch | Advance to next phase | — | project.json (phase=N+1, state=plan) |
+| 5 | Driver/Orch | Append audit record | — | audits.log |
 | 6 | Human | `/run N` — next phase begins | — | — |
 
----
-
-## What Changes from e2e → i2c
-
-### Files that DISAPPEAR
-
-| e2e artifact | Why it's gone | Replaced by |
-|-------------|---------------|-------------|
-| DEVPLAN.md (per-project) | State is in .state/, scope is in PROJECT.md | .state/project.json + PROJECT.md |
-| DEVPLAN frontmatter | Structured state replaces it | .state/project.json |
-| Step checklists (`- [x]`) | steps.json has explicit status | .state/steps.json |
-| DEVLOG.md | Structured log replaces it | .state/devlog.jsonl |
-| DEVLOG_archive.md | JSONL is queryable by phase, no archival needed | — |
-| DECISIONS.md | Structured decisions | .state/decisions.json |
-| COMMANDS/*.md (7 files) | Consolidated into 4 instruction files | instructions/*.md |
-| GOVERNANCE.md (standalone) | Content folded into human orientation docs | — |
-| Tiered reading logic in adapter | Assembler decides what to include | assemble_context.py |
-| Worker file-discovery turns | Context arrives pre-assembled | — |
-
-### Files that STAY (same purpose)
-
-| e2e artifact | i2c equivalent | Changes |
-|-------------|----------------|---------|
-| PROJECT.md | PROJECT.md | Unchanged — scope, constraints, success criteria |
-| ARCHITECTURE.md | ARCHITECTURE.md | Unchanged — component map, contracts, impl sequence |
-| ARCH_*.md | ARCH_*.md | Unchanged — per-module interface specs |
-| run-iteration.sh | run_iteration.py | Python rewrite. Calls state_machine + assembler before invoking worker; emits cost/budget halts; invariants check after every CLOSE. |
-| state_machine.sh | state_machine.py | Python rewrite. Reads `.state/` JSON via `tools/validate.py` (was: bash + jq). Called by runner, not worker. |
-| summary.log | summary.log | Unchanged — runner's per-iteration log |
-| parse_jsonl.py etc. | parse_jsonl.py etc. | Unchanged — log parsing tools |
-
-### Files that TRANSFORM
-
-| e2e artifact | i2c equivalent | What changes |
-|-------------|----------------|-------------|
-| WORKER_SPEC.md | WORKER_SPEC.md | Simplified: no sed/DEVPLAN writes. Included in assembled prompt by runner. |
-| CLAUDE_worker.md | CLAUDE.md (template) | Slimmed: tool rules + project notes only. No reading tiers, no command mapping. Included by assembler. |
-| CODEX_worker.md | CODEX.md (template) | Same as CLAUDE.md but Codex-specific tool rules. |
-| CLAUDE_orch.md | CLAUDE_orch.md (template) | Reads .state/ instead of DEVPLAN. Same role. |
-| CODEX_ORCH.md | CODEX_ORCH.md (template) | Reads .state/ instead of DEVPLAN. Same role. |
-| — (new) | assemble_context.py | Builds structured prompt from .state/, governance docs, project docs. |
-
----
-
-## Decisions Log
-
-| # | Question | Decision |
-|---|----------|----------|
-| D1 | Project name | **i2c** (idea to code) |
-| D2 | Migration strategy | **Clean break**, new projects only. No backward compat. |
-| D3 | Rendered views | **None persistent**. On-demand only (codexbot commands, render scripts). |
-| D4 | Write API | **Python CLI** (`tools/state.py`) — thin, stdlib only. State machine stays bash for reads. |
-| D5 | Cold start context | Worker reads **project.json + PROJECT.md**. No DEVPLAN. |
-| D6 | Gotchas storage | **`gotchas` array in project.json**. |
-| D7 | DEVLOG archival | **No compaction**. Single JSONL file. Revisit if real projects show size issues. |
-| D8 | Instruction files | **4 core files** (plan, execute, review, close) with conditional sections for dependency-probe and integration-check. |
-| D9 | State machine language | **Bash + jq**. Simplest viable. |
-| D10 | Worker spec + adapter structure | **Keep separate**. WORKER_SPEC (loop contract) + adapter (tool rules) + instruction files (action procedures). |
-| D11 | GOVERNANCE.md | **No standalone file**. Content folded into instruction files + human orientation docs. |
-| D12 | Project location | **Standalone `p:\shared\i2c`**, sibling to e2e. |
-| D13 | Codexbot changes | **Deferred** until state format is finalized. StateReader replaces LogReader. |
-| D14 | Context assembly | **Full deterministic assembly**. Runner builds prompt via `assemble_context.py`. Worker reads zero governance files. |
-| D15 | Prompt structure | **Structured sections** with `═══` delimiters. Model navigates by section headers. |
-| D16 | Mid-step context | **Assembler doubles as mid-step provider**. Worker calls `assemble_context.py --section X` for governance context. Source reads stay direct. |
-| D17 | Adapter role | **Shrinks to tool rules + project notes**. Included by assembler, not read by worker. |
-| D18 | State machine caller | **Runner calls state machine**, not worker. Worker receives ACTION/NEXT in prompt. Multi-step: worker calls between steps. |
-| D19 | Governance content format | **Stays markdown**. Assembler includes wholesale; structuring as JSON adds parse overhead without query benefit. Assembler handles conditional section filtering deterministically (extracts by heading, evaluates against .state/, strips what doesn't apply). |
-| D20 | Supervised mode | **Same tools, different caller**. Assembler supports `--mode supervised` (strips exit signals, budget, adds approval pauses). state.py works the same. No separate command files — assembler replaces all 5 e2e COMMANDS. |
+To end the project instead of advancing, the human declares it terminal:
+`state.py set project.json state=done`.
 
 ---
 
@@ -327,10 +264,12 @@ graph LR
     end
 ```
 
-| e2e command | i2c supervised equivalent |
-|------------|--------------------------|
-| `cold-start.md` | `assemble_context.py --section status` |
-| `phase-plan.md` | `assemble_context.py --action plan --mode supervised` |
-| `step-done.md` | `state.py complete` + `state.py append devlog.jsonl` |
-| `phase-review.md` | `assemble_context.py --action review --mode supervised` |
-| `phase-complete.md` | `assemble_context.py --action close --mode supervised` |
+Common supervised commands:
+
+| Task | Command |
+|------|---------|
+| Cold-start orientation | `assemble_context.py --section status` |
+| Plan a phase | `assemble_context.py --action plan --mode supervised` |
+| Mark a step done | `state.py complete` + `state.py append devlog.jsonl` |
+| Review a phase | `assemble_context.py --action review --mode supervised` |
+| Close a phase | `assemble_context.py --action close --mode supervised` |
