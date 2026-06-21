@@ -113,14 +113,16 @@ def signal_block(
 def make_fake_invoker(captured: str, rc: int = 0, *, capture=None):
     """Return a callable shaped like invoke_claude that emits `captured`.
 
-    The optional `capture` list collects (cwd, prompt, model, budget) tuples
-    so tests can assert what the runner sent to the worker.
+    The optional `capture` list collects call kwargs (cwd, prompt, model,
+    budget, system_prompt_file) so tests can assert what the runner sent to
+    the worker.
     """
-    def fake(prompt, *, cwd, model, max_budget_usd):
+    def fake(prompt, *, cwd, model, max_budget_usd, system_prompt_file=None):
         if capture is not None:
             capture.append({
                 "cwd": cwd, "prompt": prompt, "model": model,
                 "max_budget_usd": max_budget_usd,
+                "system_prompt_file": system_prompt_file,
             })
         return rc, captured
     return fake
@@ -188,13 +190,27 @@ class TestHappyPath(unittest.TestCase):
             self.assertEqual(rc, 0, msg=err)
             # claude was invoked exactly once.
             self.assertEqual(len(calls), 1)
-            # Prompt is non-trivial; it should at least contain a banner.
-            self.assertIn("WORKER CONTRACT", calls[0]["prompt"])
+            # FU-35 split: the stdin prompt carries the volatile body
+            # (ACTION CONTEXT) but NOT the cache-stable prefix, which now
+            # rides in the system prompt file.
             self.assertIn("ACTION CONTEXT", calls[0]["prompt"])
-            # Logs were written.
+            self.assertNotIn("WORKER CONTRACT", calls[0]["prompt"])
+            # Logs were written, including the claude system-prompt file.
             log_dir = p.root / "logs" / "loop"
             self.assertTrue((log_dir / "iteration_001_prompt.md").is_file())
+            self.assertTrue((log_dir / "iteration_001_system.md").is_file())
             self.assertTrue((log_dir / "iteration_001.txt").is_file())
+            # The runner pointed claude at that system file, and it holds
+            # the cache-stable prefix.
+            self.assertEqual(
+                calls[0]["system_prompt_file"],
+                log_dir / "iteration_001_system.md",
+            )
+            sys_text = (log_dir / "iteration_001_system.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("WORKER CONTRACT", sys_text)
+            self.assertIn("TOOL RULES", sys_text)
             summary = read_summary(p.root)
             self.assertIn("iter=1", summary)
             self.assertIn("action=EXECUTE", summary)
@@ -456,6 +472,102 @@ class TestSummaryLogTokens(unittest.TestCase):
             summary = read_summary(p.root).strip().splitlines()[-1]
             self.assertNotIn("tokens_in=", summary)
             self.assertNotIn("tokens_out=", summary)
+
+
+class TestInvokeClaudeCacheFlags(unittest.TestCase):
+    """FU-35: invoke_claude wires the system-prompt + cache-reuse flags."""
+
+    def _capture_cmd(self, **kwargs):
+        captured: dict = {}
+
+        class _Proc:
+            returncode = 0
+            stdout = "{}"
+            stderr = ""
+
+        def fake_run(cmd, **kw):
+            captured["cmd"] = cmd
+            captured["input"] = kw.get("input")
+            return _Proc()
+
+        orig = ri.subprocess.run
+        ri.subprocess.run = fake_run
+        try:
+            ri.invoke_claude(
+                "BODY", cwd=Path("."), model="sonnet",
+                max_budget_usd=2.0, **kwargs,
+            )
+        finally:
+            ri.subprocess.run = orig
+        return captured
+
+    def test_cache_flags_present_with_system_file(self):
+        cap = self._capture_cmd(system_prompt_file=Path("sys.md"))
+        self.assertIn("--append-system-prompt-file", cap["cmd"])
+        idx = cap["cmd"].index("--append-system-prompt-file")
+        self.assertEqual(cap["cmd"][idx + 1], str(Path("sys.md")))
+        self.assertIn("--exclude-dynamic-system-prompt-sections", cap["cmd"])
+        # The volatile body still rides on stdin, not in the system prompt.
+        self.assertEqual(cap["input"], "BODY")
+
+    def test_cache_flags_absent_without_system_file(self):
+        cap = self._capture_cmd()
+        self.assertNotIn("--append-system-prompt-file", cap["cmd"])
+        self.assertNotIn("--exclude-dynamic-system-prompt-sections", cap["cmd"])
+
+
+class TestCodexNoSplit(unittest.TestCase):
+    """FU-35: codex keeps one combined prompt; no claude system file."""
+
+    def test_codex_gets_full_prompt_and_no_system_file(self):
+        with TempProject() as p:
+            calls = []
+
+            def fake_codex(prompt, *, cwd):
+                calls.append(prompt)
+                jsonl = json.dumps({
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": signal_block(exit_code=0, reason="ok"),
+                    },
+                }) + "\n"
+                return 0, jsonl, signal_block(exit_code=0, reason="ok")
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="codex",
+                    model="sonnet",
+                    max_budget_usd=5.0,
+                    codex_invoker=fake_codex,
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            # Full prompt: stable prefix AND volatile body in one string.
+            self.assertEqual(len(calls), 1)
+            self.assertIn("WORKER CONTRACT", calls[0])
+            self.assertIn("ACTION CONTEXT", calls[0])
+            # No claude system file for a codex run.
+            log_dir = p.root / "logs" / "loop"
+            self.assertFalse((log_dir / "iteration_001_system.md").is_file())
+            self.assertTrue((log_dir / "iteration_001_prompt.md").is_file())
+
+
+class TestAssemblePromptBackend(unittest.TestCase):
+    """The assembler is invoked with the dispatched backend's adapter, not a
+    hardcoded one — so codex runs get CODEX.md Tool Rules, claude gets
+    CLAUDE.md. A regression (hardcoded backend) makes these identical.
+    """
+
+    def test_backend_selects_adapter(self):
+        with TempProject() as p:
+            claude_out = ri.assemble_prompt(
+                p.root, "execute", 2, backend="claude", emit="full")
+            codex_out = ri.assemble_prompt(
+                p.root, "execute", 2, backend="codex", emit="full")
+            self.assertTrue(claude_out)
+            self.assertTrue(codex_out)
+            self.assertNotEqual(claude_out, codex_out)
 
 
 if __name__ == "__main__":

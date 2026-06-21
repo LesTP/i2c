@@ -1047,20 +1047,13 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
 _AVAILABLE_MODULES_ACTIONS = ("execute", "close")
 
 
-def build_full_prompt(ctx: AssemblerContext) -> str:
-    """Assemble the full prompt per ARCH §6 ordering and §5 inclusion matrix.
+def _stable_prefix_parts(ctx: AssemblerContext) -> list[str]:
+    """Region 1 (WORKER CONTRACT) + Region 2 (TOOL RULES) parts.
 
-    Renderers may return empty strings for omitted sections (e.g., Next State
-    under supervised mode, Module Contract when no module field). Those drop
-    out of the banner-joined output cleanly.
-
-    Region order (Phase 3.A.1): WORKER CONTRACT → TOOL RULES → PROJECT
-    CONTEXT → ACTION CONTEXT. Identity framing first, environment rules
-    early, reference material in the middle, action procedure last so
-    model recency works in our favor.
+    The cache-stable prefix: byte-identical across consecutive
+    same-phase, same-action invocations, so the runner can route it
+    through Claude Code's system prompt for prompt-cache reuse (FU-35).
     """
-    if ctx.action is None:
-        raise ValueError("build_full_prompt requires an action")
     parts: list[str] = []
 
     # Region 1: Worker Contract
@@ -1079,6 +1072,18 @@ def build_full_prompt(ctx: AssemblerContext) -> str:
         chunk = renderer(ctx)
         if chunk:
             parts.append(chunk.rstrip())
+
+    return parts
+
+
+def _volatile_body_parts(ctx: AssemblerContext) -> list[str]:
+    """Region 3 (PROJECT CONTEXT) + Region 4 (ACTION CONTEXT) + Region 5
+    (Output Contract reminder) parts.
+
+    Everything that changes per phase / step / iteration. Kept out of the
+    cache-stable prefix so the prefix can be reused across iterations.
+    """
+    parts: list[str] = []
 
     # Region 3: Project Context (per-action ordering from §5)
     parts.append(assemble_banner("PROJECT CONTEXT"))
@@ -1111,10 +1116,50 @@ def build_full_prompt(ctx: AssemblerContext) -> str:
         parts.append(assemble_banner("OUTPUT CONTRACT — REMINDER"))
         parts.append(_OUTPUT_CONTRACT_REMINDER.rstrip())
 
+    return parts
+
+
+def _join_parts(parts: list[str]) -> str:
+    """Join banner-delimited parts with the canonical separator + trailing newline."""
     body = "\n\n".join(parts)
     if not body.endswith("\n"):
         body += "\n"
     return body
+
+
+def build_stable_prefix(ctx: AssemblerContext) -> str:
+    """Cache-stable prefix (regions 1–2) — the `--emit system` projection."""
+    if ctx.action is None:
+        raise ValueError("build_stable_prefix requires an action")
+    return _join_parts(_stable_prefix_parts(ctx))
+
+
+def build_volatile_body(ctx: AssemblerContext) -> str:
+    """Per-iteration body (regions 3–5) — the `--emit user` projection."""
+    if ctx.action is None:
+        raise ValueError("build_volatile_body requires an action")
+    return _join_parts(_volatile_body_parts(ctx))
+
+
+def build_full_prompt(ctx: AssemblerContext) -> str:
+    """Assemble the full prompt per ARCH §6 ordering and §5 inclusion matrix.
+
+    Renderers may return empty strings for omitted sections (e.g., Next State
+    under supervised mode, Module Contract when no module field). Those drop
+    out of the banner-joined output cleanly.
+
+    Region order (Phase 3.A.1): WORKER CONTRACT → TOOL RULES → PROJECT
+    CONTEXT → ACTION CONTEXT. Identity framing first, environment rules
+    early, reference material in the middle, action procedure last so
+    model recency works in our favor.
+
+    Output is byte-identical to ``build_stable_prefix(ctx).rstrip() +
+    "\\n\\n" + build_volatile_body(ctx)`` — the `--emit system` /
+    `--emit user` projections (FU-35) are exactly this prompt's two halves.
+    """
+    if ctx.action is None:
+        raise ValueError("build_full_prompt requires an action")
+    return _join_parts(_stable_prefix_parts(ctx) + _volatile_body_parts(ctx))
 
 
 # ---------------------------------------------------------------------------
@@ -1414,6 +1459,19 @@ def build_parser() -> argparse.ArgumentParser:
             "loop landing later."
         ),
     )
+    parser.add_argument(
+        "--emit",
+        choices=("full", "system", "user"),
+        default="full",
+        help=(
+            "Which part of the assembled prompt to emit (--action only). "
+            "'full' (default) is the whole prompt; 'system' is the "
+            "cache-stable prefix (WORKER CONTRACT + TOOL RULES) for routing "
+            "through Claude Code's system prompt; 'user' is the per-iteration "
+            "body (PROJECT CONTEXT + ACTION CONTEXT + Output Contract). "
+            "full == system.rstrip() + '\\n\\n' + user (FU-35)."
+        ),
+    )
     return parser
 
 
@@ -1430,6 +1488,8 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     else:  # --section path
         if args.mode is not None:
             parser.error("--mode is only valid with --action")
+        if getattr(args, "emit", "full") != "full":
+            parser.error("--emit is only valid with --action")
         if args.section == "devlog":
             if args.phase is None:
                 parser.error("--phase is required with --section devlog")
@@ -1483,7 +1543,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.action is not None:
-        sys.stdout.write(build_full_prompt(ctx))
+        if args.emit == "system":
+            sys.stdout.write(build_stable_prefix(ctx))
+        elif args.emit == "user":
+            sys.stdout.write(build_volatile_body(ctx))
+        else:
+            sys.stdout.write(build_full_prompt(ctx))
         return 0
 
     parser.error("unrecognized invocation")  # pragma: no cover

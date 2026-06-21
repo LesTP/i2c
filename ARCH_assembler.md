@@ -48,7 +48,7 @@ The assembler is intentionally narrow. It does **not**:
 ### 3.1 Subcommand summary
 
 ```
-assemble_context.py --action ACTION --phase N [--mode {autonomous,supervised}]
+assemble_context.py --action ACTION --phase N [--mode {autonomous,supervised}] [--emit {full,system,user}]
 assemble_context.py --section status
 assemble_context.py --section architecture
 assemble_context.py --section module --module NAME
@@ -68,14 +68,17 @@ assemble_context.py --section phase-summary --phase N
 | `--section` | building a single section | `status`, `architecture`, `module`, `devlog`, `phase-summary` | — |
 | `--module` | only with `--section module` | non-empty module name | — |
 | `--step-budget` | optional with `--action` | positive integer | `1` |
+| `--emit` | optional with `--action` | `full`, `system`, `user` | `full` |
 
-The mode flag is *only* meaningful with `--action`. Specifying `--mode` together with `--section` is a CLI argument error.
+The mode flag is *only* meaningful with `--action`. Specifying `--mode` together with `--section` is a CLI argument error. The same holds for `--emit`: it is only meaningful with `--action`, and a non-default `--emit` with `--section` is a CLI argument error.
+
+`--emit` selects which part of the assembled prompt to write to stdout (FU-35, prompt-cache support). `full` (default) is the whole prompt and is byte-identical to pre-FU-35 output. `system` is the cache-stable prefix — the WORKER CONTRACT and TOOL RULES regions (§6) — which the runner routes through Claude Code's `--append-system-prompt-file` so it can be prompt-cached and reused across consecutive same-phase iterations. `user` is the per-iteration body — the PROJECT CONTEXT and ACTION CONTEXT regions plus the Output Contract reminder. The split is exact: `full == system.rstrip() + "\n\n" + user`. Only the claude backend splits; codex sends `full` on stdin and relies on server-side prefix caching.
 
 `--step-budget` controls whether the `multi_step_only`-marked subsections in `WORKER_SPEC.md` (the multi-step LOOP, "Loop discipline — multi-step only", and the production-incident anecdotes) appear in the assembled prompt. Default `1` (the v1 runner's value) strips them; values > 1 keep them, in preparation for the multi-iteration loop (Phase 3.B/C).
 
 ### 3.3 Output
 
-- stdout — the assembled prompt (markdown, UTF-8, LF line endings, trailing newline).
+- stdout — the assembled prompt, or the `--emit`-selected part of it (markdown, UTF-8, LF line endings, trailing newline).
 - stderr — error messages and structured warnings on degraded sections (see §11).
 
 ### 3.4 Exit codes
@@ -92,6 +95,10 @@ The mode flag is *only* meaningful with `--action`. Specifying `--mode` together
 # Autonomous runner, per-action
 python3 tools/assemble_context.py --action execute --phase 11
 python3 tools/assemble_context.py --action plan --phase 12
+
+# Prompt-cache split (FU-35): cache-stable prefix vs per-iteration body
+python3 tools/assemble_context.py --action execute --phase 11 --emit system
+python3 tools/assemble_context.py --action execute --phase 11 --emit user
 
 # Supervised assistant, per-action
 python3 tools/assemble_context.py --action plan --phase 12 --mode supervised
@@ -290,6 +297,8 @@ ACTION CONTEXT
 **Section heading style:** `## Title Case With Colons As Separators` for parameterized sections (`## Phase: 11 — Orchestrator (Build)`). Use the em-dash `—` (U+2014), not a hyphen, in parameterized headers.
 
 **Ordering invariant:** the four regions appear in the order shown above (Worker Contract → Tool Rules → Project Context → Action Context); sections within a region appear in the order shown above; this order is fixed and not configurable. Rationale: identity framing first, environment rules early (worker knows what tools it can and can't use before reading the procedure that names those tools), reference material in the middle, action procedure last so the model's recency bias works in our favor.
+
+**Prompt-cache split (FU-35).** The same fixed ordering doubles as the cache boundary. `--emit system` returns the first two regions (Worker Contract + Tool Rules) — content that is byte-identical across consecutive same-phase, same-action iterations, so it can ride in Claude Code's prompt-cached system prompt. `--emit user` returns the rest (Project Context + Action Context + the Output Contract reminder) — everything that changes per phase / step / iteration, kept out of the cached prefix. The split preserves the ordering invariant exactly: `--emit full` is byte-identical to `system.rstrip() + "\n\n" + user`. The Output Contract reminder stays at the absolute tail of the `user` part, so its recency anchoring is unaffected.
 
 **Trailing newline:** the file ends with `\n`.
 
@@ -586,6 +595,7 @@ Optional degradations all exit 0. The worker sees the placeholders and decides w
 | `--phase` missing when `--section phase-summary` | exit 2 |
 | `--module` missing when `--section module` | exit 2 |
 | `--mode` specified with `--section` | exit 2 |
+| non-default `--emit` specified with `--section` | exit 2 |
 | `--phase` is not a positive integer | exit 2 |
 
 ### 11.4 Schema validation policy
@@ -612,7 +622,7 @@ Every `.state/*.json` file read is validated against the registered schema via `
 - **Dependencies:** stdlib only, plus `jsonschema` (already required by `validate.py`).
 - **Code reuse:** `tools/validate.py` provides `SCHEMA_BY_FILENAME`, `validate_state_file`, `validate_devlog_jsonl`, `load_schema`, `validate_json_schema`. The assembler reuses these directly — no duplicate validation logic.
 - **Module structure:** single file `tools/assemble_context.py` for v1. Internal organization: argparse setup, per-action recipes, per-section renderers, conditional-marker extractor, output writer. If sections proliferate, split per-section renderers into a sub-package.
-- **No caching:** every invocation re-reads every source file. Files are small (largest is `devlog.jsonl`, kilobytes); caching adds invalidation complexity without measurable benefit.
+- **No file caching:** every invocation re-reads every source file. Files are small (largest is `devlog.jsonl`, kilobytes); caching adds invalidation complexity without measurable benefit. (Distinct from the *LLM prompt cache*, which the `--emit system/user` split enables downstream — see §6 and D-arch-12.)
 - **No streaming:** synchronous full-buffer write. Prompts are tens of KB at most.
 - **Testing:** unit tests against the example fixture in `examples/initial_state/.state/`. Each per-section renderer testable in isolation; full-prompt assembly testable for each (action, mode) pair against golden outputs.
 - **Determinism:** no `dict`-order dependency (use the schema's declared field order for table columns); no environment-dependent content; no walltime in output.
@@ -636,6 +646,7 @@ Locked decisions, captured inline so the contract's rationale travels with it.
 | **D-arch-9** | This contract is authoritative; DESIGN_governance_v3.md gets a forward-pointer | Avoids rewriting the design doc while making the authority explicit. |
 | **D-arch-10** | Output is markdown / UTF-8 / LF / trailing newline | No source specified; pick the existing toolchain convention. |
 | **D-arch-11** | `--mode {autonomous,supervised}`, autonomous default | Default-only would surprise readers when they grep for `--mode autonomous` and find no examples; explicit values keep the surface obvious. |
+| **D-arch-12** | `--emit {full,system,user}` exposes the cache split in the assembler, not the runner (FU-35) | The stable/volatile boundary is a property of the prompt's region structure (§6), which the assembler owns. Exposing it as a flag keeps the runner a thin caller and makes the split independently testable (`full == system.rstrip() + "\n\n" + user`). The runner can't inject Anthropic `cache_control` markers anyway — it pipes plaintext to the `claude -p` / `codex exec` CLIs — so the reachable lever is routing the stable prefix through Claude Code's `--append-system-prompt-file`. |
 
 ---
 
@@ -644,3 +655,4 @@ Locked decisions, captured inline so the contract's rationale travels with it.
 | Date | What changed | Why |
 |------|--------------|-----|
 | 2026-06-04 | Initial contract spec | Phase 1 build-order step 7.5 — author the contract before Phase 1.3 implementation and step 8 slash wrappers. Resolves section-name drift and undocumented edge cases surfaced by a cross-reference of all framework files. |
+| 2026-06-21 | Added `--emit {full,system,user}` (FU-35) | Prompt-cache support: expose the region structure's stable/volatile boundary so the runner can route the cache-stable prefix through Claude Code's system prompt. `full` output unchanged. See §3.2, §6, D-arch-12. |

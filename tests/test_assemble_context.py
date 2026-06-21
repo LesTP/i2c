@@ -341,6 +341,11 @@ class TestCliArgumentErrors(unittest.TestCase):
             rc, _, err = run_cli("--section", "status", "--mode", "supervised")
             self.assertEqual(rc, 2)
 
+    def test_emit_with_section_rejected(self):
+        # FU-35: --emit is only meaningful with --action.
+        rc, _, err = run_cli("--section", "status", "--emit", "user")
+        self.assertEqual(rc, 2)
+
     def test_unknown_action_rejected(self):
         rc, _, err = run_cli("--action", "bogus", "--phase", "1")
         self.assertEqual(rc, 2)
@@ -1107,6 +1112,77 @@ class TestRegionOrder(unittest.TestCase):
             tail = out[action_pos + len("ACTION CONTEXT"):]
             for other in ("WORKER CONTRACT", "TOOL RULES", "PROJECT CONTEXT"):
                 self.assertNotIn(other, tail)
+
+
+class TestEmitSplit(unittest.TestCase):
+    """FU-35: --emit {full,system,user} splits the prompt into a
+    cache-stable prefix (system) and a per-iteration body (user)."""
+
+    def test_concat_identity(self):
+        # full == system.rstrip() + "\n\n" + user — no content lost or duped.
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            _, full, e1 = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "full")
+            _, system, e2 = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "system")
+            _, user, e3 = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "user")
+            self.assertEqual(
+                full, system.rstrip() + "\n\n" + user, msg=e1 + e2 + e3)
+
+    def test_full_is_default_emit(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            _, default_out, _ = run_cli("--action", "execute", "--phase", "2")
+            _, full_out, _ = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "full")
+            self.assertEqual(default_out, full_out)
+
+    def test_system_contains_only_stable_regions(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            _, system, err = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "system")
+            self.assertEqual(err, "")
+            self.assertIn("WORKER CONTRACT", system)
+            self.assertIn("TOOL RULES", system)
+            self.assertNotIn("PROJECT CONTEXT", system)
+            self.assertNotIn("ACTION CONTEXT", system)
+
+    def test_user_contains_only_volatile_regions(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            _, user, err = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "user")
+            self.assertEqual(err, "")
+            self.assertIn("PROJECT CONTEXT", user)
+            self.assertIn("ACTION CONTEXT", user)
+            self.assertNotIn("WORKER CONTRACT", user)
+            self.assertNotIn("TOOL RULES", user)
+
+    def test_system_prefix_insulated_from_body_churn(self):
+        # The cache-stable prefix must NOT change when only per-iteration
+        # state advances (the current step) — that's the cache-hit
+        # precondition across consecutive same-phase iterations.
+        with TempProject(
+            with_framework=True, with_extra=_FRAMEWORK_EXTRAS
+        ) as root:
+            _, sys_a, _ = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "system")
+            _, usr_a, _ = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "user")
+            # Advance the body: complete the current pending step.
+            steps_path = root / ".state" / "steps.json"
+            steps = json.loads(steps_path.read_text(encoding="utf-8"))
+            for s in steps:
+                if s["phase"] == 2 and s["step"] == 2:
+                    s["status"] = "complete"
+                    s["commit"] = "abc1234"
+            steps_path.write_text(
+                json.dumps(steps, indent=2) + "\n", encoding="utf-8")
+            _, sys_b, _ = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "system")
+            _, usr_b, _ = run_cli(
+                "--action", "execute", "--phase", "2", "--emit", "user")
+            self.assertEqual(sys_a, sys_b)      # prefix stable → cache hits
+            self.assertNotEqual(usr_a, usr_b)   # body changed (step advanced)
 
 
 class TestAvailableModulesGating(unittest.TestCase):

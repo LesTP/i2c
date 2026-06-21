@@ -13,9 +13,13 @@ Pipeline (per the plan):
 4. Validate ``--backend`` is one of {claude, codex}.
 5. Run ``tools/assemble_context.py --action $ACTION --phase $PHASE
    --mode autonomous --backend $BACKEND``; capture the prompt.
-6. Write the prompt to ``logs/loop/iteration_NNN_prompt.md``.
-7. Run ``claude -p`` with the prompt on stdin; capture stdout to
-   ``logs/loop/iteration_NNN.txt``.
+6. Write the assembled prompt(s) to ``logs/loop/``: the stdin body to
+   ``iteration_NNN_prompt.md``, and for claude the cache-stable system
+   prefix to ``iteration_NNN_system.md`` (FU-35).
+7. Run the backend with the body on stdin; capture output to
+   ``logs/loop/iteration_NNN.txt``. For claude the cache-stable prefix is
+   passed via ``--append-system-prompt-file`` so Claude Code prompt-caches
+   it; codex sends one combined prompt (server-side prefix cache).
 8. Parse the 2-line exit signal from the captured output; validate
    against ``schemas/exit_signal.schema.json``. Malformed signal →
    treated as ``exit_code: 2`` (halt-and-surface).
@@ -112,8 +116,20 @@ def current_phase(project_root: Path) -> int:
     return int(project.get("phase", 0))
 
 
-def assemble_prompt(project_root: Path, action: str, phase: int) -> str:
-    """Invoke ``tools/assemble_context.py`` and return the prompt text."""
+def assemble_prompt(
+    project_root: Path, action: str, phase: int, *, backend: str, emit: str = "full"
+) -> str:
+    """Invoke ``tools/assemble_context.py`` and return the prompt text.
+
+    ``backend`` selects which adapter's Tool Rules the assembler embeds
+    (``CLAUDE.md`` vs ``CODEX.md``) — it must match the backend the prompt
+    is dispatched to, or the worker reads the wrong tool guidance.
+
+    ``emit`` selects which part of the prompt to build (FU-35):
+    ``"full"`` (default) is the whole prompt; ``"system"`` is the
+    cache-stable prefix (WORKER CONTRACT + TOOL RULES) routed through
+    Claude Code's system prompt; ``"user"`` is the per-iteration body.
+    """
     script = Path(__file__).resolve().parent / "assemble_context.py"
     proc = subprocess.run(
         [
@@ -121,12 +137,13 @@ def assemble_prompt(project_root: Path, action: str, phase: int) -> str:
             "--action", action.lower(),
             "--phase", str(phase),
             "--mode", "autonomous",
-            "--backend", "claude",
+            "--backend", backend,
             # v1 runner is always single-step. When the multi-iteration loop
             # ships, this becomes a runner parameter; for now it's a constant
             # so the multi_step_only marker mechanism keeps stripping the
             # WORKER_SPEC multi-step subsections.
             "--step-budget", "1",
+            "--emit", emit,
         ],
         cwd=str(project_root),
         capture_output=True,
@@ -197,6 +214,7 @@ def invoke_claude(
     cwd: Path,
     model: str,
     max_budget_usd: float,
+    system_prompt_file: Path | None = None,
 ) -> tuple[int, str]:
     """Run ``claude -p`` with the prompt on stdin; return (rc, stdout).
 
@@ -215,6 +233,16 @@ def invoke_claude(
     raw stdout as plain text — the loop keeps working, just without
     per-iter token telemetry.
 
+    Prompt caching (FU-35): when ``system_prompt_file`` is given, the
+    cache-stable prefix (WORKER CONTRACT + TOOL RULES) is appended to
+    Claude Code's default system prompt via ``--append-system-prompt-file``,
+    which Claude Code automatically prompt-caches.
+    ``--exclude-dynamic-system-prompt-sections`` strips Claude's own
+    dynamic system content (timestamps, etc.) that would otherwise bust
+    cache reuse across iterations. The volatile body stays on stdin. The
+    cache hit shows up as ``cache_read_input_tokens`` on iter 2+ of a phase
+    within the cache TTL.
+
     stderr is merged into stdout because some shells split surprisingly
     and the only signal the runner needs is the final agent message.
     """
@@ -226,6 +254,11 @@ def invoke_claude(
         "--model", model,
         "--max-budget-usd", f"{max_budget_usd:.2f}",
     ]
+    if system_prompt_file is not None:
+        cmd += [
+            "--append-system-prompt-file", str(system_prompt_file),
+            "--exclude-dynamic-system-prompt-sections",
+        ]
     proc = subprocess.run(
         cmd,
         input=prompt,
@@ -481,34 +514,49 @@ def run_iteration(
         sys.stderr.write(f"ERROR: unknown backend {backend!r}\n")
         return 2
 
-    # 4. Assemble prompt.
+    # 4. Assemble prompt(s). Claude routes the cache-stable prefix
+    #    (WORKER CONTRACT + TOOL RULES) through its system prompt for
+    #    prompt-cache reuse (FU-35); the volatile body goes on stdin. Codex
+    #    has no system-prompt flag, so it sends one combined prompt and
+    #    relies on OpenAI's automatic server-side prefix caching.
     phase = current_phase(root)
+    iteration = next_iteration_number(log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = log_dir / f"iteration_{iteration:03d}_prompt.md"
+    system_path = log_dir / f"iteration_{iteration:03d}_system.md"  # claude only
+    output_path = log_dir / f"iteration_{iteration:03d}.txt"
+    jsonl_path = log_dir / f"iteration_{iteration:03d}.jsonl"  # codex only
     try:
-        prompt = assemble_prompt(root, action, phase)
+        if backend == "claude":
+            system_prompt = assemble_prompt(
+                root, action, phase, backend=backend, emit="system")
+            stdin_prompt = assemble_prompt(
+                root, action, phase, backend=backend, emit="user")
+        else:  # codex
+            stdin_prompt = assemble_prompt(
+                root, action, phase, backend=backend, emit="full")
     except RunnerError as e:
         sys.stderr.write(f"ERROR: {e}\n")
         return 2
 
-    # 5. Iteration log paths.
-    iteration = next_iteration_number(log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    prompt_path = log_dir / f"iteration_{iteration:03d}_prompt.md"
-    output_path = log_dir / f"iteration_{iteration:03d}.txt"
-    jsonl_path = log_dir / f"iteration_{iteration:03d}.jsonl"  # codex only
-    prompt_path.write_text(prompt, encoding="utf-8")
+    # 5. Write iteration logs (system file for claude; the stdin prompt for both).
+    prompt_path.write_text(stdin_prompt, encoding="utf-8")
+    if backend == "claude":
+        system_path.write_text(system_prompt, encoding="utf-8")
 
     # 6. Invoke the chosen backend.
     try:
         if backend == "claude":
             worker_rc, captured = claude_invoker(
-                prompt,
+                stdin_prompt,
                 cwd=root,
                 model=model,
                 max_budget_usd=max_budget_usd,
+                system_prompt_file=system_path,
             )
         else:  # codex
             worker_rc, jsonl_raw, captured = codex_invoker(
-                prompt,
+                stdin_prompt,
                 cwd=root,
             )
             jsonl_path.write_text(jsonl_raw, encoding="utf-8")
