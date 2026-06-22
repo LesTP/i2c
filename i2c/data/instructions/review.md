@@ -63,7 +63,7 @@ Two priorities, in order:
 
 If you find drift from `ARCH_<module>.md`, the review is over — that's a
 **contract change** discovered after the fact. Stop the review, set
-`state=audit_escalation` via `state.py`, log the finding via devlog with
+`state=audit_escalation` via `i2c state`, log the finding via devlog with
 `outcome: "escalate"`, and `EXIT 2`. The human/wrapper reconciles
 contract and code; restoring `state=review` resumes.
 
@@ -83,7 +83,7 @@ git commit -m "11: review — drop dead helper from event loop"
 
 If a Must fix balloons in scope mid-fix (you start fixing a bug and find
 the bug needs an architecture change to address): stop, set
-`state=audit_escalation` via `state.py`, and **escalate** (`EXIT 2`,
+`state=audit_escalation` via `i2c state`, and **escalate** (`EXIT 2`,
 reason "review surfaced architecture issue"). The fix becomes a new
 phase or a contract change.
 
@@ -93,7 +93,7 @@ For each Optional finding you choose **not** to apply now, write a
 decision record so the choice survives the session:
 
 ```bash
-python3 tools/state.py append-record decisions.json '{
+i2c state append-record decisions.json '{
   "id": "D-25",
   "phase": 11,
   "title": "Skip rename: tmp -> events_to_retry in event_loop",
@@ -122,7 +122,7 @@ is phase-level), `outcome: "complete"` when the review finished. Summary
 should record the finding counts.
 
 ```bash
-python3 tools/state.py append devlog.jsonl '{
+i2c state append devlog.jsonl '{
   "phase": 11,
   "step": null,
   "action": "review",
@@ -152,7 +152,7 @@ stabilize in plan/execute and are propagated in close.)
 Set `project.json.state=close`. The state machine will dispatch CLOSE next.
 
 ```bash
-python3 tools/state.py set project.json state=close
+i2c state set project.json state=close
 ```
 
 Then emit the exit signal (2-line block, see Worker Contract §4).
@@ -201,9 +201,9 @@ Phase 5, three steps complete, code looks good. Single devlog entry, no
 fixes, no decisions.
 
 ```bash
-python3 tools/state.py append devlog.jsonl '{"phase":5,"step":null,"action":"review","outcome":"complete","summary":"Phase 5 review: 0 Must, 0 Should, 0 Optional. Code matches ARCH_event_store.md; no dead code; tests pass.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"review","outcome":"complete","summary":"Phase 5 review: 0 Must, 0 Should, 0 Optional. Code matches ARCH_event_store.md; no dead code; tests pass.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
 
-python3 tools/state.py set project.json state=close
+i2c state set project.json state=close
 # Emit exit signal.
 ```
 
@@ -226,12 +226,12 @@ git add src/orchestrator.py
 git commit -m "11: review — remove redundant null check"
 
 # Log skipped Optional:
-python3 tools/state.py append-record decisions.json '{"id":"D-25","title":"Skip rename: tmp -> events_to_retry","status":"closed","priority":"low","decision":"Leave the local name as-is.","rationale":"Renames in this file should batch with the next pass; isolated rename adds noise to git blame.","revisit_if":"Next significant edit to event_loop touches this function."}'
+i2c state append-record decisions.json '{"id":"D-25","title":"Skip rename: tmp -> events_to_retry","status":"closed","priority":"low","decision":"Leave the local name as-is.","rationale":"Renames in this file should batch with the next pass; isolated rename adds noise to git blame.","revisit_if":"Next significant edit to event_loop touches this function."}'
 
 # Devlog entry:
-python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"review","outcome":"complete","summary":"Phase 11 review: 1 Must (unchecked error path), 2 Should (dead helper, redundant null check) applied. 1 Optional (rename) skipped, D-25. Tests pass after fixes.","contracts":[],"timestamp":"2026-06-04T10:30:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"review","outcome":"complete","summary":"Phase 11 review: 1 Must (unchecked error path), 2 Should (dead helper, redundant null check) applied. 1 Optional (rename) skipped, D-25. Tests pass after fixes.","contracts":[],"timestamp":"2026-06-04T10:30:00Z"}'
 
-python3 tools/state.py set project.json state=close
+i2c state set project.json state=close
 ```
 
 ### Review surfaces contract drift — escalate
@@ -241,8 +241,8 @@ diverged from `ARCH_orchestrator.md` (now takes a kwarg the contract
 doesn't list). Halt.
 
 ```bash
-python3 tools/state.py set project.json state=audit_escalation
-python3 tools/state.py append devlog.jsonl '{"phase":8,"step":null,"action":"review","outcome":"escalate","summary":"Review halted: dispatch_action in code takes idempotency_key kwarg, ARCH_orchestrator.md does not list it. Drift originated in step 8.3 — devlog there should have flagged contract change. Needs decision: align code to ARCH or update ARCH.","contracts":["ARCH_orchestrator.md"],"timestamp":"2026-06-04T10:45:00Z"}'
+i2c state set project.json state=audit_escalation
+i2c state append devlog.jsonl '{"phase":8,"step":null,"action":"review","outcome":"escalate","summary":"Review halted: dispatch_action in code takes idempotency_key kwarg, ARCH_orchestrator.md does not list it. Drift originated in step 8.3 — devlog there should have flagged contract change. Needs decision: align code to ARCH or update ARCH.","contracts":["ARCH_orchestrator.md"],"timestamp":"2026-06-04T10:45:00Z"}'
 
 # Do NOT apply any fixes. Do NOT transition to close.
 # Emit EXIT 2 with reason "review surfaced contract drift".

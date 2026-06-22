@@ -6,17 +6,14 @@ import io
 import json
 import os
 import shutil
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
-TOOLS_DIR = I2C_ROOT / "tools"
-sys.path.insert(0, str(TOOLS_DIR))
 
-import invariants as inv  # noqa: E402
+from i2c import invariants as inv
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 

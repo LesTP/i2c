@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "phase": 2,
   "state": "execute",
   "steps_remaining": 3,

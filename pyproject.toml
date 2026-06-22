@@ -1,20 +1,11 @@
 # Packaging descriptor for i2c.
 #
-# Phase 1 (current): this declares the project's identity, license, runtime
-# dependency, and supported Python versions so the repository is a
-# well-formed, installable Python project. It is intentionally
-# **metadata-only** — it does not yet ship the framework code as an
-# importable package or expose console-script commands.
-#
-# Why not yet: the tools/ modules are flat scripts that import each other as
-# siblings and are invoked by path (`python3 tools/state.py ...`). Packaging
-# them properly — a single `i2c` package namespace, console entry points
-# (`i2c ...`), and bundling schemas/instructions as package data — is a
-# planned packaging milestone. Shipping them now as flat top-level
-# modules (`state`, `validate`, ...) would risk import-name collisions, so
-# that is deferred rather than done badly.
-#
-# Until Phase 2, projects use i2c via the copy model documented in README.md.
+# Phase 2 (§5.2): the framework ships as an importable `i2c` package with a
+# console entry point. `pip install` (editable or wheel) puts the `i2c` command
+# on PATH and bundles the JSON Schemas as package data; consumers no longer copy
+# `tools/`. Governance markdown (instructions/, WORKER_SPEC.md, adapters) is
+# still resolved from the project root — packaging those with override
+# resolution is the separate §5.3 milestone.
 #
 # Not finalized before any real publish:
 #   - the public distribution name (working name `i2c`; leaning `idea2code`)
@@ -33,7 +24,11 @@ requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Mike Yeluashvili" }]
 keywords = ["ai", "agents", "governance", "llm", "code-generation", "workflow"]
-dependencies = ["jsonschema>=4"]
+dependencies = [
+    "jsonschema>=4",
+    # i2c.toml parsing: stdlib tomllib on 3.11+, tomli backport on 3.10.
+    "tomli>=1.1.0; python_version < '3.11'",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -50,10 +45,22 @@ classifiers = [
 # Homepage = "..."      # add when the public repository exists
 # Repository = "..."
 
-# [project.scripts]
-# i2c = "i2c.cli:main"  # Phase 2: console entry point over the i2c package
+[project.scripts]
+i2c = "i2c.cli:main"  # console entry point over the i2c package
 
 [tool.setuptools]
-# Phase 1 is metadata-only; there are no Python modules to install yet.
-# Phase 2 replaces this with real package discovery for the `i2c` package.
-py-modules = []
+packages = ["i2c"]
+
+[tool.setuptools.package-data]
+# Framework-canonical assets ship inside the package. Schemas resolve via
+# importlib.resources in i2c/validate.py; WORKER_SPEC.md + instructions resolve
+# project-local-override-then-packaged in i2c/assemble_context.py (§5.3).
+# adapters/ + templates/ are the `i2c init` scaffold sources (§5.4).
+i2c = [
+    "data/schemas/*.json",
+    "data/WORKER_SPEC.md",
+    "data/instructions/*.md",
+    "data/adapters/*.md",
+    "data/templates/*.md",
+    "data/templates/*.toml",
+]

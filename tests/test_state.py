@@ -11,11 +11,7 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
-# Make tools/ importable.
-TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
-sys.path.insert(0, str(TOOLS_DIR))
-
-import state  # noqa: E402
+from i2c import state
 
 
 def write_json(path: Path, data) -> None:

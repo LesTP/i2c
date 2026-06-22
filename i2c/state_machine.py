@@ -42,12 +42,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# state_machine.py imports its sibling modules. Tools live in the same
-# directory; tests prepend the tools dir to sys.path explicitly. When
-# invoked as a script, Python adds the script's directory to sys.path
-# automatically, so the sibling imports work in both contexts.
-import assemble_context as ac
-import validate as v
+# Sibling package modules.
+from i2c import assemble_context as ac
+from i2c import validate as v
 
 
 # ---------------------------------------------------------------------------

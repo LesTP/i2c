@@ -8,11 +8,13 @@ matter once they live inside a real project directory.
 
 | Path | Purpose |
 |------|---------|
-| `.claude/commands/` | Per-project Devmate slash-command wrappers for supervised mode. Each wrapper is a thin shell around a `python3 tools/assemble_context.py …` or `python3 tools/state.py …` invocation. |
+| `.claude/commands/` | Per-project Devmate slash-command wrappers for supervised mode. Each wrapper is a thin shell around an `i2c assemble …` or `i2c state …` invocation. |
 
 ## Bootstrap pattern
 
-When creating a new i2c project, copy this directory into the project root:
+`i2c init` scaffolds the rest of a new project (`.state/`, `PROJECT.md`,
+`ARCHITECTURE.md`, adapters, `.gitignore`); this directory only adds the
+supervised-mode slash-command wrappers. Copy it into the project root:
 
 ```powershell
 # Windows / PowerShell
@@ -43,28 +45,25 @@ Per `D-prose-4` (in the i2c rollout plan):
 
 | Command | Purpose | Underlying CLI |
 |---------|---------|----------------|
-| `/cold-start` | Orient on current project state | `assemble_context.py --section status` |
-| `/phase-plan` | Plan the next phase (supervised) | `assemble_context.py --action plan --phase N --mode supervised` |
-| `/step-done` | Mark a step complete, log to devlog, transition if last | `state.py complete`, `state.py append devlog.jsonl`, `state.py set` |
-| `/phase-review` | Run end-of-phase review (supervised) | `assemble_context.py --action review --phase N --mode supervised` |
-| `/phase-complete` | Close the phase, gate to human (supervised) | `assemble_context.py --action close --phase N --mode supervised` |
+| `/cold-start` | Orient on current project state | `i2c assemble --section status` |
+| `/phase-plan` | Plan the next phase (supervised) | `i2c assemble --action plan --phase N --mode supervised` |
+| `/step-done` | Mark a step complete, log to devlog, transition if last | `i2c state complete`, `i2c state append devlog.jsonl`, `i2c state set` |
+| `/phase-review` | Run end-of-phase review (supervised) | `i2c assemble --action review --phase N --mode supervised` |
+| `/phase-complete` | Close the phase, gate to human (supervised) | `i2c assemble --action close --phase N --mode supervised` |
 
 `/step-done` is the only pure write-side command — the others are
 read-side (they assemble context the agent reads to perform the action).
 
 ## Status note
 
-The `--mode` flag and per-section subcommands rely on
-`tools/assemble_context.py`, which is **Phase 1.3 — not yet
-implemented**. The wrappers are deliberately authored against the locked
-ARCH contract so they ship ready to run once Phase 1.3 lands. Until
-then, `/cold-start`, `/phase-plan`, `/phase-review`, and
-`/phase-complete` will exit non-zero because the assembler doesn't exist;
-`/step-done` works today (pure `state.py` calls, no assembler).
+The `--mode` flag and per-section subcommands are implemented and ship in the
+`i2c` package; all five wrappers run today once the framework is installed
+(`pip install`). Each wrapper invokes the `i2c` console command.
 
 ## Where the contracts live
 
 - Assembler CLI surface: `ARCH_assembler.md` §3
-- State CLI surface: `tools/state.py --help` (or `tools/state.py SUBCOMMAND --help`)
-- Per-action procedures: `instructions/{plan,execute,review,close}.md`
-- Schemas for every write: `schemas/*.schema.json`
+- State CLI surface: `i2c state --help` (or `i2c state SUBCOMMAND --help`)
+- Per-action procedures: `instructions/{plan,execute,review,close}.md` (ship in
+  the `i2c` package; a project may override per-file with a local copy)
+- Schemas for every write: `i2c/data/schemas/*.schema.json`

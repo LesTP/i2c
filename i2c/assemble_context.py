@@ -32,10 +32,11 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any, Callable
 
-import validate as v
+from i2c import validate as v
 
 
 # ---------------------------------------------------------------------------
@@ -121,12 +122,37 @@ def state_path(root: Path, name: str) -> Path:
     return root / ".state" / name
 
 
+def packaged_data_dir() -> Path:
+    """Packaged ``i2c/data`` directory (WORKER_SPEC.md, instructions/).
+
+    Mirrors ``validate.schemas_dir()``; works for editable and wheel installs.
+    """
+    return Path(resources.files("i2c") / "data")
+
+
+def resolve_asset(project_root: Path, relpath: str) -> Path:
+    """Resolve a framework-canonical asset: project-local override → packaged
+    default (DESIGN_packaging_v1.md §5.3, D-pkg-11).
+
+    A project may override ``WORKER_SPEC.md`` or an individual
+    ``instructions/<action>.md`` by placing a file at the same relative path in
+    its root; otherwise the packaged copy under ``i2c/data/`` is used. Override
+    is per-file. Adapters / PROJECT.md / ARCHITECTURE.md / ARCH_*.md are NOT
+    routed through here — they are inherently per-project (project-root only).
+    """
+    local = project_root / relpath
+    if local.is_file():
+        return local
+    return packaged_data_dir() / relpath
+
+
 def adapter_path(root: Path, backend: str) -> Path:
     return root / ("CLAUDE.md" if backend == "claude" else "CODEX.md")
 
 
 def instruction_path(root: Path, action: str) -> Path:
-    return root / "instructions" / f"{action}.md"
+    """Per-action procedure, resolved override→packaged (§5.3)."""
+    return resolve_asset(root, f"instructions/{action}.md")
 
 
 def arch_module_path(root: Path, module: str) -> Path:
@@ -662,7 +688,7 @@ def render_worker_spec(ctx: AssemblerContext) -> str:
     Autonomous Behavioral Rules / Prohibitions per ARCH §4. Mode framing
     (autonomous_only) is applied by strip_conditional_sections.
     """
-    text = read_markdown(ctx.project_root / "WORKER_SPEC.md")
+    text = read_markdown(resolve_asset(ctx.project_root, "WORKER_SPEC.md"))
     stripped = strip_conditional_sections(text, ctx)
     body = _extract_after_first_h2(stripped)
     return body.rstrip("\n")

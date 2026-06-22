@@ -1,15 +1,15 @@
 """End-to-end smoke test for the i2c data foundation.
 
 Copies examples/initial_state/.state/ into a temp directory and walks
-through a realistic sequence of state.py CLI calls — the kind a worker would
-make across one execute step plus a phase close. Prints a transcript so the
-output is human-readable and can be used to verify the tooling without a real
-project.
+through a realistic sequence of `i2c state` CLI calls (via
+``python -m i2c.state``) — the kind a worker would make across one execute
+step plus a phase close. Prints a transcript so the output is human-readable
+and can be used to verify the tooling without a real project.
 
 Exits 0 on success, non-zero on the first command that fails or produces an
 unexpected state.
 
-Run:
+Run (requires `pip install -e .` so the `i2c` package is importable):
     python p:\\shared\\i2c\\examples\\smoke_test.py
 """
 
@@ -23,15 +23,12 @@ import tempfile
 from pathlib import Path
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
-STATE_PY = I2C_ROOT / "tools" / "state.py"
-VALIDATE_PY = I2C_ROOT / "tools" / "validate.py"
-ASSEMBLE_PY = I2C_ROOT / "tools" / "assemble_context.py"
 INITIAL = Path(__file__).resolve().parent / "initial_state" / ".state"
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
-    cmd = [sys.executable, str(STATE_PY), *args]
-    print(f"\n$ python state.py {' '.join(args)}")
+    cmd = [sys.executable, "-m", "i2c.state", *args]
+    print(f"\n$ i2c state {' '.join(args)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.stdout:
         print(result.stdout.rstrip())
@@ -166,10 +163,9 @@ def main() -> int:
         p = read_json(project)
         assert_eq(p["state"], "audit_boundary", "state untouched by failed update")
 
-        # --- 8. Full file validation (round-trip through validate.py) ---
+        # --- 8. Full file validation (round-trip through the validate API) ---
         print("\n--- 8. Validate every state file end-to-end ---")
-        sys.path.insert(0, str(I2C_ROOT / "tools"))
-        import validate as v
+        from i2c import validate as v
         for fname in ["project.json", "phases.json", "steps.json", "decisions.json"]:
             v.validate_state_file(work / fname)
             print(f"  [OK] {fname} validates")
@@ -177,10 +173,10 @@ def main() -> int:
         print(f"  [OK] devlog.jsonl validates ({len(devlog.read_text().splitlines())} entries)")
 
         # --- 9. Assembler --section status against the working state ---
-        print("\n--- 9. Run assemble_context.py --section status ---")
+        print("\n--- 9. Run i2c assemble --section status ---")
         env = {**dict(__import__("os").environ), "PYTHONIOENCODING": "utf-8"}
         proc = subprocess.run(
-            [sys.executable, str(ASSEMBLE_PY), "--section", "status"],
+            [sys.executable, "-m", "i2c.assemble_context", "--section", "status"],
             capture_output=True, text=True, cwd=str(work.parent), env=env,
         )
         if proc.returncode != 0:

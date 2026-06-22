@@ -19,10 +19,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
-TOOLS_DIR = I2C_ROOT / "tools"
-sys.path.insert(0, str(TOOLS_DIR))
 
-import run_iteration as ri  # noqa: E402
+from i2c import run_iteration as ri
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -49,9 +47,12 @@ class TempProject:
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_run_")
         self.root = Path(self._tmp.name) / "project"
         shutil.copytree(FIXTURE, self.root)
-        for name in ("WORKER_SPEC.md", "CLAUDE.md", "CODEX.md"):
-            shutil.copy2(I2C_ROOT / name, self.root / name)
-        shutil.copytree(I2C_ROOT / "instructions", self.root / "instructions")
+        # Adapters are project-root assets; copy them from the packaged
+        # templates. WORKER_SPEC.md and instructions/ resolve from package-data
+        # (§5.3), so they aren't copied.
+        adapters = I2C_ROOT / "i2c" / "data" / "adapters"
+        shutil.copy2(adapters / "claude.md", self.root / "CLAUDE.md")
+        shutil.copy2(adapters / "codex.md", self.root / "CODEX.md")
         # Stub ARCH_event_store.md to satisfy the module-contract requirement
         # for the fixture's current phase. Content is irrelevant to runner
         # tests; the assembler just needs the file to exist.

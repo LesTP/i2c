@@ -1,15 +1,15 @@
-# Claude Worker Adapter — [Project Name]
+# Codex Worker Adapter — [Project Name]
 
 > This file is a **template**. Copy it into a new i2c project and fill in the
-> placeholders. The framework keeps a canonical copy at `p:\shared\i2c\CLAUDE.md`
+> placeholders. The framework keeps a canonical copy at `p:\shared\i2c\CODEX.md`
 > so future updates can be diffed in.
 >
-> **Contract:** Backend-specific mechanics for Claude workers. The universal
+> **Contract:** Backend-specific mechanics for Codex workers. The universal
 > loop contract (identity, main loop, escalation, output contract,
 > prohibitions) lives in `WORKER_SPEC.md` and arrives in your prompt
 > pre-assembled — you do not read it. Action procedures live in
 > `instructions/$ACTION.md` and also arrive pre-assembled. This adapter
-> covers what is **Claude-specific** plus what is **project-specific**.
+> covers what is **Codex-specific** plus what is **project-specific**.
 
 ## Framework
 <!-- Name the governance framework. For new i2c projects this is just "i2c"; for
@@ -36,7 +36,7 @@ short and prescriptive. Examples:
 
 - **Language:** Python 3.12+
 - **Test framework:** stdlib `unittest`, discoverable from `tests/`
-- **State writes:** all `.state/` mutations go through `python3 tools/state.py`
+- **State writes:** all `.state/` mutations go through `i2c state`
   (see WORKER_SPEC §6 Prohibitions). Schemas live in `schemas/`.
 - **External dependencies:** `toolkit/` (sibling project) provides
   `llm_client`, `telegram_client`, `cost_accountant`. No direct provider SDK
@@ -45,15 +45,26 @@ short and prescriptive. Examples:
 - **Storage:** SQLite for runtime persistence; JSON / JSONL for `.state/`.
 -->
 
-## Claude-Specific Tool Rules
+## Codex-Specific Tool Rules
 
-- **Edit tool requires fresh reads.** Before editing any source or test file,
-  read it immediately before the edit — not at the start of the iteration.
-  Governance state arrived fresh in your prompt; this rule applies to source
-  files only.
-- **No subagent spawning for routine work.** Do NOT spawn `Agent(Explore)`
-  subagents for simple file discovery — use `bash find` or `bash ls`
-  instead. Subagents are appropriate for genuinely open-ended research.
+- **No `@`-reference loading.** Read files explicitly using shell commands.
+  When prose contains `@FILENAME` markers, treat them as file paths to read
+  with `cat` or `sed -n`.
+- **Minimize tool calls.** Every tool call re-processes the full context.
+  Combine multiple file reads, greps, and short commands into single shell
+  invocations.
+  - Bad: `cat A.py` then `cat B.py` (two tool calls).
+  - Good: `cat A.py && echo '---' && cat B.py` (one tool call).
+  - Bad: `grep foo A` then `grep foo B`.
+  - Good: `grep -n foo A B`.
+- **Search-tool fallback.** This loop environment may not have `rg`
+  installed. Before using `rg`, check availability with `command -v rg`. If
+  it is absent, fall back to portable equivalents: `find` for file
+  discovery, `grep -RIn` for text search, `sed -n` for bounded file reads.
+  Do not repeatedly retry `rg` after it has failed in the same iteration.
+- **Fresh reads before edits.** Before editing any source or test file,
+  re-read it immediately — not at the start of the iteration. Governance
+  arrived fresh in your prompt; this rule applies to source files only.
 - **Non-interactive shell only.** The loop has no stdin. Commands that
   open editors (`vim`, `nano`, `git commit` without `-m`,
   `git rebase -i`), prompt for input (`read`, `sudo` without `-n`,
@@ -61,29 +72,54 @@ short and prescriptive. Examples:
   `more`, `git log` without `--no-pager`) will hang. To stage part of
   a file, split into discrete edits or use `git restore` to revert
   unwanted parts before `git add`. `git add -p` is interactive-only.
-- **State writes go through `state.py`.** Never use `sed`, `echo >`, or
+- **State writes go through `i2c state`.** Never use `sed`, `echo >`, or
   direct file edits on `.state/` files. The CLI guarantees atomic,
   schema-validated writes.
-- **Use `state.py --from-file` for multi-line or `$`-laden payloads.**
+- **Use `i2c state --from-file` for multi-line or `$`-laden payloads.**
   Write the JSON to a temp file and pass `--from-file <path>`; bypasses
   shell quoting entirely. Inline-quoting works for short one-line JSON
   without `$` or newlines.
 
-<!-- Add project-specific tool rules below. Examples:
-- Use `bash grep` instead of the Grep tool if built-in tools have path issues.
-- Use `bash find` instead of the Glob tool if paths contain special characters.
--->
+<!-- Add project-specific tool rules below. -->
+
+## Turn Health Check (Codex-specific safety)
+
+This is a **safety circuit breaker**, separate from the step budget. The
+runner provides `ITERATION_JSONL` in the prompt's environment when
+applicable. After each completed action, check the turn count:
+
+```bash
+grep -c '"item.completed"' "$ITERATION_JSONL"
+```
+
+If `total_turns > actions_performed * 50`, emit the exit signal with `EXIT 2`
+and reason `"turn health check exceeded"`. Do **not** continue.
+
+(`actions_performed` here is the worker's internal count of actions taken in
+this invocation — typically 1 for EXECUTE/REVIEW/CLOSE — not a field in the
+emitted signal.)
+
+Calibration notes (apply judgment, not just the formula):
+
+- The 50-turns-per-step ceiling is calibrated for single-repo work where
+  the worker mostly reads, edits, and tests within one project directory.
+- **Cross-repo work** (e.g., a step that edits both this project and
+  `toolkit/`) legitimately needs more tool calls — discovering the
+  editable install path, reading files in two repos, committing to two
+  repos. If you trip the ceiling during a clearly-cross-repo step, log
+  the exit and note the cause in the devlog `summary` so the orchestrator
+  can decide whether to relax the threshold for future cross-repo phases.
+- The check is a circuit breaker, not the budgeting mechanism. The step
+  budget (`steps_remaining` in `project.json`) is what counts work; this
+  is just the safety net against runaway tool churn.
 
 ## Runner Info
 
-**Runner:** `run-iteration.sh` — invokes `claude -p` per iteration with the
+**Runner:** `run-iteration.sh` — invokes `codex exec` per iteration with the
 assembled prompt on stdin, logs to `logs/loop/`.
 
-**Slash commands** (supervised mode, interactive use): live in
-`.claude/commands/` per i2c convention. Each is a thin wrapper that shells
-out to `python3 tools/assemble_context.py …` or `python3 tools/state.py …`.
-You do not need to read these in autonomous mode — the same procedures are
-already in your assembled prompt via `instructions/*.md`.
+The runner ships an iteration-specific JSONL log path in the prompt when
+relevant; that path is the input to the turn-health check above.
 
 ## Output Contract
 

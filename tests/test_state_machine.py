@@ -13,19 +13,15 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-# Make tools/ importable.
 I2C_ROOT = Path(__file__).resolve().parent.parent
-TOOLS_DIR = I2C_ROOT / "tools"
-sys.path.insert(0, str(TOOLS_DIR))
 
-import state_machine as sm  # noqa: E402
+from i2c import state_machine as sm
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 

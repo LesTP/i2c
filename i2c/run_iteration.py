@@ -43,10 +43,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Sibling tools (same dir).
-import assemble_context as ac
-import invariants
-import validate as v
+# Sibling package modules.
+from i2c import assemble_context as ac
+from i2c import invariants
+from i2c import validate as v
 
 
 # ---------------------------------------------------------------------------
@@ -80,14 +80,13 @@ class RunnerError(Exception):
 
 
 def run_state_machine(project_root: Path) -> tuple[str, str]:
-    """Invoke ``tools/state_machine.py`` and return ``(ACTION, NEXT)``.
+    """Invoke ``python -m i2c.state_machine`` and return ``(ACTION, NEXT)``.
 
     Raises ``RunnerError`` if the script exits non-zero or its stdout
     doesn't include both expected lines.
     """
-    script = Path(__file__).resolve().parent / "state_machine.py"
     proc = subprocess.run(
-        [sys.executable, str(script)],
+        [sys.executable, "-m", "i2c.state_machine"],
         cwd=str(project_root),
         capture_output=True,
         text=True,
@@ -119,7 +118,7 @@ def current_phase(project_root: Path) -> int:
 def assemble_prompt(
     project_root: Path, action: str, phase: int, *, backend: str, emit: str = "full"
 ) -> str:
-    """Invoke ``tools/assemble_context.py`` and return the prompt text.
+    """Invoke ``python -m i2c.assemble_context`` and return the prompt text.
 
     ``backend`` selects which adapter's Tool Rules the assembler embeds
     (``CLAUDE.md`` vs ``CODEX.md``) — it must match the backend the prompt
@@ -130,10 +129,9 @@ def assemble_prompt(
     cache-stable prefix (WORKER CONTRACT + TOOL RULES) routed through
     Claude Code's system prompt; ``"user"`` is the per-iteration body.
     """
-    script = Path(__file__).resolve().parent / "assemble_context.py"
     proc = subprocess.run(
         [
-            sys.executable, str(script),
+            sys.executable, "-m", "i2c.assemble_context",
             "--action", action.lower(),
             "--phase", str(phase),
             "--mode", "autonomous",

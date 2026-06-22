@@ -11,18 +11,12 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-# Make tools/ importable.
-TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
-sys.path.insert(0, str(TOOLS_DIR))
-
-import assemble_context as ac  # noqa: E402
-
+from i2c import assemble_context as ac
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
@@ -56,9 +50,12 @@ class TempProject:
         root = Path(self._tmp.name) / "project"
         shutil.copytree(FIXTURE, root)
         if self.with_framework:
-            for name in ("WORKER_SPEC.md", "CLAUDE.md", "CODEX.md"):
-                shutil.copy2(I2C_ROOT / name, root / name)
-            shutil.copytree(I2C_ROOT / "instructions", root / "instructions")
+            # Adapters are project-root assets; copy them from the packaged
+            # templates. WORKER_SPEC.md and instructions/ now resolve from
+            # package-data (§5.3), so they need not be copied into the project.
+            adapters = I2C_ROOT / "i2c" / "data" / "adapters"
+            shutil.copy2(adapters / "claude.md", root / "CLAUDE.md")
+            shutil.copy2(adapters / "codex.md", root / "CODEX.md")
         for relpath, content in self.with_extra.items():
             target = root / relpath
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1058,12 +1055,14 @@ class TestFullPromptAssembly(unittest.TestCase):
             self.assertEqual(rc2, 0)
             self.assertEqual(out1, out2)
 
-    def test_missing_instruction_file_exits_1(self):
+    def test_missing_local_instruction_uses_packaged_default(self):
+        # §5.3: no project-local instructions/execute.md → the packaged default
+        # resolves, so assembly succeeds (was: exit 1 under project-root-only).
         with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS) as root:
-            (root / "instructions" / "execute.md").unlink()
-            rc, _, err = run_cli("--action", "execute", "--phase", "2")
-            self.assertEqual(rc, 1)
-            self.assertIn("ERROR:", err)
+            self.assertFalse((root / "instructions" / "execute.md").exists())
+            rc, out, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Instructions", out)
 
     def test_missing_adapter_file_exits_1(self):
         with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS) as root:
@@ -1073,11 +1072,13 @@ class TestFullPromptAssembly(unittest.TestCase):
             )
             self.assertEqual(rc, 1)
 
-    def test_missing_worker_spec_exits_1(self):
+    def test_missing_local_worker_spec_uses_packaged_default(self):
+        # §5.3: no project-local WORKER_SPEC.md → packaged default resolves.
         with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS) as root:
-            (root / "WORKER_SPEC.md").unlink()
-            rc, _, err = run_cli("--action", "execute", "--phase", "2")
-            self.assertEqual(rc, 1)
+            self.assertFalse((root / "WORKER_SPEC.md").exists())
+            rc, out, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("WORKER CONTRACT", out)
 
 
 # ---------------------------------------------------------------------------
@@ -1393,6 +1394,61 @@ class TestSectionPhaseSummary(unittest.TestCase):
             rc, out, err = run_cli("--section", "phase-summary", "--phase", "99")
             self.assertEqual(rc, 0, msg=err)
             self.assertIn("(no phases.json record)", out)
+
+
+class TestAssetOverrideResolution(unittest.TestCase):
+    """§5.3: WORKER_SPEC.md + instructions/<action>.md resolve project-local
+    override → packaged default (per file)."""
+
+    def test_packaged_worker_spec_used_without_local(self):
+        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
+            rc, out, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            # Packaged WORKER_SPEC body (Main Loop heading) is present.
+            self.assertIn("Main Loop", out)
+
+    def test_local_worker_spec_overrides(self):
+        sentinel = (
+            "# Worker Spec\n\n## Sentinel Override Section\n\n"
+            "OVERRIDE-WORKER-SPEC-MARKER\n"
+        )
+        with TempProject(
+            with_framework=True,
+            with_extra={**_FRAMEWORK_EXTRAS, "WORKER_SPEC.md": sentinel},
+        ):
+            rc, out, err = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("OVERRIDE-WORKER-SPEC-MARKER", out)
+
+    def test_local_instruction_overrides_per_file(self):
+        # Override only plan.md; execute.md must still use the packaged default.
+        plan_override = "# Plan\n\n## Procedure\n\nOVERRIDE-PLAN-MARKER\n"
+        with TempProject(
+            with_framework=True,
+            with_extra={
+                **_FRAMEWORK_EXTRAS,
+                "instructions/plan.md": plan_override,
+            },
+        ):
+            rc_plan, out_plan, err_plan = run_cli("--action", "plan", "--phase", "2")
+            self.assertEqual(rc_plan, 0, msg=err_plan)
+            self.assertIn("OVERRIDE-PLAN-MARKER", out_plan)
+
+            rc_exec, out_exec, err_exec = run_cli("--action", "execute", "--phase", "2")
+            self.assertEqual(rc_exec, 0, msg=err_exec)
+            self.assertNotIn("OVERRIDE-PLAN-MARKER", out_exec)
+            self.assertIn("## Instructions", out_exec)
+
+    def test_resolve_asset_prefers_local(self):
+        with TempProject(with_extra={"WORKER_SPEC.md": "# x\n"}) as root:
+            resolved = ac.resolve_asset(root, "WORKER_SPEC.md")
+            self.assertEqual(resolved, root / "WORKER_SPEC.md")
+
+    def test_resolve_asset_falls_back_to_packaged(self):
+        with TempProject() as root:
+            resolved = ac.resolve_asset(root, "instructions/plan.md")
+            self.assertEqual(resolved, ac.packaged_data_dir() / "instructions" / "plan.md")
+            self.assertTrue(resolved.is_file())
 
 
 if __name__ == "__main__":

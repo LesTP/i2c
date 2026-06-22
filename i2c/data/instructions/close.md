@@ -81,7 +81,7 @@ For each name in `dependencies`:
    `step: null`:
 
    ```bash
-   python3 tools/state.py append devlog.jsonl '{
+   i2c state append devlog.jsonl '{
      "phase": 11,
      "step": null,
      "action": "integration_check",
@@ -118,7 +118,7 @@ in a future iteration. If the lesson is "we picked X because Y", that's a
 because Y silently fails on Z", that's a gotcha.
 
 ```bash
-python3 tools/state.py append-gotcha project.json \
+i2c state append-gotcha project.json \
   "JSONL appends must end with '\\n' or jq will conflate adjacent records"
 ```
 
@@ -163,7 +163,7 @@ Read open decisions (the assembled `Decisions` section in your prompt
 filtered to `status: "open"`). For each one that this phase resolved:
 
 ```bash
-python3 tools/state.py update-record decisions.json \
+i2c state update-record decisions.json \
   --match id=D-16 \
   status=closed \
   decision="Chose JSONL append-only files; benchmarked at 50k events/day under expected load." \
@@ -209,20 +209,20 @@ If nothing changed beyond the Implementation Sequence status flip, that
 one edit is the only one needed.
 
 `ARCHITECTURE.md` is markdown, not structured state — direct file edit,
-no `state.py` call. The edit ships in the close commit (step 10).
+no `i2c state` call. The edit ships in the close commit (step 10).
 
 ### 8. Update PROJECT.md risks (optional)
 
 If this phase resolved an item listed in `PROJECT.md`'s Risks section,
 edit the file to move that risk to Resolved (or remove). `PROJECT.md` is
-markdown, not structured state — direct file edit, no `state.py` call.
+markdown, not structured state — direct file edit, no `i2c state` call.
 
 Skip if this phase didn't touch risks.
 
 ### 9. Mark the phase complete
 
 ```bash
-python3 tools/state.py complete phases.json --phase $PHASE
+i2c state complete phases.json --phase $PHASE
 ```
 
 This sets `phases.json[id=$PHASE].status = "complete"`. No commit hash
@@ -249,7 +249,7 @@ One entry per CLOSE invocation. `action: "close"`, `step: null`,
 touched and counts.
 
 ```bash
-python3 tools/state.py append devlog.jsonl '{
+i2c state append devlog.jsonl '{
   "phase": 11,
   "step": null,
   "action": "close",
@@ -270,7 +270,7 @@ python3 tools/state.py append devlog.jsonl '{
 ### 12. Set the gate
 
 ```bash
-python3 tools/state.py set project.json state=audit_boundary
+i2c state set project.json state=audit_boundary
 ```
 
 `state=audit_boundary` halts the loop; the operator (or wrapper)
@@ -307,11 +307,11 @@ pytest tests/event_store
 # No integration check (dependencies == []).
 
 # Promote a gotcha:
-python3 tools/state.py append-gotcha project.json \
+i2c state append-gotcha project.json \
   "fsync after every append; the OS write cache will lose tail entries on crash without it"
 
 # Close the open decision D-16:
-python3 tools/state.py update-record decisions.json \
+i2c state update-record decisions.json \
   --match id=D-16 \
   status=closed \
   decision="JSONL append-only files. 24 tests, including injected-interrupt crash test, pass."
@@ -325,17 +325,17 @@ python3 tools/state.py update-record decisions.json \
 # No PROJECT.md risk to close.
 
 # Mark phase complete:
-python3 tools/state.py complete phases.json --phase 5
+i2c state complete phases.json --phase 5
 
 # Commit:
 git add ARCHITECTURE.md .state/
 git commit -m "5: close — event_store core storage, D-16 resolved"
 
 # Devlog:
-python3 tools/state.py append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule); ARCHITECTURE.md event_store row → Complete. No ARCH_<module> contract changes.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule); ARCHITECTURE.md event_store row → Complete. No ARCH_<module> contract changes.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
 
 # Set the gate:
-python3 tools/state.py set project.json state=audit_boundary
+i2c state set project.json state=audit_boundary
 
 # Emit exit signal (EXIT 0).
 ```
@@ -352,10 +352,10 @@ pytest tests/orchestrator tests/boundary
 # 31 passed in 4.2s
 
 # Integration check (because dependencies == ["event_store"]):
-python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"integration_check","outcome":"complete","summary":"orchestrator <- event_store: types match; boundary test exercising real event_store through orchestrator.dispatch_action passes; no bridge; no import violations.","contracts":[],"timestamp":"2026-06-04T10:50:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"integration_check","outcome":"complete","summary":"orchestrator <- event_store: types match; boundary test exercising real event_store through orchestrator.dispatch_action passes; no bridge; no import violations.","contracts":[],"timestamp":"2026-06-04T10:50:00Z"}'
 
 # Gotcha promotion (one learning from the phase):
-python3 tools/state.py append-gotcha project.json \
+i2c state append-gotcha project.json \
   "idempotency_key generation must include the timestamp_minute to survive retries across loop iterations"
 
 # Contract propagation — devlog step 11.4 logged contracts=['ARCH_orchestrator.md']
@@ -370,18 +370,18 @@ git --no-pager show $(git log --pretty=%H --grep="^11\.4:" -n 1) --stat | grep A
 # file edit; both edits in one pass.)
 
 # Close two decisions:
-python3 tools/state.py update-record decisions.json \
+i2c state update-record decisions.json \
   --match id=D-22 \
   status=closed \
   decision="idempotency_key shipped. Generated as sha256(worker_id || action_id || timestamp_minute)[:16]. Pass-through verified by boundary test."
 
-python3 tools/state.py update-record decisions.json \
+i2c state update-record decisions.json \
   --match id=D-17 \
   status=closed \
   decision="Phase 11 stayed scoped to pipeline + event loop; control-loop semantics deferred to phase 12 as planned."
 
 # Mark phase complete:
-python3 tools/state.py complete phases.json --phase 11
+i2c state complete phases.json --phase 11
 
 # Commit (ARCH_orchestrator.md was propagated immediately in step 11.4;
 # ARCHITECTURE.md picks up the status flip + coupling-note update):
@@ -389,10 +389,10 @@ git add ARCHITECTURE.md .state/
 git commit -m "11: close — orchestrator complete, 2 decisions resolved"
 
 # Devlog:
-python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed; ARCHITECTURE.md orchestrator row → Complete plus coupling-note refresh. ARCH_orchestrator.md propagation confirmed in step 11.4 commit.","contracts":[],"timestamp":"2026-06-04T11:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed; ARCHITECTURE.md orchestrator row → Complete plus coupling-note refresh. ARCH_orchestrator.md propagation confirmed in step 11.4 commit.","contracts":[],"timestamp":"2026-06-04T11:00:00Z"}'
 
 # Set the gate:
-python3 tools/state.py set project.json state=audit_boundary
+i2c state set project.json state=audit_boundary
 ```
 
 ### Close blocked by integration check
@@ -407,7 +407,7 @@ pytest tests/orchestrator
 # 18 passed
 
 # Integration check fails:
-python3 tools/state.py append devlog.jsonl '{"phase":8,"step":null,"action":"integration_check","outcome":"failed","summary":"orchestrator -> event_store: orchestrator passes idempotency_key as positional arg; event_store.append requires kwarg. Boundary test errors with TypeError. Bug in orchestrator; needs fix before close.","contracts":["ARCH_event_store.md","ARCH_orchestrator.md"],"timestamp":"2026-06-04T11:15:00Z"}'
+i2c state append devlog.jsonl '{"phase":8,"step":null,"action":"integration_check","outcome":"failed","summary":"orchestrator -> event_store: orchestrator passes idempotency_key as positional arg; event_store.append requires kwarg. Boundary test errors with TypeError. Bug in orchestrator; needs fix before close.","contracts":["ARCH_event_store.md","ARCH_orchestrator.md"],"timestamp":"2026-06-04T11:15:00Z"}'
 
 # Do NOT promote gotchas, do NOT close decisions, do NOT mark phase complete.
 # Emit EXIT 2 with reason "integration check failed: orchestrator/event_store call signature mismatch".
@@ -418,7 +418,7 @@ python3 tools/state.py append devlog.jsonl '{"phase":8,"step":null,"action":"int
 ## Known tooling gap referenced above
 <!-- assembler:omit_in_prompt -->
 
-- **`state.py` lacks a read-side query helper**
+- **`i2c state` lacks a read-side query helper**
   devlog.jsonl --phase 11 --where 'contracts != []'`). The contract scan
   in step 5 uses raw `jq` instead. This is intentional for now — reads
   don't need atomicity, and the assembler is the eventual home for

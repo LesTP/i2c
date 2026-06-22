@@ -51,7 +51,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
 5. **Mark the step complete.** Capture the commit hash and write it:
 
    ```bash
-   python3 tools/state.py complete steps.json --phase N --step M --commit <hash>
+   i2c state complete steps.json --phase N --step M --commit <hash>
    ```
 
    The CLI atomically rewrites `steps.json` after validating the schema
@@ -62,7 +62,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
    `action`, `outcome`, `summary`, `timestamp`. Optional: `contracts`, `commit`.
 
    ```bash
-   python3 tools/state.py append devlog.jsonl '{
+   i2c state append devlog.jsonl '{
      "phase": 11,
      "step": 3,
      "action": "execute",
@@ -94,7 +94,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
      state to `review`:
 
      ```bash
-     python3 tools/state.py set project.json state=review
+     i2c state set project.json state=review
      ```
 
      Then emit the exit signal. The next invocation will be a REVIEW action.
@@ -127,7 +127,7 @@ than being pre-listed. Budget is wall-clock, not step count
    `blocked` (need human input before next iteration).
 
    ```bash
-   python3 tools/state.py append devlog.jsonl '{
+   i2c state append devlog.jsonl '{
      "phase": 14,
      "step": null,
      "action": "execute",
@@ -146,13 +146,13 @@ than being pre-listed. Budget is wall-clock, not step count
    - **Time exhausted OR phase goal met?** Transition to `review`:
 
      ```bash
-     python3 tools/state.py set project.json state=review
+     i2c state set project.json state=review
      ```
 
    - **Goal needs human sign-off mid-phase?** Transition to escalation and exit:
 
      ```bash
-     python3 tools/state.py set project.json state=audit_escalation
+     i2c state set project.json state=audit_escalation
      ```
 
      Emit exit signal with outcome=`blocked`. The state machine returns
@@ -211,7 +211,7 @@ If, mid-step, you discover work that wasn't in the original step plan:
 - **Adjacent work** (related but not strictly required): finish the current
   step normally, then flag the adjacent work in the devlog `summary` with a
   prefix like `Deferred:`. The next PLAN action will surface deferred items
-  for scheduling. (state.py has no `add-step` subcommand by design — step
+  for scheduling. (`i2c state` has no `add-step` subcommand by design — step
   authoring is the PLAN action's responsibility, not EXECUTE's.)
 - **Beyond this phase's scope:** hard stop. Emit `EXIT 2` with reason
   "scope expansion". Log via devlog entry `outcome: "escalate"`.
@@ -226,7 +226,7 @@ Three-strikes rule on the same problem:
 
 1. First failure → diagnose and apply a targeted fix.
 2. Same failure → try a fundamentally different approach.
-3. Third failure → stop. Set `state=audit_escalation` via `state.py`,
+3. Third failure → stop. Set `state=audit_escalation` via `i2c state`,
    append devlog entry with `outcome: "escalate"` and a summary of what
    you tried. Emit `EXIT 2`. Do not commit a half-working state.
 
@@ -247,11 +247,11 @@ git add src/orchestrator.py tests/test_orchestrator.py
 git commit -m "11.3: Wire orchestrator slash commands"
 # captured hash: 9876abc
 
-python3 tools/state.py complete steps.json --phase 11 --step 3 --commit 9876abc
-python3 tools/state.py append devlog.jsonl '{"phase":11,"step":3,"action":"execute","outcome":"complete","summary":"Wired orchestrator slash commands through CodexClient. 7 new tests pass.","contracts":[],"commit":"9876abc","timestamp":"2026-06-04T04:30:00Z"}'
+i2c state complete steps.json --phase 11 --step 3 --commit 9876abc
+i2c state append devlog.jsonl '{"phase":11,"step":3,"action":"execute","outcome":"complete","summary":"Wired orchestrator slash commands through CodexClient. 7 new tests pass.","contracts":[],"commit":"9876abc","timestamp":"2026-06-04T04:30:00Z"}'
 
 # Last step of the phase? Transition:
-python3 tools/state.py set project.json state=review
+i2c state set project.json state=review
 
 # Emit exit signal (2-line block, see Worker Contract §4).
 ```
@@ -266,8 +266,8 @@ This is **cross-module breakage** — hard stop. Do not commit the signature
 change.
 
 ```bash
-python3 tools/state.py set project.json state=audit_escalation
-python3 tools/state.py append devlog.jsonl '{"phase":5,"step":2,"action":"execute","outcome":"escalate","summary":"Idempotency key on EventStore.append would break orchestrator (already built). Needs decision: bump consumer or pick non-breaking shape.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T04:45:00Z"}'
+i2c state set project.json state=audit_escalation
+i2c state append devlog.jsonl '{"phase":5,"step":2,"action":"execute","outcome":"escalate","summary":"Idempotency key on EventStore.append would break orchestrator (already built). Needs decision: bump consumer or pick non-breaking shape.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T04:45:00Z"}'
 
 # Emit EXIT 2 with reason "contract change affects built module: orchestrator".
 ```
@@ -277,8 +277,8 @@ python3 tools/state.py append devlog.jsonl '{"phase":5,"step":2,"action":"execut
 Step 8.4 keeps failing the same flaky test across three tries.
 
 ```bash
-python3 tools/state.py set project.json state=audit_escalation
-python3 tools/state.py append devlog.jsonl '{"phase":8,"step":4,"action":"execute","outcome":"escalate","summary":"test_orchestrator_recovery fails on third attempt with same TimeoutError. Tried: (1) bumping timeout, (2) seeding deterministic clock, (3) running test in isolation. Pattern suggests deeper race in PatchManager.","timestamp":"2026-06-04T05:15:00Z"}'
+i2c state set project.json state=audit_escalation
+i2c state append devlog.jsonl '{"phase":8,"step":4,"action":"execute","outcome":"escalate","summary":"test_orchestrator_recovery fails on third attempt with same TimeoutError. Tried: (1) bumping timeout, (2) seeding deterministic clock, (3) running test in isolation. Pattern suggests deeper race in PatchManager.","timestamp":"2026-06-04T05:15:00Z"}'
 
 # Do NOT mark the step complete. Do NOT commit a half-working fix.
 # Emit EXIT 2 with reason "3 consecutive failures on step 8.4".
@@ -292,7 +292,7 @@ Phase 14, message formatting Refine. Iteration 3 of N.
 git add src/formatting.py
 git commit -m "14.iter3: Tighten markdown escape edge cases"
 
-python3 tools/state.py append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outcome":"partial","summary":"Iteration 3: closed the parens-in-link bug. Still surfacing one MarkdownV2 edge case with nested code blocks.","commit":"abc1234","timestamp":"2026-06-04T05:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outcome":"partial","summary":"Iteration 3: closed the parens-in-link bug. Still surfacing one MarkdownV2 edge case with nested code blocks.","commit":"abc1234","timestamp":"2026-06-04T05:00:00Z"}'
 
 # Time remaining, more iterations planned. Stay in execute, emit exit signal.
 ```
@@ -315,6 +315,6 @@ Stay in your lane: do the step, record the result, exit.
 ## Known tooling gaps referenced above
 <!-- assembler:omit_in_prompt -->
 
-- **Mid-phase step append:** `state.py` has no `append-step` subcommand.
+- **Mid-phase step append:** `i2c state` has no `append-step` subcommand.
   Adjacent work surfaces in the next PLAN action via `Deferred:` flag in
   devlog summary. Tracked as **FU-2** in `FOLLOWUPS.md`.

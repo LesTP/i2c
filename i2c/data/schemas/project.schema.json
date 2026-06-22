@@ -7,6 +7,11 @@
   "required": ["phase", "state"],
   "additionalProperties": false,
   "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Framework schema version this .state/ targets. Absent ⇒ legacy (pre-versioning, treated as version 0) → run `i2c migrate`. i2c init stamps the current version."
+    },
     "phase": {
       "type": "integer",
       "minimum": 0,

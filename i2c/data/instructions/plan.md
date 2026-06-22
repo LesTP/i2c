@@ -83,12 +83,12 @@ your plan devlog summary.
 **How to escalate:**
 
 ```bash
-python3 tools/state.py append devlog.jsonl '{
+i2c state append devlog.jsonl '{
   "phase": 11, "step": null, "action": "plan", "outcome": "blocked",
   "summary": "Escalating: <trigger>. <what you observed>. <what unblocks>.",
   "contracts": [], "timestamp": "2026-06-04T07:30:00Z"
 }'
-python3 tools/state.py set project.json state=audit_escalation
+i2c state set project.json state=audit_escalation
 # Emit exit signal: EXIT 2; REASON matches the trigger.
 ```
 
@@ -122,7 +122,7 @@ mix regimes in one phase, split it.
 If the phase record does not yet exist in `phases.json`, append it:
 
 ```bash
-python3 tools/state.py append-record phases.json '{
+i2c state append-record phases.json '{
   "id": 11,
   "module": "orchestrator",
   "title": "Pipeline + event loop",
@@ -144,7 +144,7 @@ If the record already exists as `pending`, leave it as-is. Phase status is
 binary (`pending` until `complete`); the active phase is identified by
 `project.json.phase`, not by an in-flight status field. If you need to amend
 `dependencies` / `regime` / `title` on the existing record, use
-`state.py update-record phases.json --match id=N ...`.
+`i2c state update-record phases.json --match id=N ...`.
 
 ### 5. *(Conditional)* Pre-plan: Dependency Probe - non-leaf modules only
 <!-- assembler:requires=dependencies_nonempty -->
@@ -179,7 +179,7 @@ Procedure:
    set `step: null` (probes are phase-level, not step-bound):
 
    ```bash
-   python3 tools/state.py append devlog.jsonl '{
+   i2c state append devlog.jsonl '{
      "phase": 11,
      "step": null,
      "action": "probe",
@@ -218,14 +218,14 @@ Break the phase into the smallest testable steps. Each step:
 Write one record per step, in order:
 
 ```bash
-python3 tools/state.py append-record steps.json '{
+i2c state append-record steps.json '{
   "phase": 11,
   "step": 1,
   "title": "Wire pipeline topology",
   "status": "pending",
   "notes": "Construct the DI graph; no behavior yet. Tests verify the wiring shape."
 }'
-python3 tools/state.py append-record steps.json '{
+i2c state append-record steps.json '{
   "phase": 11,
   "step": 2,
   "title": "Event loop with debounced extraction",
@@ -240,7 +240,7 @@ step numbers across phases — `(phase, step)` is the natural key.
 Set `project.json.budget_type=steps` if it isn't already:
 
 ```bash
-python3 tools/state.py set project.json budget_type=steps
+i2c state set project.json budget_type=steps
 ```
 
 `steps_remaining` is managed by the state machine; you do not set it
@@ -255,7 +255,7 @@ show → react → adjust cycles. Plan a **time budget**, not a step count.
    step 4) and add a longer-form goal description as a decision:
 
    ```bash
-   python3 tools/state.py append-record decisions.json '{
+   i2c state append-record decisions.json '{
      "id": "D-14",
      "phase": 14,
      "title": "Phase 14 goal: telegram message formatting",
@@ -272,7 +272,7 @@ show → react → adjust cycles. Plan a **time budget**, not a step count.
 2. Set the time budget on `project.json`:
 
    ```bash
-   python3 tools/state.py set project.json budget_type=time time_budget_seconds=10800 time_started_at=2026-06-04T07:30:00Z
+   i2c state set project.json budget_type=time time_budget_seconds=10800 time_started_at=2026-06-04T07:30:00Z
    ```
 
    Choose `time_budget_seconds` based on the phase's perceived size.
@@ -283,7 +283,7 @@ show → react → adjust cycles. Plan a **time budget**, not a step count.
    exemplifies the goal. Record it as a decision with `status: "open"`:
 
    ```bash
-   python3 tools/state.py append-record decisions.json '{
+   i2c state append-record decisions.json '{
      "id": "D-15",
      "phase": 14,
      "title": "First item: render a 3-paragraph workflow update",
@@ -305,7 +305,7 @@ the decision the phase must produce.
 1. Write the decision record with `status: "open"`:
 
    ```bash
-   python3 tools/state.py append-record decisions.json '{
+   i2c state append-record decisions.json '{
      "id": "D-16",
      "phase": 16,
      "title": "Storage backend for domain events",
@@ -323,7 +323,7 @@ the decision the phase must produce.
 2. Set the time box on `project.json`:
 
    ```bash
-   python3 tools/state.py set project.json budget_type=time time_budget_seconds=7200 time_started_at=2026-06-04T07:30:00Z
+   i2c state set project.json budget_type=time time_budget_seconds=7200 time_started_at=2026-06-04T07:30:00Z
    ```
 
    Explore time boxes are typically tighter than Refine: 30 minutes to
@@ -347,7 +347,7 @@ to know about → append to `decisions.json`. Examples:
   ARCHITECTURE.md."
 
 ```bash
-python3 tools/state.py append-record decisions.json '{
+i2c state append-record decisions.json '{
   "id": "D-17",
   "phase": 11,
   "title": "Phase 11 split: pipeline vs. control loop",
@@ -372,7 +372,7 @@ One entry per PLAN invocation. `action: "plan"`, `step: null` (plans are
 phase-level), `outcome: "complete"` for a finished plan:
 
 ```bash
-python3 tools/state.py append devlog.jsonl '{
+i2c state append devlog.jsonl '{
   "phase": 11,
   "step": null,
   "action": "plan",
@@ -405,7 +405,7 @@ Set `project.json.state=execute`. The state machine will then dispatch the
 next invocation as EXECUTE.
 
 ```bash
-python3 tools/state.py set project.json state=execute
+i2c state set project.json state=execute
 ```
 
 Then emit the exit signal (2-line block, see Worker Contract §4). Do not
@@ -435,20 +435,20 @@ start the first execute step in this invocation.
 Phase 5 (`event_store`, Build, no dependencies). Three steps.
 
 ```bash
-python3 tools/state.py append-record phases.json '{"id":5,"module":"event_store","title":"Core storage","regime":"build","dependencies":[],"status":"pending"}'
+i2c state append-record phases.json '{"id":5,"module":"event_store","title":"Core storage","regime":"build","dependencies":[],"status":"pending"}'
 
-python3 tools/state.py append-record steps.json '{"phase":5,"step":1,"title":"Append-only writer with fsync","status":"pending"}'
-python3 tools/state.py append-record steps.json '{"phase":5,"step":2,"title":"Cursor-based reader","status":"pending"}'
-python3 tools/state.py append-record steps.json '{"phase":5,"step":3,"title":"Crash-safety test suite","status":"pending"}'
+i2c state append-record steps.json '{"phase":5,"step":1,"title":"Append-only writer with fsync","status":"pending"}'
+i2c state append-record steps.json '{"phase":5,"step":2,"title":"Cursor-based reader","status":"pending"}'
+i2c state append-record steps.json '{"phase":5,"step":3,"title":"Crash-safety test suite","status":"pending"}'
 
-python3 tools/state.py set project.json budget_type=steps
+i2c state set project.json budget_type=steps
 
-python3 tools/state.py append devlog.jsonl '{"phase":5,"step":null,"action":"plan","outcome":"complete","summary":"Phase 5 (event_store, Build, leaf): 3 steps covering writer, reader, crash-safety.","contracts":[],"timestamp":"2026-06-04T07:30:00Z"}'
+i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"plan","outcome":"complete","summary":"Phase 5 (event_store, Build, leaf): 3 steps covering writer, reader, crash-safety.","contracts":[],"timestamp":"2026-06-04T07:30:00Z"}'
 
 git add .state/
 git commit -m "5: plan — event_store core storage"
 
-python3 tools/state.py set project.json state=execute
+i2c state set project.json state=execute
 # Emit exit signal.
 ```
 
@@ -458,24 +458,24 @@ Phase 11 (`orchestrator`, Build, depends on `event_store`). Probe runs
 first; mismatch surfaces; one step added to handle the gap.
 
 ```bash
-python3 tools/state.py append-record phases.json '{"id":11,"module":"orchestrator","title":"Pipeline + event loop","regime":"build","dependencies":["event_store"],"status":"pending"}'
+i2c state append-record phases.json '{"id":11,"module":"orchestrator","title":"Pipeline + event loop","regime":"build","dependencies":["event_store"],"status":"pending"}'
 
 # Probe finds idempotency_key kwarg is in the real surface but not the fake.
-python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"probe","outcome":"complete","summary":"Probed event_store: append() takes idempotency_key kwarg in real impl; fake omits it. Will adapt orchestrator to pass it; bug logged for fake.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T07:30:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"probe","outcome":"complete","summary":"Probed event_store: append() takes idempotency_key kwarg in real impl; fake omits it. Will adapt orchestrator to pass it; bug logged for fake.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T07:30:00Z"}'
 
-python3 tools/state.py append-record decisions.json '{"id":"D-22","phase":11,"title":"Orchestrator passes idempotency_key","status":"closed","priority":"high","decision":"Generate idempotency_key from (worker_id, action_id, timestamp_minute). Pass through on every event_store.append call.","rationale":"Probe surfaced gap; adopting the real surface now avoids a retrofit."}'
+i2c state append-record decisions.json '{"id":"D-22","phase":11,"title":"Orchestrator passes idempotency_key","status":"closed","priority":"high","decision":"Generate idempotency_key from (worker_id, action_id, timestamp_minute). Pass through on every event_store.append call.","rationale":"Probe surfaced gap; adopting the real surface now avoids a retrofit."}'
 
-python3 tools/state.py append-record steps.json '{"phase":11,"step":1,"title":"Pipeline topology with DI","status":"pending"}'
-python3 tools/state.py append-record steps.json '{"phase":11,"step":2,"title":"Event loop with debounced extraction","status":"pending"}'
-python3 tools/state.py append-record steps.json '{"phase":11,"step":3,"title":"Slash command routing","status":"pending"}'
-python3 tools/state.py append-record steps.json '{"phase":11,"step":4,"title":"Idempotency_key generation + boundary test","status":"pending","notes":"Added after dep-probe surfaced gap. Boundary test exercises real event_store through orchestrator."}'
+i2c state append-record steps.json '{"phase":11,"step":1,"title":"Pipeline topology with DI","status":"pending"}'
+i2c state append-record steps.json '{"phase":11,"step":2,"title":"Event loop with debounced extraction","status":"pending"}'
+i2c state append-record steps.json '{"phase":11,"step":3,"title":"Slash command routing","status":"pending"}'
+i2c state append-record steps.json '{"phase":11,"step":4,"title":"Idempotency_key generation + boundary test","status":"pending","notes":"Added after dep-probe surfaced gap. Boundary test exercises real event_store through orchestrator."}'
 
-python3 tools/state.py append devlog.jsonl '{"phase":11,"step":null,"action":"plan","outcome":"complete","summary":"Phase 11 (orchestrator, Build, non-leaf): 4 steps after dep-probe added step 4 for idempotency_key. D-22 records the decision.","contracts":[],"timestamp":"2026-06-04T07:45:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"plan","outcome":"complete","summary":"Phase 11 (orchestrator, Build, non-leaf): 4 steps after dep-probe added step 4 for idempotency_key. D-22 records the decision.","contracts":[],"timestamp":"2026-06-04T07:45:00Z"}'
 
 git add .state/
 git commit -m "11: plan — orchestrator pipeline + event loop"
 
-python3 tools/state.py set project.json state=execute
+i2c state set project.json state=execute
 ```
 
 ### Refine phase
@@ -483,20 +483,20 @@ python3 tools/state.py set project.json state=execute
 Phase 14 (`formatting`, Refine, no dependencies). Goal-based, time-budgeted.
 
 ```bash
-python3 tools/state.py append-record phases.json '{"id":14,"module":"formatting","title":"Telegram message formatting polish","regime":"refine","dependencies":[],"status":"pending"}'
+i2c state append-record phases.json '{"id":14,"module":"formatting","title":"Telegram message formatting polish","regime":"refine","dependencies":[],"status":"pending"}'
 
-python3 tools/state.py append-record decisions.json '{"id":"D-30","title":"Phase 14 goal","status":"closed","priority":"high","decision":"MarkdownV2 escaping handles all edge cases observed in last week of group activity; messages render correctly on iOS, Android, Web.","rationale":"Recurring formatting bugs in production; correctness is perceptual."}'
+i2c state append-record decisions.json '{"id":"D-30","title":"Phase 14 goal","status":"closed","priority":"high","decision":"MarkdownV2 escaping handles all edge cases observed in last week of group activity; messages render correctly on iOS, Android, Web.","rationale":"Recurring formatting bugs in production; correctness is perceptual."}'
 
-python3 tools/state.py append-record decisions.json '{"id":"D-31","title":"First item: 3-paragraph workflow update","status":"open","priority":"high","decision":"First iteration produces a 3-paragraph workflow update with code fences, bold, bullet list; show to operator.","rationale":"Smallest input that exercises the markdown surface."}'
+i2c state append-record decisions.json '{"id":"D-31","title":"First item: 3-paragraph workflow update","status":"open","priority":"high","decision":"First iteration produces a 3-paragraph workflow update with code fences, bold, bullet list; show to operator.","rationale":"Smallest input that exercises the markdown surface."}'
 
-python3 tools/state.py set project.json budget_type=time time_budget_seconds=10800 time_started_at=2026-06-04T07:30:00Z
+i2c state set project.json budget_type=time time_budget_seconds=10800 time_started_at=2026-06-04T07:30:00Z
 
-python3 tools/state.py append devlog.jsonl '{"phase":14,"step":null,"action":"plan","outcome":"complete","summary":"Phase 14 (formatting, Refine): 3-hour time budget. Goal D-30 closed; first item D-31 open. No step pre-plan.","contracts":[],"timestamp":"2026-06-04T07:45:00Z"}'
+i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"plan","outcome":"complete","summary":"Phase 14 (formatting, Refine): 3-hour time budget. Goal D-30 closed; first item D-31 open. No step pre-plan.","contracts":[],"timestamp":"2026-06-04T07:45:00Z"}'
 
 git add .state/
 git commit -m "14: plan — telegram formatting Refine"
 
-python3 tools/state.py set project.json state=execute
+i2c state set project.json state=execute
 ```
 
 ---
@@ -504,7 +504,7 @@ python3 tools/state.py set project.json state=execute
 ## Known tooling gaps referenced above
 <!-- assembler:omit_in_prompt -->
 
-- **No `state.py set` on array files.** `update-record` covers single-record
+- **No `i2c state set` on array files.** `update-record` covers single-record
   field updates (used above to amend `dependencies` etc. on existing phase
   records). Generic-set across N records is not supported. Tracked as
   **FU-3** in `FOLLOWUPS.md`.

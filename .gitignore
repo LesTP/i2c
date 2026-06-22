@@ -1,6 +1,8 @@
 # Python
 __pycache__/
 *.py[cod]
-
-# Scratch files — convention: prefix one-off scratch with .tmp_
+*.egg-info/
+build/
+dist/
+# Scratch files - convention: prefix one-off scratch with .tmp_
 .tmp_*

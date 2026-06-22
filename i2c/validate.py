@@ -11,6 +11,7 @@ Only external dependency: jsonschema.
 from __future__ import annotations
 
 import json
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +34,13 @@ EXIT_SIGNAL_SCHEMA = "exit_signal.schema.json"
 
 
 def schemas_dir() -> Path:
-    """Default schemas directory: sibling 'schemas/' to this file's parent."""
-    return Path(__file__).resolve().parent.parent / "schemas"
+    """Packaged schemas directory: ``i2c/data/schemas`` resolved as package data.
+
+    Schemas ship inside the installed package (DESIGN_packaging_v1.md §5.2),
+    so they are located relative to the package, not the consumer's project.
+    ``importlib.resources.files`` works for both editable and wheel installs.
+    """
+    return Path(resources.files("i2c") / "data" / "schemas")
 
 
 def load_schema(name: str, *, schemas_root: Path | None = None) -> dict[str, Any]:

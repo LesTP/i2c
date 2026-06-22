@@ -1,0 +1,11 @@
+# i2c project configuration.
+#
+# Defaults for `i2c run`. Precedence: CLI flag > this file > built-in default.
+# Uncomment and edit a key to change its default; commented keys fall back to
+# the built-in (claude / sonnet / 5.00). Secrets / API keys do NOT belong here —
+# configure those via environment variables (see the quickstart).
+
+[run]
+# backend = "[Backend]"      # claude | codex
+# model = "sonnet"
+# max_budget_usd = 5.00

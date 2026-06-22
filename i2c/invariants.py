@@ -42,9 +42,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Sibling tool imports (same pattern as state_machine.py).
-import assemble_context as ac
-import validate as v
+# Sibling package modules.
+from i2c import assemble_context as ac
+from i2c import validate as v
 
 
 ACTIONS = ("plan", "execute", "review", "close")

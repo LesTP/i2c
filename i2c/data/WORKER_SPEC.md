@@ -20,7 +20,7 @@ You are a **stateless worker** in an autonomous development loop.
   scheduling, or communicate with users.
 
 Your job each invocation: receive an assembled prompt, perform the
-action it specifies, write outcomes to `.state/` via `tools/state.py`,
+action it specifies, write outcomes to `.state/` via `i2c state`,
 and emit the exit signal defined in §4.
 
 ---
@@ -28,7 +28,7 @@ and emit the exit signal defined in §4.
 ## 2. Main Loop
 
 The state machine decides what action you perform. **The runner has
-already called `state_machine.py` before invoking you**, and the result —
+already determined the next ACTION before invoking you**, and the result —
 `ACTION` and `NEXT` — arrived in your prompt's `Action Context` section.
 For single-step invocations (the common case, `STEP_BUDGET = 1`), this is
 all the state-machine interaction you need: do the action, emit the exit
@@ -50,24 +50,24 @@ yourself between steps:
 
 ```
 LOOP:
-  1. output=$(python tools/state_machine.py)
+  1. output=$(i2c next-action)
   2. ACTION = parse "ACTION:" from output
      NEXT   = parse "NEXT:" from output
   3. if ACTION == "EXIT" → emit exit signal, stop
   4. perform the action (PLAN / EXECUTE / REVIEW / CLOSE)
   5. if error → emit exit signal with EXIT 2, stop
-  6. complete the action's writes via state.py
-     (state.py complete steps.json --phase N --step M --commit ...)
-     (state.py append devlog.jsonl '...')
-     (state.py set project.json state=$NEXT, etc.)
+  6. complete the action's writes via i2c state
+     (i2c state complete steps.json --phase N --step M --commit ...)
+     (i2c state append devlog.jsonl '...')
+     (i2c state set project.json state=$NEXT, etc.)
   7. goto 1
 ```
 
-State writes go through `python3 tools/state.py` — never through `sed`,
+State writes go through `i2c state` — never through `sed`,
 never through direct file edits. The CLI guarantees atomic writes and
 schema validation; ad-hoc edits don't.
 
-Between steps, you may also call `python3 tools/assemble_context.py` for
+Between steps, you may also call `i2c assemble` for
 fresh single-section context. Bounded set:
 
 - `--section architecture` — full ARCHITECTURE.md
@@ -83,10 +83,10 @@ the step budget.
 
 Two contracts you must NOT break. Both have already cost work in
 production loops. They apply when you are the one calling
-`state_machine.py` (multi-step mode); in single-step mode the runner
-calls it and you never invoke it.
+`i2c next-action` (multi-step mode); in single-step mode the runner
+determines it and you never invoke it.
 
-**1. Single call per loop iteration.** Call `state_machine.py` exactly
+**1. Single call per loop iteration.** Call `i2c next-action` exactly
 ONCE per iteration — at the top, before the action. Never re-call inside
 or after the action. The script decrements budget on every call.
 "Defensive" re-calls ("let me check the controller before touching
@@ -95,9 +95,9 @@ files") drop a step.
 If your context feels fuzzy mid-action — long file read, session resume,
 internal recovery moment — assume the action the script dispatched is
 **still in flight** and complete it. Re-read your own previous tool
-output to reorient if needed. Only call `state_machine.py` again after
-you have completed steps 4–7 of the LOOP (action writes via state.py,
-state transition via state.py).
+output to reorient if needed. Only call `i2c next-action` again after
+you have completed steps 4–7 of the LOOP (action writes via i2c state,
+state transition via i2c state).
 
 **2. Trust the script's verdict; never self-judge.** The script decides
 EXIT, REVIEW, EXECUTE, etc. — based on `STEP_BUDGET`, pending-step count,
@@ -112,7 +112,7 @@ call it again. Do NOT:
 
 If the script keeps returning EXECUTE and you have completed all named
 steps in the phase, that means a step's status is still `pending` in
-`steps.json` — find it and complete it via state.py, don't bypass the
+`steps.json` — find it and complete it via i2c state, don't bypass the
 script.
 
 **Documented incidents these rules address (real production failures):**
@@ -170,7 +170,7 @@ duplicated in the signal. The runner validates the emitted block against
 <!-- assembler:autonomous_only -->
 
 - **Commits:** Commit per step without waiting for human approval. Log
-  decisions to `decisions.json` (via `state.py append-record`) for
+  decisions to `decisions.json` (via `i2c state append-record`) for
   asynchronous audit.
 - **Scope expansion:** Beyond the defined phase is a hard stop — EXIT 2.
 - **Contract changes affecting other modules:** Hard stop — log via
@@ -190,7 +190,7 @@ duplicated in the signal. The runner validates the emitted block against
   from `.state/` and the assembled prompt.
 - Do **not** skip the exit signal.
 - Do **not** write to `.state/` files directly with `sed`, `echo >`,
-  text editors, or any tool other than `tools/state.py`. The CLI
+  text editors, or any tool other than `i2c state`. The CLI
   guarantees atomic, schema-validated writes.
 - Do **not** read governance files (this spec, instruction files,
   adapter files, ARCH files) as if you needed to "look them up" —

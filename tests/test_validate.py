@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import json
-import sys
 import unittest
 from pathlib import Path
 
-# Make tools/ importable.
-TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
-sys.path.insert(0, str(TOOLS_DIR))
-
-import validate as v  # noqa: E402
+from i2c import validate as v
 
 
 class TestLoadSchema(unittest.TestCase):
@@ -226,6 +221,18 @@ class TestProjectSchemaBudgetFields(unittest.TestCase):
     def test_budget_fields_all_optional(self):
         # Pure step-mode project doesn't need to set budget fields.
         v.validate_json_schema(self._project(), self.schema)
+
+    def test_schema_version_accepted(self):
+        v.validate_json_schema(self._project(schema_version=1), self.schema)
+
+    def test_schema_version_optional(self):
+        # Unversioned (legacy) project still validates.
+        v.validate_json_schema(self._project(), self.schema)
+
+    def test_schema_version_below_minimum_rejected(self):
+        # 0 is the in-code "legacy" sentinel; it must not appear on disk.
+        with self.assertRaisesRegex(ValueError, "schema_version|minimum"):
+            v.validate_json_schema(self._project(schema_version=0), self.schema)
 
 
 class TestDecisionsPhaseField(unittest.TestCase):

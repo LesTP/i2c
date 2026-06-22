@@ -19,16 +19,13 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 import unittest
 from pathlib import Path
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
-TOOLS_DIR = I2C_ROOT / "tools"
-INSTRUCTIONS_DIR = I2C_ROOT / "instructions"
-sys.path.insert(0, str(TOOLS_DIR))
+INSTRUCTIONS_DIR = I2C_ROOT / "i2c" / "data" / "instructions"
 
-import validate as v  # noqa: E402
+from i2c import validate as v
 
 # file token in the state.py command → (schema filename, is_array_file).
 # Array files validate the whole file; one appended record is validated

@@ -58,6 +58,10 @@ assemble_context.py --section phase-summary --phase N
 
 `--action` and `--section` are mutually exclusive. Exactly one must be specified.
 
+This interface is the assembler program's own argparse surface. Operators and
+workers reach it through the `i2c` console command as `i2c assemble …` (a
+passthrough); the runner invokes `assemble_context.py` directly.
+
 ### 3.2 Flags
 
 | Flag | Required when | Accepted values | Default |
@@ -93,26 +97,26 @@ The mode flag is *only* meaningful with `--action`. Specifying `--mode` together
 
 ```bash
 # Autonomous runner, per-action
-python3 tools/assemble_context.py --action execute --phase 11
-python3 tools/assemble_context.py --action plan --phase 12
+i2c assemble --action execute --phase 11
+i2c assemble --action plan --phase 12
 
 # Prompt-cache split (FU-35): cache-stable prefix vs per-iteration body
-python3 tools/assemble_context.py --action execute --phase 11 --emit system
-python3 tools/assemble_context.py --action execute --phase 11 --emit user
+i2c assemble --action execute --phase 11 --emit system
+i2c assemble --action execute --phase 11 --emit user
 
 # Supervised assistant, per-action
-python3 tools/assemble_context.py --action plan --phase 12 --mode supervised
+i2c assemble --action plan --phase 12 --mode supervised
 
 # Cold-start orientation (single-section)
-python3 tools/assemble_context.py --section status
+i2c assemble --section status
 
 # Phase-boundary audit (operator-facing; see §8b)
-python3 tools/assemble_context.py --section phase-summary --phase 11
+i2c assemble --section phase-summary --phase 11
 
 # Mid-step context requests (worker, multi-step mode only)
-python3 tools/assemble_context.py --section architecture
-python3 tools/assemble_context.py --section module --module event_store
-python3 tools/assemble_context.py --section devlog --phase 11
+i2c assemble --section architecture
+i2c assemble --section module --module event_store
+i2c assemble --section devlog --phase 11
 ```
 
 ---
@@ -157,6 +161,7 @@ The canonical, normative list. Every name uses **Title Case**. Every reference i
 
 - **`phases.json` record for current phase:** the record whose `id` equals `project.json.phase`. If no such record exists, that's a required-input failure (state machine should not dispatch ACTION when phases.json doesn't list the current phase).
 - **`ARCH_<module>.md`:** the module name comes from the current phase record's `module` field. The assembler looks for `<project-root>/ARCH_<module>.md`. Missing file: see §11.
+- **`WORKER_SPEC.md` and `instructions/<action>.md` (framework-canonical):** resolved **project-local override → packaged default** (D-pkg-11, §5.3). The assembler first checks `<project-root>/WORKER_SPEC.md` / `<project-root>/instructions/<action>.md`; if absent, it falls back to the copy shipped in the installed package (`i2c/data/…`, via `importlib.resources`). Override is per-file. Adapters (`CLAUDE.md` / `CODEX.md`), `PROJECT.md`, `ARCHITECTURE.md`, and `ARCH_<module>.md` are **not** resolved this way — they are project-root-only.
 - **`devlog.jsonl` filters:** evaluated lazily; if the file doesn't exist or is empty, the corresponding section renders as `<!-- empty -->`.
 
 ### 4.3 Available Modules fallback
@@ -550,8 +555,8 @@ Note that the `multi_step_only` marker mechanism used to strip `WORKER_SPEC.md`'
 | `phases.json` missing or schema-invalid | always required (state machine needs it too) |
 | `steps.json` missing or schema-invalid | always required |
 | No record in `phases.json` with `id == project.json.phase` | required for every action EXCEPT `--action plan` (which creates the record per `instructions/plan.md` step 4 — see DESIGN_state_lifecycle_v1.md §6.4); always required for `--section` requests |
-| `instructions/$ACTION.md` missing | required for `--action` |
-| `WORKER_SPEC.md` missing | required |
+| `instructions/$ACTION.md` missing from **both** project-root and the installed package | required for `--action` (resolved override→packaged, §4.2; failure only if absent from both) |
+| `WORKER_SPEC.md` missing from **both** project-root and the installed package | required (resolved override→packaged, §4.2) |
 | Adapter file (`CLAUDE.md` or `CODEX.md`) missing | required (backend chosen by runner / caller; assembler reads whichever is named) |
 | `ARCH_<module>.md` missing when `phases.json[current].module` is set | required for current module |
 | Schema validation failure on any `.state/` file the assembler is reading for this invocation | abort; failure path includes the file path and `jsonschema` error message |

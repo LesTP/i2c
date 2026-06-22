@@ -23,7 +23,7 @@ graph TB
     subgraph "State Layer"
         ST[".state/<br/>project.json<br/>steps.json<br/>phases.json<br/>devlog.jsonl<br/>decisions.json"]
         PD["Project Docs<br/>PROJECT.md<br/>ARCHITECTURE.md<br/>ARCH_*.md"]
-        GOV["Governance Docs<br/>WORKER_SPEC.md<br/>instructions/*.md<br/>adapter file"]
+        GOV["Governance Docs<br/>WORKER_SPEC.md + instructions/*.md<br/>(packaged; project may override)<br/>adapter file (project-root)"]
         LOG["logs/loop/<br/>summary.log<br/>iteration_NNN.*"]
     end
 
@@ -31,7 +31,7 @@ graph TB
     H -- "Direct session<br/>(supervised mode)" --> CO
     CB -- "Deterministic dispatch<br/>/run → subprocess" --> LR
     CB -- "Reads .state/ for<br/>/status /audit /decisions" --> ST
-    CO -- "python tools/run_iteration.py" --> LR
+    CO -- "i2c run" --> LR
     CO -- "Reads logs for<br/>post-run analysis" --> LOG
     LR -- "1. determine action" --> SM
     SM -- "reads" --> ST
@@ -40,7 +40,7 @@ graph TB
     ASM -- "reads" --> PD
     ASM -- "reads" --> GOV
     LR -- "3. invoke with<br/>assembled prompt" --> W
-    W -- "writes outcomes<br/>via state.py" --> ST
+    W -- "writes outcomes<br/>via i2c state" --> ST
     LR -- "4. parse EXIT signal<br/>write summary.log" --> LOG
     CO -- "Reports results" --> H
     CB -- "Reports results" --> H
@@ -66,7 +66,7 @@ graph LR
 
     subgraph "Path B: Orchestrator (interactive)"
         H2["Human"] -->|"run 3 loops"| CO2["Orchestrator"]
-        CO2 -->|"python tools/run_iteration.py"| LR2["run_iteration.py"]
+        CO2 -->|"i2c run"| LR2["run_iteration.py"]
         LR2 --> W2["Worker"]
     end
 ```
@@ -91,17 +91,17 @@ sequenceDiagram
     participant W as Worker<br/>(Claude / Codex)
     participant ST as .state/
 
-    R->>SM: 1. python tools/state_machine.py
+    R->>SM: 1. python -m i2c.state_machine
     SM->>ST: read project.json, steps.json
     SM-->>R: ACTION: EXECUTE, NEXT: review
 
-    R->>ASM: 2. assemble_context.py --action execute --phase 11
+    R->>ASM: 2. python -m i2c.assemble_context --action execute --phase 11
     Note over ASM: Reads: WORKER_SPEC, adapter,<br/>instructions/execute.md,<br/>project.json, ARCH_module.md,<br/>steps.json, devlog.jsonl
     ASM-->>R: Structured prompt (stdout)
 
     R->>W: 3. invoke with assembled prompt
     Note over W: All governance context<br/>is already in-context.<br/>Worker reads only source<br/>and test files.
-    W->>ST: 4. state.py set/complete/append
+    W->>ST: 4. i2c state set/complete/append
     W-->>R: 5. EXIT signal
     R->>R: 6. parse signal, write summary.log
 ```
@@ -114,11 +114,11 @@ sequenceDiagram
 
 ```bash
 # Mid-step context request:
-python3 tools/assemble_context.py --action execute --phase 11
+i2c assemble --action execute --phase 11
 
 # Or request a single section:
-python3 tools/assemble_context.py --section architecture
-python3 tools/assemble_context.py --section module --module event_store
+i2c assemble --section architecture
+i2c assemble --section module --module event_store
 ```
 
 ---
@@ -156,13 +156,13 @@ After CLOSE the worker leaves the project in `audit_boundary`; the human (or an 
 ```
 Dispatch request (human → driver/orchestrator → runner)
   │
-  ├─ Runner calls: python tools/state_machine.py
+  ├─ Runner calls: python -m i2c.state_machine
   │   ├─ Reads: .state/project.json, .state/steps.json
   │   ├─ Checks: halt state (audit_boundary / audit_escalation / done)? budget exhausted?
   │   ├─ Computes: ACTION + NEXT
   │   └─ If EXIT → runner stops, no worker invocation
   │
-  ├─ Runner calls: python3 tools/assemble_context.py --action $ACTION --phase $PHASE
+  ├─ Runner calls: python -m i2c.assemble_context --action $ACTION --phase $PHASE
   │   ├─ Reads: WORKER_SPEC.md (identity, loop, escalation, output, prohibitions)
   │   ├─ Reads: adapter file (tool rules, project notes, module list)
   │   ├─ Reads: instructions/$ACTION.md (action procedure)
@@ -240,7 +240,7 @@ Dispatch request (human → driver/orchestrator → runner)
 | 6 | Human | `/run N` — next phase begins | — | — |
 
 To end the project instead of advancing, the human declares it terminal:
-`state.py set project.json state=done`.
+`i2c state set project.json state=done`.
 
 ---
 
@@ -268,8 +268,8 @@ Common supervised commands:
 
 | Task | Command |
 |------|---------|
-| Cold-start orientation | `assemble_context.py --section status` |
-| Plan a phase | `assemble_context.py --action plan --mode supervised` |
-| Mark a step done | `state.py complete` + `state.py append devlog.jsonl` |
-| Review a phase | `assemble_context.py --action review --mode supervised` |
-| Close a phase | `assemble_context.py --action close --mode supervised` |
+| Cold-start orientation | `i2c assemble --section status` |
+| Plan a phase | `i2c assemble --action plan --mode supervised` |
+| Mark a step done | `i2c state complete` + `i2c state append devlog.jsonl` |
+| Review a phase | `i2c assemble --action review --mode supervised` |
+| Close a phase | `i2c assemble --action close --mode supervised` |

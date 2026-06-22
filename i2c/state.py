@@ -45,7 +45,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import validate as v
+from i2c import validate as v
 
 
 # ---------------------------------------------------------------------------
