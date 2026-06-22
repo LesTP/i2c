@@ -68,12 +68,37 @@ readiness work (Δ5 + CC ARCH validation).
 - `python tools/assemble_context.py --action A --phase N --emit {full,system,user}` (FU-35) splits the prompt into a cache-stable prefix (`system` = WORKER CONTRACT + TOOL RULES) and a per-iteration body (`user` = PROJECT CONTEXT + ACTION CONTEXT + Output Contract); `full` (default) is byte-identical to before. The claude runner path routes `system` through `--append-system-prompt-file` for prompt-cache reuse; codex uses `full` + server-side prefix caching.
 - **Codexbot Telegram surface for i2c projects** (`75ca84e`, 2026-06-09): `/start` renders assembler status, `/run N [to-review]` invokes the consumer-local shim, `/close` advances `phase=N+1 state=plan`, `/audit` renders phase-summary. Restart per `~/claude-code-workspace/projects/pirozhok/README.md`.
 
+**Active track — open-sourcing (`DESIGN_packaging_v1.md`):** turning i2c
+into a shareable, installable open-source project. **Phase 1 shipped
+2026-06-21** — public README, MIT LICENSE (Mike Yeluashvili), all
+shippable docs de-Meta'd (instructions, `ref/`, WORKER_SPEC, WORKFLOW),
+a metadata-only `pyproject.toml`, and an `examples/` walkthrough.
+Internal-only docs (`FOLLOWUPS.md`, `DESIGN_*`, `FUTURE_waymark.md`) stay
+internal per the curated-export model (D-pkg-2). **Phase 2 (next):** the
+real package — an `i2c.control` command API + an `i2c` console surface +
+importable package — which eliminates the consumer copy-and-sync model.
+
 **Active priorities (smallest → largest scope):**
 1. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes (≥1 more CC ARCH authored under the Pattern A/B v2 template). ~15 lines of doc once we know what works.
 2. **Phase 3.C** — multi-iteration loop. **Re-evaluate after measuring FU-35 cache hits** (the prompt-cache split shipped 2026-06-21; caching likely captures most of the token-savings motivation, so 3.C's remaining justification is cross-step reasoning continuity + fewer spin-ups, weighed against the e2e-vintage multi-iteration reliability cost). Wrap `run_iteration.py` once we have real data on what single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
 3. **Codexbot follow-up surface (deferred parts of 18a)** — `/decisions, /escalation, /logs, /review` on i2c projects. Blocked on FU-34 upstream (`--section escalation`, `--section iteration`).
 
-**Recently shipped (2026-06-21):** **FU-35** prompt-cache support — `assemble_context.py --emit {full,system,user}` splits the prompt at the WORKER CONTRACT + TOOL RULES / PROJECT + ACTION boundary; the runner routes the stable prefix through Claude Code's `--append-system-prompt-file` + `--exclude-dynamic-system-prompt-sections`; codex relies on server-side prefix caching. Measure the win via `tokens_cached` in `summary.log` on iter 2+ of a phase.
+**Recently shipped (2026-06-21):**
+- **Packaging Phase 1** — see the *Active track* above.
+- **Pre-packaging hardening pass:** FU-17 closed (reject `--phase` on the
+  `--section` modes that ignore it), FU-11 closed (a test that validates
+  every inline `state.py` JSON example in `instructions/*.md` against its
+  schema), and FU-37 cut the dead `STEP_BUDGET` env stub from
+  `state_machine.py`.
+- **FU-35** prompt-cache support — `assemble_context.py --emit
+  {full,system,user}` splits the prompt at the WORKER CONTRACT + TOOL RULES
+  / PROJECT + ACTION boundary; the runner routes the stable prefix through
+  Claude Code's `--append-system-prompt-file` +
+  `--exclude-dynamic-system-prompt-sections`; codex relies on server-side
+  prefix caching. Measure via `tokens_cached` in `summary.log` on iter 2+
+  of a phase.
+- **FU-38** opened — add Gemini / OpenRouter backends (design in
+  `DESIGN_packaging_v1.md` §6).
 
 **Pending operational items:**
 - **FU-29** — CODEX/CLAUDE adapter Output Contract patched in all four files; full closure waits for a `templates/` layer for adapters.
@@ -273,7 +298,7 @@ the consumer needs framework versions pinned to commits in its own repo
 |----|-------|--------|---------|--------------------|
 | FU-8 | execute.md commit-format suggestion (`phase.step: title`) is not enforced anywhere | open | The prose says "default commit message format `phase.step: short title`" but nothing validates it. A pre-commit hook or a `state.py complete --validate-commit-msg` check could enforce. | Phase 2 pilot reveals workers drift from the format and downstream tooling (codexbot `/diff <phase>`, waymark commit-by-phase view) needs consistency. |
 | FU-9 | Refine regime in execute.md uses `step: null` for devlog entries | open | The schema allows `step: null` and the prose recommends it for Refine iterations. But there's no constraint that ties a Refine entry to *which* iteration (no iteration counter field). The commit message carries it (`14.iter3:`) but the structured data doesn't. | Phase 2 pilot does enough Refine work that iteration-by-iteration analytics matter. Add `iteration: int` optional field to `devlog_entry.schema.json`. |
-| FU-10 | Production-incident anecdotes in WORKER_SPEC §3 are e2e-vintage | open | Per D-prose-8 the Codex 105k-char and Claude 5-3 incidents stay verbatim — they have pedagogical value. But once i2c has its own incidents, those should be added or substituted to keep the pedagogy current. | i2c accumulates 2+ documented loop-discipline failures of its own. Add a refresh pass to WORKER_SPEC §3. |
+| FU-10 | Production-incident anecdotes in WORKER_SPEC §3 are e2e-vintage | open | Per D-prose-8 the Codex 105k-char and Claude 5-3 incidents stay verbatim — they have pedagogical value. But once i2c has its own incidents, those should be added or substituted to keep the pedagogy current. **2026-06-21:** the public de-Meta pass dropped the explicit `(e2e)` / `state_machine.sh` labels (the anecdotes now read as neutral "A Codex/Claude iteration"); the refresh-with-i2c-native-incidents ask still stands. | i2c accumulates 2+ documented loop-discipline failures of its own. Add a refresh pass to WORKER_SPEC §3. |
 | FU-11 | Per-file JSON-example validation isn't automated | **closed** (2026-06-21) | See resolution note below. `tests/test_instruction_examples.py` lifts every inline `state.py` JSON record example across `instructions/*.md` and validates it against the registered schema (devlog → entry schema; append-record → array `items`), with a floor-count guard against extractor regressions. 45 examples validate. |
 | FU-26 | `close.md` and `plan.md` disagree on who advances `project.json.phase` | **closed** (2026-06-08 lifecycle redesign) | See resolution note below. |
 | FU-29 | i2c's `CODEX.md` and `CLAUDE.md` adapters lacked an inline `## Output Contract` section; codex skips the 5-line exit signal as a result | open (pilot-confirmed; partial fix applied; surface reduced 2026-06-12 by FU-7) | The e2e template (`templates/CODEX_worker.md` line 136) and diplomat (`CODEX.md` line 188) both ship an explicit `## Output Contract` section that reads *"End every invocation with exactly these five lines — no additional text after"* plus the 5-line example and an exit-code table. i2c's adapters only reference `WORKER_SPEC.md` (which contains the contract) without inlining it. Claude is robust enough to follow the contract from the reference alone; codex is not. **CC Phase 3 iter 15 (2026-06-07):** first codex-on-i2c production run after the runner gained `--backend codex` support. Codex completed step 3.4 correctly — commit `f7620cc`, 228/228 tests pass, `state.py` writes for steps.json and devlog.jsonl landed coherently — but emitted prose-only output with no 5-line EXIT signal. Runner correctly reported `exit=2 "signal missing or malformed"` even though the work was substantively successful. **Partial fix applied (2026-06-07):** ported the e2e Output Contract section verbatim (with i2c-specific wording — `.state/project.json` rather than `DEVPLAN`) into `i2c/CODEX.md`, `i2c/CLAUDE.md`, `clankercourts/CODEX.md`, `clankercourts/CLAUDE.md`. Section sits between `## Runner Info` and `## Mode`. Re-firing the next codex iter on clankercourts validates the fix. **Surface reduction (FU-7, 2026-06-12):** contract is now 2 lines instead of 5; codex iter 65 (2026-06-11) showed the partial fix is necessary-but-not-sufficient (still skipped the block). A smaller block has less surface to skip but doesn't address the root cause (codex defaulting to conversational tail without the EXIT/REASON pair). | **Remaining work for full resolution:** (a) once i2c grows a `templates/` directory for bootstrap adapters (today the top-level CODEX.md / CLAUDE.md double as both reference and template), make sure the templates include the Output Contract section so every new i2c project ships with it; (b) consider whether claude adapters genuinely need it — claude historically follows the contract from WORKER_SPEC alone, but inlining is belt-and-suspenders and harmless. The CC pilot's own adapters have been patched, so this FU stays open until the template-layer fix lands. |
