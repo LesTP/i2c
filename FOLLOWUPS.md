@@ -57,8 +57,13 @@ loop mid-iteration) and validated the framework properly.
 FU-32 below carries the live spec for the remaining autonomous-PLAN
 readiness work (Δ5 + CC ARCH validation).
 
-**Tooling now available:**
-- `python tools/state.py {append,append-record,update-record,append-gotcha} --from-file <path>` for `$`-laden / multi-line payloads (FU-21 closed). Adapter Tool Rules in CLAUDE.md / CODEX.md now recommend it for any payload with `$` or newlines (FU-12 closed).
+**Tooling now available:** Since packaging Phase 2 the canonical surface is
+the `i2c` console — `i2c <subcommand>`, or `python -m i2c.cli <subcommand>`
+if the scripts dir isn't on PATH; the worker write tool is `i2c state …`.
+The `python tools/<x>.py` commands below are historical — code now lives at
+`i2c/<x>.py`, reached via the console or `python -m i2c.<x>`.
+
+- `python tools/state.py {append,append-record,update-record,append-gotcha} --from-file <path>` for
 - Bare schema filenames (`steps.json`, `phases.json`, ...) auto-resolve to `.state/<name>` when CWD has `.state/` (FU-19 closed).
 - `python tools/state_machine.py` outputs ACTION + NEXT (read-only).
 - `python tools/invariants.py --action <name>` checks the post-action invariants from FU-22.
@@ -74,14 +79,34 @@ into a shareable, installable open-source project. **Phase 1 shipped
 shippable docs de-Meta'd (instructions, `ref/`, WORKER_SPEC, WORKFLOW),
 a metadata-only `pyproject.toml`, and an `examples/` walkthrough.
 Internal-only docs (`FOLLOWUPS.md`, `DESIGN_*`, `FUTURE_waymark.md`) stay
-internal per the curated-export model (D-pkg-2). **Phase 2 (next):** the
-real package — an `i2c.control` command API + an `i2c` console surface +
-importable package — which eliminates the consumer copy-and-sync model.
+internal per the curated-export model (D-pkg-2). **Phase 2 shipped
+2026-06-22** — the real package: `tools/` → an importable `i2c/` package
+with framework assets (schemas, `WORKER_SPEC.md`, `instructions/`, adapters,
+templates) shipped as package data; the `i2c.control` command API
+(dataclasses, not strings; typed exceptions, not `sys.exit`); the `i2c`
+console surface (`i2c/cli.py`); `i2c init` / `i2c eject` scaffolding;
+`i2c.toml` run config; and **§8 `schema_version` + `i2c migrate`**
+(versioned in-place `.state/` migrations). This eliminates the consumer
+copy-and-sync model — consumers now `pip install` and carry only their own
+`.state/` + docs. **Phase 3 (next):** the pluggable backend protocol
+(FU-38 — Gemini / OpenRouter), then the public distribution name + first
+release/tag (Q-pkg-1, at which point CHANGELOG's `Unreleased` is cut to a
+release).
 
 **Active priorities (smallest → largest scope):**
 1. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes (≥1 more CC ARCH authored under the Pattern A/B v2 template). ~15 lines of doc once we know what works.
 2. **Phase 3.C** — multi-iteration loop. **Re-evaluate after measuring FU-35 cache hits** (the prompt-cache split shipped 2026-06-21; caching likely captures most of the token-savings motivation, so 3.C's remaining justification is cross-step reasoning continuity + fewer spin-ups, weighed against the e2e-vintage multi-iteration reliability cost). Wrap `run_iteration.py` once we have real data on what single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
 3. **Codexbot follow-up surface (deferred parts of 18a)** — `/decisions, /escalation, /logs, /review` on i2c projects. Blocked on FU-34 upstream (`--section escalation`, `--section iteration`).
+
+**Recently shipped (2026-06-22):**
+- **Packaging Phase 2 + §8** — see the *Active track* above. `tools/` moved
+  to the importable `i2c/` package; `i2c.control` / `i2c` console / `init` /
+  `eject` / `i2c.toml`. `schema_version` added to `project.json` (absent ⇒
+  legacy v0; CURRENT=1) with `i2c migrate [--check|--dry-run]` (the 0→1
+  migration drops the legacy `blocked` field and stamps the version;
+  validate-before-stamp keeps a failed migration re-runnable). `CHANGELOG.md`
+  (Keep-a-Changelog) added; build artifacts (`*.egg-info/`, `build/`, `dist/`)
+  gitignored. 401 tests green; smoke test passes.
 
 **Recently shipped (2026-06-21):**
 - **Packaging Phase 1** — see the *Active track* above.
@@ -104,13 +129,19 @@ importable package — which eliminates the consumer copy-and-sync model.
 - **FU-29** — CODEX/CLAUDE adapter Output Contract patched in all four files; full closure waits for a `templates/` layer for adapters.
 
 **Quick orientation commands** (from a project root that already has
-`.state/`):
+`.state/`, with the package installed via `pip install -e .`):
 
 ```powershell
 $env:PYTHONIOENCODING="utf-8"
-python tools\state_machine.py
-python tools\assemble_context.py --section status
-python tools\assemble_context.py --section phase-summary --phase <N>
+i2c next-action                               # ACTION + NEXT (or: python -m i2c.cli next-action)
+i2c assemble --section status
+i2c assemble --section phase-summary --phase <N>
+i2c migrate --check                          # schema-drift check (exit 1 if a migration is needed)
+```
+
+From the i2c repo itself (tests + end-to-end smoke):
+
+```powershell
 python -m unittest discover -s tests
 python examples\smoke_test.py
 ```
@@ -118,7 +149,7 @@ python examples\smoke_test.py
 To dry-run the runner (writes to `logs/loop/` but invokes a real `claude -p`):
 
 ```powershell
-python tools\run_iteration.py --backend claude --max-budget-usd 2.00
+i2c run --backend claude --max-budget-usd 2.00
 ```
 
 **Canonical references:**
@@ -194,6 +225,14 @@ closed and the live-spec subsection is dropped.
 - **`--section phase-summary --phase N` on the assembler.** Operator's `state=audit_boundary` view: header + steps + decisions-added-this-phase (Δ1-dependent filter) + phase devlog + open items. Distinct from `--section status` (project-wide, current-state) and `--section devlog` (just the devlog tail). Spec in `ARCH_assembler.md` §8b. ~80 LOC + 10 tests. Validated against CC Phase 4 end-to-end (3 phase-tagged decisions surfaced cleanly; 17 untagged decisions properly noted via back-fill footer; full step+devlog narrative reads in one screen-and-a-half).
 
 ### Invocation guidance: running the loop from an i2c-consumer project
+
+> **Superseded by packaging Phase 2 (2026-06-22).** Consumers now
+> `pip install` i2c and run the `i2c` console (`i2c run …`) from their own
+> project root; the framework resolves from the installed package, not a
+> sibling `../i2c/tools/` checkout. The copy-and-sync / preflight-diff
+> guidance below is retained for historical context and the pinned-snapshot
+> scenario only — its `tools/<x>.py` paths are now `i2c/<x>.py` package
+> modules.
 
 Once `tools/run_iteration.py` ships (Phase 3.A), the canonical invocation from
 a consumer project (e.g. clankercourts) is:

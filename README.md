@@ -36,10 +36,16 @@ autonomous runs**. It has driven a real multi-phase software project
 end-to-end — fourteen phases, autonomously, across both the Claude and Codex
 backends.
 
-Active development: a multi-iteration loop, a pluggable backend interface
-(so other providers can be added), and packaging as an installable library.
-Today you use i2c by copying its framework files into your project (see
-[Bootstrap](#bootstrap-a-new-i2c-project)); `pip install` is on the roadmap.
+It now ships as an **installable package**: `pip install` puts the `i2c`
+console command on your `PATH` and bundles the framework assets (JSON Schemas,
+`WORKER_SPEC.md`, `instructions/`, adapters, templates) as package data, so a
+consuming project carries only its own `.state/` and docs — no copied framework
+code. `i2c init` scaffolds a new project, and `i2c migrate` performs versioned
+in-place `.state/` upgrades (see
+[Versioning & migration](#versioning--migration)).
+
+Active development: a multi-iteration loop and a pluggable backend interface
+(so providers beyond Claude and Codex can be added).
 
 ---
 
