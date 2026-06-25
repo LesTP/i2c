@@ -19,12 +19,14 @@ library) nor its prose section-builders (worker-facing, golden-tested). Control
 computes its own structured views from the same ``.state/``.
 
 This module covers the read surface + the ``clear_boundary`` boundary command.
-``run_iteration`` is re-exported (not reimplemented). ``logs`` / ``escalation``
-are honest stubs pending FU-34's projections.
+``run_iteration`` is re-exported (not reimplemented). ``escalation`` / ``logs`` /
+``logs_transcript`` (FU-34) project the ``audit_escalation`` signal (from
+``.state/``) and the runner's ``logs/loop/`` iteration index + transcripts.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -128,6 +130,27 @@ class BoundaryResult:
     outcome: str  # "advanced" | "terminated"
     phase: int
     state: str
+
+
+@dataclass
+class EscalationView:
+    phase: int
+    is_escalated: bool  # project.state == "audit_escalation"
+    entry: DevlogView | None  # the triggering escalate/blocked devlog entry
+    surrounding: list[DevlogView]  # up to 3 preceding in-phase entries, for context
+    open_decisions: list[DecisionView]  # phase-tagged, status == open
+
+
+@dataclass
+class IterationLog:
+    iter: int
+    backend: str
+    action: str
+    exit_code: int
+    reason: str
+    timestamp: str
+    tokens: dict[str, int] | None = None  # {input, output, cached} or None (FU-33)
+    transcript: str | None = None  # logs/loop/iteration_NNN.txt, on demand
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +397,23 @@ def decisions(
     return [_decision_view(d) for d in records]
 
 
+def devlog(
+    root: Path | None = None, *, phase: int | None = None, limit: int | None = None
+) -> list[DevlogView]:
+    """Devlog entries, optionally filtered to ``phase`` and/or limited to the
+    last ``limit`` (newest last). Replaces the removed assembler ``--section
+    devlog`` projection — same phase-filtered full history when ``phase`` is
+    given."""
+    root = root or find_project_root()
+    st = load_state(root)
+    entries = st.devlog
+    if phase is not None:
+        entries = [e for e in entries if e.get("phase") == phase]
+    if limit is not None:
+        entries = entries[-limit:]
+    return [_devlog_view(e) for e in entries]
+
+
 # ---------------------------------------------------------------------------
 # Boundary command (the one write op)
 # ---------------------------------------------------------------------------
@@ -428,15 +468,121 @@ run_iteration = _runner.run_iteration
 
 
 # ---------------------------------------------------------------------------
-# Stubs (blocked on FU-34 projections)
+# Escalation + iteration-log projections (FU-34)
 # ---------------------------------------------------------------------------
 
+_ESCALATE_OUTCOMES = ("escalate", "blocked")
 
-def logs(root: Path | None = None, *args: Any, **kwargs: Any) -> Any:
-    """Iteration-log projection. Named but not yet backed (FU-34)."""
-    raise NotImplementedError("blocked on FU-34")
+# Parses the summary.log line shape written by run_iteration.write_summary_line.
+_SUMMARY_RE = re.compile(
+    r'^(?P<ts>\S+) \| iter=(?P<iter>\d+) \| backend=(?P<backend>\S+) \| '
+    r'action=(?P<action>\S+) \| exit=(?P<exit>\d+)'
+    r'(?: \| tokens_in=(?P<tin>\d+) tokens_out=(?P<tout>\d+) '
+    r'tokens_cached=(?P<tcached>\d+))?'
+    r' \| reason="(?P<reason>.*)"\s*$'
+)
 
 
-def escalation(root: Path | None = None, *args: Any, **kwargs: Any) -> Any:
-    """Escalation projection. Named but not yet backed (FU-34)."""
-    raise NotImplementedError("blocked on FU-34")
+def escalation(
+    root: Path | None = None, *, phase: int | None = None
+) -> EscalationView:
+    """The current escalation signal: whether the loop is halted at
+    ``audit_escalation``, the triggering devlog entry, a little surrounding
+    context, and the phase's open decisions. Pure ``.state/`` read; mirrors
+    ``phase_summary``. ``phase`` defaults to the current project phase."""
+    root = root or find_project_root()
+    st = load_state(root)
+    target = phase if phase is not None else int(st.project.get("phase", 0))
+    is_escalated = st.project.get("state") == "audit_escalation"
+
+    phase_entries = [e for e in st.devlog if e.get("phase") == target]
+    escalate_idx: int | None = None
+    for i, e in enumerate(phase_entries):
+        if e.get("outcome") in _ESCALATE_OUTCOMES:
+            escalate_idx = i  # keep the last match
+    if escalate_idx is None:
+        entry: DevlogView | None = None
+        surrounding: list[DevlogView] = []
+    else:
+        entry = _devlog_view(phase_entries[escalate_idx])
+        surrounding = [
+            _devlog_view(e)
+            for e in phase_entries[max(0, escalate_idx - 3):escalate_idx]
+        ]
+
+    open_decisions = [
+        _decision_view(d)
+        for d in st.decisions
+        if d.get("phase") == target and d.get("status") == "open"
+    ]
+    return EscalationView(
+        phase=target,
+        is_escalated=is_escalated,
+        entry=entry,
+        surrounding=surrounding,
+        open_decisions=open_decisions,
+    )
+
+
+def _log_dir(root: Path) -> Path:
+    return root / _runner.LOG_DIR_NAME
+
+
+def _parse_summary_line(line: str) -> IterationLog | None:
+    m = _SUMMARY_RE.match(line.strip())
+    if m is None:
+        return None
+    tokens = None
+    if m.group("tin") is not None:
+        tokens = {
+            "input": int(m.group("tin")),
+            "output": int(m.group("tout")),
+            "cached": int(m.group("tcached")),
+        }
+    return IterationLog(
+        iter=int(m.group("iter")),
+        backend=m.group("backend"),
+        action=m.group("action"),
+        exit_code=int(m.group("exit")),
+        reason=m.group("reason"),
+        timestamp=m.group("ts"),
+        tokens=tokens,
+    )
+
+
+def _read_summary(root: Path) -> list[IterationLog]:
+    summary = _log_dir(root) / _runner.SUMMARY_LOG_NAME
+    if not summary.is_file():
+        return []
+    out: list[IterationLog] = []
+    for line in summary.read_text(encoding="utf-8").splitlines():
+        rec = _parse_summary_line(line)
+        if rec is not None:
+            out.append(rec)
+    return out
+
+
+def logs(root: Path | None = None, *, limit: int | None = 10) -> list[IterationLog]:
+    """The iteration index parsed from ``logs/loop/summary.log`` (no
+    transcripts). Newest entries last (file order). ``limit`` keeps the last N
+    (default 10; ``None`` for all). Empty list when no log exists yet."""
+    root = root or find_project_root()
+    entries = _read_summary(root)
+    if limit is not None:
+        entries = entries[-limit:]
+    return entries
+
+
+def logs_transcript(root: Path | None = None, *, iter: int) -> IterationLog:
+    """One iteration's index entry with its ``transcript`` field populated from
+    ``logs/loop/iteration_NNN.txt`` (``None`` if the file is absent). Raises
+    ``NotFoundError`` when no summary entry exists for ``iter``."""
+    root = root or find_project_root()
+    for rec in _read_summary(root):
+        if rec.iter == iter:
+            path = _log_dir(root) / f"iteration_{iter:03d}.txt"
+            rec.transcript = (
+                path.read_text(encoding="utf-8") if path.is_file() else None
+            )
+            return rec
+    raise NotFoundError(f"No iteration {iter} in {_runner.SUMMARY_LOG_NAME}")

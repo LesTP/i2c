@@ -12,9 +12,13 @@
 > exit reminder, pre-FU-7) before anyone noticed, surfaced 2026-06-21 while
 > porting FU-35.
 >
-> Status: **proposed / discussion** (2026-06-21). Not yet scheduled. This
-> memo records the decisions taken in the packaging discussion and the
-> design they imply; implementation is phased (see §9).
+> Status: **partially implemented** (updated 2026-06-22). Phase 1 shipped
+> 2026-06-21 (shareable demo) and Phase 2 shipped 2026-06-22 (the real
+> package — §5 + `i2c.control`, plus §8 versioning/migration pulled forward);
+> Phase 3 (backend abstraction §6, control/orchestration §7, CI) remains.
+> This memo records the decisions taken in the packaging discussion and the
+> design they imply; current status lives in `FOLLOWUPS.md` (internal) and
+> `CHANGELOG.md` (public). Implementation is phased (see §10).
 >
 > Authors: operator + assistant, 2026-06-21.
 
@@ -86,7 +90,7 @@ pip install i2c                 # or pipx install i2c
 cd my-project && git init
 i2c init                        # scaffolds .state/, PROJECT.md, ARCHITECTURE.md, adapter, i2c.toml
 #  ...edit PROJECT.md + ARCHITECTURE.md...
-i2c plan                        # supervised first phase (assembles context, pauses for approval)
+i2c assemble --action plan --mode supervised   # supervised first phase (assembles context, pauses for approval)
 i2c run --backend claude        # autonomous single-iteration loop
 ```
 
@@ -126,7 +130,7 @@ a proper package with absolute imports and `console_scripts` entry points:
 ```
 i2c/
 ├── __init__.py
-├── cli.py                  # `i2c` dispatcher: init, plan, run, state, assemble, validate, migrate
+├── cli.py                  # `i2c` dispatcher: init, eject, status, next-action, phase-summary, decisions, clear-boundary, run, state, assemble, migrate
 ├── state.py  validate.py  assemble_context.py
 ├── state_machine.py  invariants.py  run_iteration.py
 ├── data/                   # packaged via importlib.resources
@@ -161,7 +165,7 @@ behavior into an explicit override-then-default lookup.)
 Replaces the manual 6-step bootstrap: seed `.state/` (`project.json`,
 empty `phases/steps/decisions`, `devlog.jsonl`), write PROJECT.md and
 ARCHITECTURE.md templates, generate a filled adapter stub, add
-`logs/loop/` to `.gitignore`, and stamp `schema_version` (§7).
+`logs/loop/` to `.gitignore`, and stamp `schema_version` (§8).
 
 ### 5.5 Configuration
 
@@ -256,8 +260,9 @@ every backend is a self-driving CLI.
 i2c already runs this architecture informally — codexbot drives it with
 deterministic commands; Claude Code acts as the orchestrator. The work is
 to formalize the split so it is clean, transport-agnostic, and not held
-together by fragile text-parsing. There are **three independent pluggable
-axes**:
+fragile text-parsing. There are **three independent pluggable
+axes** (below), plus one cross-cutting dimension — the **scope** at which a
+driver runs, single-project or portfolio (§7.6):
 
 ```
         ┌──────────────── DRIVERS (compose primitives) ────────────────┐
@@ -298,15 +303,26 @@ only difference is who pulls the levers:
 
 - **Human** via chat/CLI — supervised, today's default.
 - **Policy** — a deterministic rule set ("advance through phases until
-  done; halt on escalation"). Essentially Phase 3.C's multi-iteration loop
-  with a trivial policy. No LLM.
-- **Agent** — an LLM that reads phase-summaries and decides
-  advance-vs-terminate, handles escalations with judgment. This is what
-  Claude Code does today. Optional, pluggable, provider-agnostic.
+  done; halt on escalation"). No LLM. (This is *not* the multi-step
+  protocol: "Phase 3.C" multi-step is a worker-invocation budget *inside*
+  one ACTION — see §5 / `--step-budget` — whereas a Policy driver wraps
+  whole `run_iteration` calls and clears boundaries. A multi-iteration loop
+  is the natural first Policy.)
+- **Agent** — an LLM driver. **This already exists: it is the operator +
+  an assistant (Claude Code / Devmate).** Crucially it does far more than
+  advance-vs-terminate — it selects which project to work on, discusses
+  scope, drafts/updates PROJECT.md / ARCHITECTURE.md / ARCH_*, dispatches
+  loops, and monitors/debugs them. Most of that work is **supervised and
+  interactive**, with autonomous-loop dispatch just one action among many.
+  It is *not* reducible to a `decide()` and needs no protocol — it is the
+  assistant exercising judgment over the same `i2c.control` primitives a
+  surface calls.
 
-The orchestrator interface is small:
-`decide(state_snapshot) -> {run_iteration | clear_boundary(advance|terminate) | escalate_to_human | stop}`,
-and it calls the **same** `i2c.control` primitives a surface calls.
+The small fixed interface
+`decide(state_snapshot) -> {run_iteration | clear_boundary(advance|terminate) | escalate_to_human | stop}`
+describes the **Policy** driver only (deterministic, single-project). The
+Human and Agent drivers are open-ended and call the same `i2c.control`
+primitives directly.
 
 ### 7.4 Why "deterministic only" on the surface
 
@@ -344,7 +360,106 @@ backend limits" pain twice over: the **worker backend** (axis 2) and the
 a Claude orchestrator, or a Gemini worker driven by a deterministic
 policy.
 
+### 7.6 Driver scope — single-project vs portfolio
+
+Orthogonal to *who drives* (§7.3) is *how many projects* a driver drives:
+
+- **Single-project** — a driver bound to one `.state/` (one project root).
+  Today's surfaces and the `i2c` console are all single-project: they
+  resolve one project and act on it.
+- **Portfolio** — a driver operating across a parent folder of project
+  subfolders: choosing which project to work on, doing supervised/
+  interactive work on it, dispatching its loop, and monitoring/debugging
+  loops across all of them. **This is not a new component — it is the Agent
+  driver (§7.3) at portfolio scope: the operator + an assistant**, exactly
+  as run today from Devmate or a Claude Code session at the workspace root.
+
+Because the portfolio driver is just the assistant, the framework owes it
+**structured primitives, not an orchestrator**. The deliverable is
+portfolio-scope `i2c.control` views, so the meta-work runs on structured
+data instead of `cd`-ing into each subfolder and parsing prose `status`
+output (the §7.1 prose-vs-structure hazard, one level up):
+
+- **Cross-project status / next-action** — discover every `.state/` under a
+  root and render each project's phase, state, next action, and open
+  escalations in one structured view (`i2c.control.status` mapped over N
+  roots; e.g. `i2c status --all`). Highest-value item: it answers "which
+  project needs me?" for the common supervised case.
+- **Cross-project monitor / debug** — surface *which* loop halted and why,
+  across all projects. Depends on the FU-34 `escalation` / `logs`
+  projections backing `control.escalation()` / `control.logs()`.
+
+Dispatch needs nothing new (`cd <proj> && i2c run`); a portfolio runner is
+optional sugar. Plan and doc-authoring stay the assistant's judgment work —
+the framework's role there is context assembly, which already exists.
+
+### 7.7 One projection layer — no prose/structure derivation split
+
+Phase 2 added `i2c.control` as the structured command API (D-pkg-7) but did
+**not** retire the assembler's operator-facing `--section` modes (`status`,
+`phase-summary`, `devlog`). The two now derive the *same* projections from
+`.state/` independently — the assembler renders them to prose, `control` to
+dataclasses. Duplicated today, line-for-line in places: budget computation
+(`_compute_budget` vs the inline branch in `render_status_project`), the
+phase-step filter, the open-decision filter, phase-summary composition, and
+devlog interpretation. This is exactly the prose-vs-structure dual-maintenance
+hazard that §7.1 and D-pkg-7 exist to kill — reintroduced one level up, *inside
+the framework itself*. i2c's whole thesis is one structured source of truth
+with no parallel representation to keep in sync (cf. `archive/DESIGN_governance_v3.md`
+§5, "no persistent rendered views"); the framework must hold itself to the rule
+it enforces on consumers.
+
+It is a transitional artifact, not a design: the assembler grew operator views
+*because, pre-`control`, there was nowhere else to put them*; Phase 2 then stood
+`control` up **beside** those views instead of **instead of** them.
+
+**End-state — three concerns, one home each:**
+
+- **Assembler → worker-prompt assembly only.** The byte-locked, cache-stable
+  machinery (regions, conditional markers, the FU-35 `--emit` split). Its
+  determinism constraint is *hard* and not shared by operator views, so it
+  stays an isolated seam — its prompt sections (`PROJECT CONTEXT`, …) belong
+  here and stay.
+- **`control` → the single structured projection + command layer** over
+  `.state/` (and, per FU-34, `logs/loop/`). One derivation; dataclasses out.
+- **`cli` / surfaces → thin formatters** over `control` dataclasses. Prose
+  lives at the surface, never in the core (D-pkg-7).
+
+**The rule going forward:** every operator/surface view is a `control`
+projection plus a surface formatter. **No new operator-facing `--section` modes
+are added.** The assembler's existing operator `--section` modes (`status`,
+`phase-summary`, `devlog`) are **deprecated** and removed once `control` + the
+CLI formatters cover them (a deprecation note lands in `ARCH_assembler.md`;
+removal tracked in FU-39). `--section module` / `architecture` are verbatim file
+passthroughs, not derived views — they may stay or move to a `control` doc-read,
+decided at removal time.
+
+**Boundary to respect:** operator-view de-duplication must **not** perturb
+worker-prompt bytes. The prompt renderers are golden-tested and cache-stable
+(FU-35); they are *not* coupled to `control`. Shared leaf derivations may be
+extracted across the two only where byte-identical prompt output is preserved —
+and that sharing is optional. The goal is met when operator views have exactly
+one derivation (in `control`) and the assembler no longer carries
+operator-facing sections.
+
+> **D-pkg-14 (decided):** `control` is the single structured projection /
+> command layer over project state; operator and surface views are dataclasses
+> formatted at the surface. The assembler is worker-prompt assembly only — its
+> operator-facing `--section` modes are deprecated and removed once superseded.
+> New operator views are never added as assembler sections.
+>
+> **D-pkg-15 (decided):** worker-prompt assembly stays isolated from the
+> projection layer; operator-view de-duplication must not alter worker-prompt
+> bytes (FU-35 cache stability + golden tests). Leaf derivations are shared
+> across the two only where byte-identical prompt output is preserved.
+
 ## 8. Versioning & migration
+
+> **Shipped in Phase 2 (2026-06-22), pulled forward from the Phase-3 plan
+> below.** `schema_version` (optional; absent ⇒ legacy v0, `CURRENT=1`),
+> `i2c migrate [--check|--dry-run]` with the real 0→1 migration (drop the
+> retired `blocked` field, stamp the version), `i2c init` version stamping,
+> and a `CHANGELOG.md` all landed. See `CHANGELOG.md` for per-version notes.
 
 - Semver the package; publish a CHANGELOG (the public-facing counterpart
   to the internal `FOLLOWUPS.md`).
@@ -382,12 +497,40 @@ policy.
   package-data schemas/instructions. **Design `i2c.control` (§7.5 #1) here**
   so the Phase-2 CLI is a thin caller of it, not a parallel path. Delivers
   true clone-and-go and eliminates the sync pain.
-- **Phase 3 — polish:** backend abstraction (§6) incl. candidate backends
-  Gemini and OpenRouter (§6.2); control surface &
-  orchestration (§7) — FU-34 projections, transport extras (TG/Discord),
-  orchestrator protocol + reference drivers; CI matrix (Linux/macOS/Windows
-  — FU-27 cross-platform, FU-18 test speed off the share); semver +
-  `schema_version` + `i2c migrate` (§8); provider-auth docs.
+- **Phase 3 — final-form control surface + backends + polish.** Sequenced so
+  every consumer is built on the layer it will permanently sit on — no
+  transitional duplicates (the Phase-2 lesson: `control` was added *beside* the
+  assembler's operator sections, not *instead of* them, creating the §7.7
+  split). Control-surface track, in order:
+  - **3a — single projection layer (§7.7, D-pkg-14):** consolidate the
+    operator-facing derivations into `control`; make the `i2c` CLI (`status`,
+    `phase-summary`, …) thin formatters over it; deprecate the assembler's
+    operator `--section` modes (mark now, remove once the CLI formatters land).
+    Foundation for everything below. **(Shipped 2026-06-25 / FU-39: assembler
+    operator sections removed; `i2c devlog` added; worker prompts byte-identical,
+    proven by `tests/test_prompt_golden.py`.)**
+  - **3b — FU-34 `escalation()` / `logs()`** as `control` projections on the
+    3a layer (dataclasses, *not* assembler sections). Built final-form.
+    **(Shipped 2026-06-25: `control.escalation` / `logs` / `logs_transcript`
+    + `i2c escalation` / `i2c logs`; index parsed from `summary.log`,
+    transcripts on demand.)**
+  - **3c — portfolio-scope views (§7.6):** `control.status` / `escalation`
+    mapped over N roots (`i2c status --all`).
+  - **3d — transports + orchestration (§7):** TG/Discord extras and the
+    orchestrator protocol + reference drivers (Human/Policy/Agent), all over
+    `control`.
+  - **Backend abstraction (§6)** — independent parallel track (axis 2):
+    Gemini (agentic-CLI path) then OpenRouter (raw-API + harness, §6.1).
+  - **Polish:** CI matrix (Linux/macOS/Windows — FU-27 cross-platform, FU-18
+    test speed off the share); provider-auth docs.
+
+  (semver + `schema_version` + `i2c migrate` (§8) were pulled forward and
+  shipped in Phase 2.)
+
+**Sequencing principle (no crutches):** build the final-form layer before the
+consumers that sit on it. A view is never added to a surface it will later move
+off of — it lands as a `control` projection from the start. 3a precedes 3b–3d
+precisely so we don't lay another duplicated brick.
 
 ## 11. Open questions
 
@@ -435,3 +578,5 @@ policy.
 | D-pkg-11 | Instructions ship as package-data with per-file override (`i2c eject`); adapters are scaffolded into the project on `init`. | decided |
 | D-pkg-12 | Defer the full backend protocol until the 3rd backend (Gemini) lands; design it against three real backends. Keep the capability-flag shape now. Protocol must model an agentic harness for raw-API backends (Gemini API / OpenRouter), not assume self-driving CLIs. | decided |
 | D-pkg-13 | Roadmap backends: **Gemini** (prefer agentic CLI path) and **OpenRouter** (one adapter, many models; raw-API → needs harness). Validate the weaker-model hypothesis (§6.2) once a raw-API path exists. | decided (roadmap) |
+| D-pkg-14 | `control` is the single structured projection/command layer; operator & surface views are dataclasses formatted at the surface. Assembler = worker-prompt assembly only; its operator `--section` modes (status, phase-summary, devlog) are deprecated and removed once superseded. No new operator views as assembler sections. | decided |
+| D-pkg-15 | Worker-prompt assembly stays isolated from the projection layer; operator-view de-dup must not alter worker-prompt bytes (FU-35 cache stability + golden tests). Shared leaf derivations only where byte-identical prompt output is preserved. | decided |

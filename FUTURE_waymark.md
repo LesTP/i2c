@@ -48,8 +48,8 @@ Three components in the e2e era do the same wrong thing — parse markdown — f
 
 | Component | e2e form | i2c form | Where specified |
 |-----------|----------|----------|-----------------|
-| Worker writes | `sed` on DEVPLAN | `tools/state.py` | DESIGN_governance_v3 §3 (write API) |
-| Codexbot reads | `LogReader` (~297 LOC regex) | `StateReader` (~50 LOC) | DESIGN_governance_v3 §Appendix C, D13 |
+| Worker writes | `sed` on DEVPLAN | `tools/state.py` | archive/DESIGN_governance_v3.md §3 (write API) |
+| Codexbot reads | `LogReader` (~297 LOC regex) | `StateReader` (~50 LOC) | archive/DESIGN_governance_v3.md §Appendix C, D13 |
 | **Waymark displays** | **5 TS parsers** | **This doc** | **— (was missing)** |
 
 The refit is the missing third leg.
@@ -230,7 +230,7 @@ Explicitly excluded so they don't accumulate.
 
 ## 10. References
 
-- i2c design — `p:\shared\i2c\DESIGN_governance_v3.md`
+- i2c design — `p:\shared\i2c\archive\DESIGN_governance_v3.md`
 - i2c workflow — `p:\shared\i2c\WORKFLOW.md`
 - Waymark v1 — https://github.com/LesTP/waymark
-- Codexbot StateReader sketch — `DESIGN_governance_v3.md` §Appendix C (the read-side parallel)
+- Codexbot StateReader sketch — `archive/DESIGN_governance_v3.md` §Appendix C (the read-side parallel)

@@ -172,6 +172,155 @@ class TestDecisions(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# devlog()
+# ---------------------------------------------------------------------------
+
+
+class TestDevlog(unittest.TestCase):
+    def test_devlog_all(self):
+        result = c.devlog(FIXTURE)
+        # Fixture: 3 phase-1 entries + 1 phase-2 entry, in file order.
+        self.assertEqual([(e.phase, e.step) for e in result],
+                         [(1, 1), (1, 2), (1, None), (2, 1)])
+
+    def test_devlog_filter_by_phase(self):
+        result = c.devlog(FIXTURE, phase=2)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].phase, 2)
+        self.assertEqual(result[0].summary[:11], "Append-only")
+
+    def test_devlog_phase_one_full_history(self):
+        result = c.devlog(FIXTURE, phase=1)
+        self.assertEqual([e.step for e in result], [1, 2, None])
+
+    def test_devlog_limit_takes_last_n(self):
+        result = c.devlog(FIXTURE, limit=2)
+        self.assertEqual([(e.phase, e.step) for e in result], [(1, None), (2, 1)])
+
+
+# ---------------------------------------------------------------------------
+# escalation()
+# ---------------------------------------------------------------------------
+
+
+def _append_devlog(root: Path, entry: dict) -> None:
+    path = root / ".state" / "devlog.jsonl"
+    text = path.read_text(encoding="utf-8")
+    if text and not text.endswith("\n"):
+        text += "\n"
+    path.write_text(text + json.dumps(entry) + "\n", encoding="utf-8")
+
+
+class TestEscalation(unittest.TestCase):
+    def test_no_escalation_in_fixture(self):
+        e = c.escalation(FIXTURE)
+        self.assertEqual(e.phase, 2)
+        self.assertFalse(e.is_escalated)  # fixture state is execute
+        self.assertIsNone(e.entry)
+        self.assertEqual(e.surrounding, [])
+        self.assertEqual(e.open_decisions, [])
+
+    def test_escalation_detected(self):
+        with TempProject() as p:
+            p.patch_project(state="audit_escalation")
+            _append_devlog(p.root, {
+                "phase": 2, "step": 2, "action": "execute", "outcome": "escalate",
+                "summary": "cross-module contract break", "contracts": [],
+                "timestamp": "2026-06-03T12:00:00Z",
+            })
+            e = c.escalation(p.root, phase=2)
+            self.assertTrue(e.is_escalated)
+            self.assertIsNotNone(e.entry)
+            self.assertEqual(e.entry.outcome, "escalate")
+            self.assertEqual(e.entry.step, 2)
+            # The preceding in-phase entry (step 1) is surrounding context.
+            self.assertEqual([s.step for s in e.surrounding], [1])
+
+    def test_escalation_open_decisions_phase_tagged(self):
+        with TempProject() as p:
+            path = p.root / ".state" / "decisions.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data[1]["phase"] = 2  # D-2 (open) tagged to phase 2
+            path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            e = c.escalation(p.root, phase=2)
+            self.assertEqual([d.id for d in e.open_decisions], ["D-2"])
+
+
+# ---------------------------------------------------------------------------
+# logs() / logs_transcript()
+# ---------------------------------------------------------------------------
+
+
+def _write_summary(root: Path, lines: list[str]) -> None:
+    log_dir = root / "logs" / "loop"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "summary.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+_LINE_1 = (
+    '2026-06-25T04:03:35+00:00 | iter=1 | backend=claude | action=EXECUTE | '
+    'exit=0 | tokens_in=41000 tokens_out=900 tokens_cached=38000 | '
+    'reason="step 2.1 complete"'
+)
+_LINE_2 = (
+    '2026-06-25T05:00:00+00:00 | iter=2 | backend=codex | action=REVIEW | '
+    'exit=2 | reason="needs human"'
+)
+_LINE_3 = (
+    '2026-06-25T06:00:00+00:00 | iter=3 | backend=claude | action=CLOSE | '
+    'exit=0 | reason="phase closed"'
+)
+
+
+class TestLogs(unittest.TestCase):
+    def test_logs_empty_without_summary(self):
+        self.assertEqual(c.logs(FIXTURE), [])  # fixture has no logs/loop/
+
+    def test_logs_parses_index_and_tokens(self):
+        with TempProject() as p:
+            _write_summary(p.root, [_LINE_1, _LINE_2])
+            entries = c.logs(p.root)
+            self.assertEqual([e.iter for e in entries], [1, 2])
+            self.assertEqual(entries[0].backend, "claude")
+            self.assertEqual(entries[0].action, "EXECUTE")
+            self.assertEqual(entries[0].exit_code, 0)
+            self.assertEqual(entries[0].reason, "step 2.1 complete")
+            self.assertEqual(
+                entries[0].tokens, {"input": 41000, "output": 900, "cached": 38000}
+            )
+            self.assertIsNone(entries[1].tokens)  # no token segment
+            self.assertIsNone(entries[0].transcript)  # index mode
+
+    def test_logs_limit_keeps_last_n(self):
+        with TempProject() as p:
+            _write_summary(p.root, [_LINE_1, _LINE_2, _LINE_3])
+            self.assertEqual([e.iter for e in c.logs(p.root, limit=2)], [2, 3])
+            self.assertEqual([e.iter for e in c.logs(p.root, limit=None)], [1, 2, 3])
+
+    def test_logs_transcript_reads_file(self):
+        with TempProject() as p:
+            _write_summary(p.root, [_LINE_1])
+            (p.root / "logs" / "loop" / "iteration_001.txt").write_text(
+                "worker transcript body", encoding="utf-8"
+            )
+            rec = c.logs_transcript(p.root, iter=1)
+            self.assertEqual(rec.iter, 1)
+            self.assertEqual(rec.transcript, "worker transcript body")
+
+    def test_logs_transcript_missing_file_is_none(self):
+        with TempProject() as p:
+            _write_summary(p.root, [_LINE_1])
+            rec = c.logs_transcript(p.root, iter=1)
+            self.assertIsNone(rec.transcript)
+
+    def test_logs_transcript_unknown_iter_raises(self):
+        with TempProject() as p:
+            _write_summary(p.root, [_LINE_1])
+            with self.assertRaises(c.NotFoundError):
+                c.logs_transcript(p.root, iter=99)
+
+
+# ---------------------------------------------------------------------------
 # clear_boundary()
 # ---------------------------------------------------------------------------
 

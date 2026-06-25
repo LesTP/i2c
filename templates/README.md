@@ -26,9 +26,11 @@ xcopy /E /I p:\shared\i2c\templates\.claude\commands  <project>\.claude\commands
 cp -r p:/shared/i2c/templates/.claude/commands <project>/.claude/commands
 ```
 
-After copying, the slash commands are available inside Devmate / Claude
-Code when working in the project directory. Personal-level commands at
-`~/.llms/commands/` are left untouched (they still point at e2e).
+After copying, the slash commands are available in Claude Code / Codex
+sessions when working in the project directory. **Devmate** does not load
+project-level commands today (FU-20) — for Devmate, copy the wrappers to the
+operator-global `~/.llms/commands/` (an `i2c-` prefix keeps them alongside any
+existing e2e-flavored global commands).
 
 ## Why per-project, not personal-level
 
@@ -38,14 +40,16 @@ Per `D-prose-4` (in the i2c rollout plan):
   evolve the template once and projects copy when they want the change.
 - Each project keeps its own copy; e2e projects keep their e2e-flavored
   slash commands. No cross-framework detection logic in personal config.
-- Devmate / Claude Code picks up the project's `.claude/commands/`
-  automatically — no extra configuration step.
+- Claude Code / Codex sessions pick up the project's `.claude/commands/`
+  automatically when working in the project directory. **Devmate** does not
+  load project-level `.claude/commands/` (or `.llms/commands/`) today
+  (FU-20); use the `~/.llms/commands/` workaround above for Devmate.
 
 ## What each slash command does
 
 | Command | Purpose | Underlying CLI |
 |---------|---------|----------------|
-| `/cold-start` | Orient on current project state | `i2c assemble --section status` |
+| `/cold-start` | Orient on current project state | `i2c status` |
 | `/phase-plan` | Plan the next phase (supervised) | `i2c assemble --action plan --phase N --mode supervised` |
 | `/step-done` | Mark a step complete, log to devlog, transition if last | `i2c state complete`, `i2c state append devlog.jsonl`, `i2c state set` |
 | `/phase-review` | Run end-of-phase review (supervised) | `i2c assemble --action review --phase N --mode supervised` |

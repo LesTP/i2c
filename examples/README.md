@@ -10,7 +10,9 @@ below is deterministic and runs locally.
 - **`smoke_test.py`** — an end-to-end script that copies the fixture to a
   temp dir and exercises the whole `state.py` write surface.
 
-All paths below are written from the repository root.
+All paths below are written from the repository root. The `i2c` commands
+assume the package is installed (`pip install -e .` from the repo root); if the
+console isn't on your PATH, substitute `python -m i2c.cli …`.
 
 ---
 
@@ -36,7 +38,7 @@ so `cd` into the project first. These never modify anything.
 cd examples/initial_state
 
 # What action would the loop dispatch next, and what state follows it?
-python ../../tools/state_machine.py
+i2c next-action
 ```
 ```
 ACTION: EXECUTE
@@ -44,28 +46,28 @@ NEXT: execute
 ```
 
 ```bash
-# A human-readable orientation snapshot.
-python ../../tools/assemble_context.py --section status
+# A human-readable orientation snapshot (control-backed; --json for structured).
+i2c status
 ```
 ```
-## Project Status
-**Phase:** 2 (event_store) — Core storage (Build)
-**State:** execute
-**Budget:** steps_remaining=3
-**Module:** event_store
-## Current Phase Steps
-| Step | Title              | Status   | Commit  |
-|------|--------------------|----------|---------|
-| 2.1  | Append-only writer | complete | 1234567 |
-| 2.2  | Reader API         | pending  | —       |
-| 2.3  | Concurrency tests  | pending  | —       |
-| 2.4  | Schema migration   | pending  | —       |
+Phase:        2
+State:        execute
+Module:       event_store
+Regime:       build
+Dependencies: (none)
+Budget:       steps_remaining=3
+
+Steps (phase 2):
+  2.1  [complete]  Append-only writer  (1234567)
+  2.2  [pending]  Reader API
+  2.3  [pending]  Concurrency tests
+  2.4  [pending]  Schema migration
 ...
 ```
 
 ```bash
 # The phase-boundary audit view ("what happened in phase 2?").
-python ../../tools/assemble_context.py --section phase-summary --phase 2
+i2c phase-summary --phase 2
 ```
 
 ---
@@ -82,16 +84,16 @@ cp -r examples/initial_state /tmp/i2c-demo      # Windows: xcopy /E /I examples\
 cd /tmp/i2c-demo
 
 # Mark step 2.2 done and log it.
-python <repo>/tools/state.py complete steps.json --phase 2 --step 2 --commit abc1234
-python <repo>/tools/state.py append devlog.jsonl '{"phase":2,"step":2,"action":"execute","outcome":"complete","summary":"Reader API implemented.","contracts":[],"commit":"abc1234","timestamp":"2026-01-01T00:00:00Z"}'
+i2c state complete steps.json --phase 2 --step 2 --commit abc1234
+i2c state append devlog.jsonl '{"phase":2,"step":2,"action":"execute","outcome":"complete","summary":"Reader API implemented.","contracts":[],"commit":"abc1234","timestamp":"2026-01-01T00:00:00Z"}'
 
 # Re-check: step 2.2 now shows complete, steps_remaining drops.
-python <repo>/tools/assemble_context.py --section status
+i2c status
 ```
 
 `smoke_test.py` automates exactly this kind of sequence (an execute step
-plus a phase close) end-to-end — read it for the full command surface,
-including `set`, `complete`, `append-record`, `update-record`, and
+plus a phase close) end-to-end — read it for the full `i2c state` command
+surface, including `set`, `complete`, `append-record`, `update-record`, and
 `append-gotcha`.
 
 ---
@@ -106,7 +108,8 @@ in the top-level README.
 
 Note: the read commands in §2 work against any `.state/` directory. The
 *full* per-action prompt assembly
-(`assemble_context.py --action plan --phase N --mode supervised`)
-additionally needs the framework docs (`WORKER_SPEC.md`, `instructions/`,
-the adapter) present in the project root — which the bootstrap step puts
-there.
+(`i2c assemble --action plan --phase N --mode supervised`)
+additionally needs the project's adapter (`CLAUDE.md` / `CODEX.md`) and
+project docs (`PROJECT.md`, `ARCHITECTURE.md`, `ARCH_*.md`) in the project
+root; `WORKER_SPEC.md` and `instructions/` resolve from the installed package
+(or a project-local override). `i2c init` scaffolds these.

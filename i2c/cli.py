@@ -13,6 +13,9 @@ Subcommands::
     i2c next-action                  # state-machine dispatch decision
     i2c phase-summary --phase N      # operator's boundary view of phase N
     i2c decisions [--phase N]        # decision records (optionally filtered)
+    i2c devlog [--phase N]           # devlog entries (optionally filtered)
+    i2c escalation [--phase N]       # current escalation signal
+    i2c logs [--iter N] [--limit N]  # iteration index, or one transcript via --iter
     i2c clear-boundary [--terminate] # advance past / terminate an audit_boundary
     i2c run [--backend ...] ...      # one cold-start worker iteration
     i2c migrate [--check|--dry-run]  # upgrade .state/ to the current schema
@@ -21,7 +24,7 @@ This is the **minimal** Phase-2 CLI: it stays in the flat ``tools/`` layout and
 is invoked as ``python tools/cli.py <subcommand>``. The importable ``i2c``
 package + ``console_scripts`` entry point (so ``i2c …`` works after
 ``pip install``) and the ``i2c state`` worker tool-surface switch are separate,
-later Phase-2 items. ``logs`` / ``escalation`` are omitted until FU-34.
+later Phase-2 items. ``escalation`` / ``logs`` are the FU-34 projections.
 
 Exit codes: ``0`` success; ``2`` on a ``ControlError`` (missing / invalid
 ``.state/``, unmet precondition) — surfaced as a structured ``ERROR:`` line on
@@ -160,6 +163,56 @@ def _render_decisions(decisions: list[control.DecisionView]) -> str:
     return "\n".join(_fmt_decision(d).lstrip() for d in decisions)
 
 
+def _render_devlog_list(entries: list[control.DevlogView]) -> str:
+    if not entries:
+        return "(no devlog entries)"
+    return "\n".join(_fmt_devlog(e).lstrip() for e in entries)
+
+
+def _render_escalation(e: control.EscalationView) -> str:
+    lines = [
+        f"Phase:     {e.phase}",
+        f"Escalated: {'yes (state=audit_escalation)' if e.is_escalated else 'no'}",
+        "",
+        "Trigger:",
+        _fmt_devlog(e.entry) if e.entry else "  (none)",
+        "",
+        "Preceding context:",
+    ]
+    lines += [_fmt_devlog(x) for x in e.surrounding] or ["  (none)"]
+    lines += ["", "Open decisions (this phase):"]
+    lines += [_fmt_decision(d) for d in e.open_decisions] or ["  (none)"]
+    return "\n".join(lines)
+
+
+def _render_logs(entries: list[control.IterationLog]) -> str:
+    if not entries:
+        return "(no iterations logged)"
+    lines = []
+    for e in entries:
+        tok = ""
+        if e.tokens:
+            tok = (
+                f"  tokens(in/out/cached)="
+                f"{e.tokens['input']}/{e.tokens['output']}/{e.tokens['cached']}"
+            )
+        lines.append(
+            f"  iter {e.iter} [{e.backend} {e.action} exit={e.exit_code}] "
+            f"{e.timestamp}{tok}"
+        )
+        lines.append(f"      reason: {e.reason}")
+    return "\n".join(lines)
+
+
+def _render_log_transcript(e: control.IterationLog) -> str:
+    head = (
+        f"iter {e.iter} [{e.backend} {e.action} exit={e.exit_code}] {e.timestamp}\n"
+        f"reason: {e.reason}\n"
+    )
+    body = e.transcript if e.transcript is not None else "(no transcript file)"
+    return head + "\n" + body
+
+
 def _render_boundary(r: control.BoundaryResult) -> str:
     return f"{r.outcome} — phase {r.phase}, state {r.state}"
 
@@ -202,6 +255,38 @@ def cmd_decisions(args: argparse.Namespace) -> int:
     except control.ControlError as e:
         return _fail(e)
     _emit(result, as_json=args.json, renderer=_render_decisions)
+    return 0
+
+
+def cmd_devlog(args: argparse.Namespace) -> int:
+    try:
+        result = control.devlog(phase=args.phase)
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(result, as_json=args.json, renderer=_render_devlog_list)
+    return 0
+
+
+def cmd_escalation(args: argparse.Namespace) -> int:
+    try:
+        result = control.escalation(phase=args.phase)
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(result, as_json=args.json, renderer=_render_escalation)
+    return 0
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    try:
+        if args.iter is not None:
+            result: object = control.logs_transcript(iter=args.iter)
+            renderer = _render_log_transcript
+        else:
+            result = control.logs(limit=args.limit)
+            renderer = _render_logs
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(result, as_json=args.json, renderer=renderer)
     return 0
 
 
@@ -374,6 +459,41 @@ def build_parser() -> argparse.ArgumentParser:
         "--phase", type=int, default=None, help="Filter to decisions tagged this phase."
     )
     p_dec.set_defaults(func=cmd_decisions)
+
+    p_devlog = sub.add_parser(
+        "devlog",
+        parents=[json_parent],
+        help="Devlog entries, optionally filtered by phase.",
+    )
+    p_devlog.add_argument(
+        "--phase", type=int, default=None, help="Filter to entries for this phase."
+    )
+    p_devlog.set_defaults(func=cmd_devlog)
+
+    p_esc = sub.add_parser(
+        "escalation",
+        parents=[json_parent],
+        help="Current escalation signal (audit_escalation + triggering devlog entry).",
+    )
+    p_esc.add_argument(
+        "--phase", type=int, default=None, help="Phase to inspect (default: current)."
+    )
+    p_esc.set_defaults(func=cmd_escalation)
+
+    p_logs = sub.add_parser(
+        "logs",
+        parents=[json_parent],
+        help="Iteration index from logs/loop/summary.log, or one transcript via --iter.",
+    )
+    p_logs.add_argument(
+        "--iter", type=int, default=None,
+        help="Show this iteration's transcript instead of the index.",
+    )
+    p_logs.add_argument(
+        "--limit", type=int, default=10,
+        help="Index mode: keep the last N iterations (default 10).",
+    )
+    p_logs.set_defaults(func=cmd_logs)
 
     p_cb = sub.add_parser(
         "clear-boundary",

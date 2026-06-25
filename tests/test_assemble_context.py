@@ -167,27 +167,15 @@ class TestHeadingParsing(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Status section renderers — against the fixture
+# Shared snapshot renderers — against the fixture
+#
+# These leaf renderers feed the worker prompt. The operator-derived status /
+# phase-summary / devlog sections were removed in Phase 3a (FU-39); their
+# coverage now lives in tests/test_control.py + tests/test_cli.py.
 # ---------------------------------------------------------------------------
 
 
-class TestStatusRenderers(unittest.TestCase):
-    def test_project_status_includes_phase_and_state(self):
-        with TempProject():
-            ctx = build_ctx(section="status")
-            out = ac.render_status_project(ctx)
-            self.assertTrue(out.startswith("## Project Status"))
-            # Fixture: phase 2 / state execute / module event_store / regime build
-            self.assertIn("Phase:", out)
-            self.assertIn("event_store", out)
-            self.assertIn("Core storage", out)
-            self.assertIn("Build", out)
-            self.assertIn("**State:** execute", out)
-            # Note: 'Blocked' line was removed in DESIGN_state_lifecycle_v1 —
-            # `blocked` field dropped from project.json schema in favor of
-            # state values audit_boundary, audit_escalation, done.
-            self.assertNotIn("Blocked:", out)
-
+class TestSharedRenderers(unittest.TestCase):
     def test_current_phase_steps_table_filters_to_current_phase(self):
         with TempProject():
             ctx = build_ctx(section="status")
@@ -246,56 +234,9 @@ class TestStatusRenderers(unittest.TestCase):
     def test_recent_activity_empty_devlog(self):
         with TempProject() as root:
             (root / ".state" / "devlog.jsonl").write_text("", encoding="utf-8")
-            ctx = build_ctx(section="status")
+            ctx = build_ctx(section="architecture")
             out = ac.render_recent_activity(ctx, n=3)
             self.assertIn("<!-- empty -->", out)
-
-    def test_open_decisions_filters_to_open(self):
-        with TempProject():
-            ctx = build_ctx(section="status")
-            out = ac.render_open_decisions(ctx)
-            self.assertTrue(out.startswith("## Open Decisions"))
-            # Fixture: D-1 closed, D-2 open.
-            self.assertIn("D-2", out)
-            self.assertNotIn("D-1 ", out)
-            self.assertIn("[medium", out)
-
-    def test_open_decisions_all_closed(self):
-        with TempProject() as root:
-            data = json.loads((root / ".state" / "decisions.json").read_text())
-            for d in data:
-                d["status"] = "closed"
-            (root / ".state" / "decisions.json").write_text(json.dumps(data))
-            ctx = build_ctx(section="status")
-            out = ac.render_open_decisions(ctx)
-            self.assertIn("<!-- empty -->", out)
-
-
-# ---------------------------------------------------------------------------
-# --section status — end-to-end via main()
-# ---------------------------------------------------------------------------
-
-
-class TestSectionStatusEndToEnd(unittest.TestCase):
-    def test_section_status_runs_and_outputs_all_subsections(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "status")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("## Project Status", out)
-            self.assertIn("## Current Phase Steps", out)
-            self.assertIn("## Gotchas", out)
-            self.assertIn("## Recent Activity", out)
-            self.assertIn("## Open Decisions", out)
-            # Trailing newline invariant (§12).
-            self.assertTrue(out.endswith("\n"))
-
-    def test_deterministic_across_reruns(self):
-        with TempProject():
-            rc1, out1, _ = run_cli("--section", "status")
-            rc2, out2, _ = run_cli("--section", "status")
-            self.assertEqual(rc1, 0)
-            self.assertEqual(rc2, 0)
-            self.assertEqual(out1, out2)
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +246,7 @@ class TestSectionStatusEndToEnd(unittest.TestCase):
 
 class TestCliArgumentErrors(unittest.TestCase):
     def test_both_action_and_section_rejected(self):
-        rc, _, err = run_cli("--action", "plan", "--phase", "1", "--section", "status")
+        rc, _, err = run_cli("--action", "plan", "--phase", "1", "--section", "architecture")
         # argparse mutually-exclusive raises exit 2.
         self.assertEqual(rc, 2)
 
@@ -323,11 +264,6 @@ class TestCliArgumentErrors(unittest.TestCase):
             rc, _, err = run_cli("--action", "plan", "--phase", "0")
             self.assertEqual(rc, 2)
 
-    def test_section_devlog_requires_phase(self):
-        with TempProject():
-            rc, _, err = run_cli("--section", "devlog")
-            self.assertEqual(rc, 2)
-
     def test_section_module_requires_module(self):
         with TempProject():
             rc, _, err = run_cli("--section", "module")
@@ -335,18 +271,12 @@ class TestCliArgumentErrors(unittest.TestCase):
 
     def test_mode_with_section_rejected(self):
         with TempProject():
-            rc, _, err = run_cli("--section", "status", "--mode", "supervised")
+            rc, _, err = run_cli("--section", "architecture", "--mode", "supervised")
             self.assertEqual(rc, 2)
 
     def test_emit_with_section_rejected(self):
         # FU-35: --emit is only meaningful with --action.
-        rc, _, err = run_cli("--section", "status", "--emit", "user")
-        self.assertEqual(rc, 2)
-
-    def test_phase_with_section_status_rejected(self):
-        # FU-17: status always reports project.json.phase; --phase is a
-        # silent no-op there, so reject it.
-        rc, _, err = run_cli("--section", "status", "--phase", "3")
+        rc, _, err = run_cli("--section", "architecture", "--emit", "user")
         self.assertEqual(rc, 2)
 
     def test_phase_with_section_architecture_rejected(self):
@@ -372,7 +302,7 @@ class TestRequiredInputFailures(unittest.TestCase):
         with TempProject() as root:
             (root / ".state" / "project.json").unlink()
             # Without project.json, find_project_root will fail at startup.
-            rc, _, err = run_cli("--section", "status")
+            rc, _, err = run_cli("--section", "architecture")
             self.assertEqual(rc, 1)
             self.assertIn("ERROR:", err)
 
@@ -381,7 +311,7 @@ class TestRequiredInputFailures(unittest.TestCase):
             (root / ".state" / "project.json").write_text(
                 json.dumps({"phase": 1, "state": "BOGUS"})
             )
-            rc, _, err = run_cli("--section", "status")
+            rc, _, err = run_cli("--section", "architecture")
             self.assertEqual(rc, 1)
             self.assertIn("ERROR:", err)
             self.assertIn("schema-invalid", err)
@@ -1272,128 +1202,6 @@ class TestSectionModule(unittest.TestCase):
             )
             self.assertEqual(rc, 1)
             self.assertIn("ERROR:", err)
-
-
-class TestSectionDevlog(unittest.TestCase):
-    def test_filters_to_requested_phase(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "devlog", "--phase", "1")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("Phase 1 Devlog", out)
-            self.assertIn("1.1 execute", out)
-            self.assertNotIn("2.1 execute", out)
-
-    def test_unknown_phase_empty(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "devlog", "--phase", "99")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("<!-- empty -->", out)
-
-
-class TestSectionPhaseSummary(unittest.TestCase):
-    """`--section phase-summary --phase N` per ARCH_assembler.md §8b."""
-
-    def test_requires_phase(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary")
-            self.assertEqual(rc, 2)
-            self.assertIn("--phase is required", err)
-
-    def test_rejects_phase_zero(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "0")
-            self.assertEqual(rc, 2)
-            self.assertIn("positive integer", err)
-
-    def test_renders_header_with_module_title_regime_status(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("## Phase 1 Summary", out)
-            self.assertIn("bootstrap", out)
-            self.assertIn("Project scaffolding", out)
-            self.assertIn("Build", out)
-            self.assertIn("complete", out)
-
-    def test_renders_steps_table(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("## Steps", out)
-            self.assertIn("| Step |", out)
-            # Phase 1 in the fixture has 2 steps.
-            self.assertIn("| 1.1 |", out)
-            self.assertIn("| 1.2 |", out)
-
-    def test_renders_decisions_section_with_phase_filter(self):
-        # Fixture has D-1 + D-2 without phase field; nothing should show
-        # under phase 1, and the back-fill note must appear.
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("## Decisions Added in This Phase", out)
-            self.assertIn("<!-- empty -->", out)
-            self.assertIn("lack the optional `phase` field", out)
-
-    def test_phase_tagged_decisions_included(self):
-        # Inject a phase-tagged decision; it should appear under that phase.
-        with TempProject() as root:
-            decisions_path = root / ".state" / "decisions.json"
-            data = json.loads(decisions_path.read_text())
-            data.append({
-                "id": "D-3",
-                "title": "Test phase-tagged decision",
-                "status": "closed",
-                "decision": "this should appear in phase 2 summary",
-                "phase": 2,
-            })
-            decisions_path.write_text(json.dumps(data))
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "2")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("D-3", out)
-            self.assertIn("this should appear in phase 2 summary", out)
-
-    def test_renders_phase_devlog(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("## Phase Devlog", out)
-            self.assertIn("1.1 execute", out)
-            # Other phases' devlog should not bleed in.
-            self.assertNotIn("2.1 execute", out)
-
-    def test_open_items_lists_phase_tagged_open_decisions(self):
-        with TempProject() as root:
-            decisions_path = root / ".state" / "decisions.json"
-            data = json.loads(decisions_path.read_text())
-            data.append({
-                "id": "D-4",
-                "title": "Open question for phase 2",
-                "status": "open",
-                "priority": "high",
-                "decision": "TBD",
-                "phase": 2,
-            })
-            decisions_path.write_text(json.dumps(data))
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "2")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("## Open Items for Boundary Decision", out)
-            self.assertIn("D-4", out)
-            self.assertIn("Open question for phase 2", out)
-
-    def test_open_items_empty_when_no_phase_tagged_open(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "1")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("## Open Items for Boundary Decision", out)
-            # Fixture D-2 is open but not phase-tagged → not included.
-            self.assertNotIn("D-2", out)
-
-    def test_unknown_phase_renders_no_record_marker(self):
-        with TempProject():
-            rc, out, err = run_cli("--section", "phase-summary", "--phase", "99")
-            self.assertEqual(rc, 0, msg=err)
-            self.assertIn("(no phases.json record)", out)
 
 
 class TestAssetOverrideResolution(unittest.TestCase):

@@ -50,7 +50,7 @@ EMDASH = "—"  # U+2014
 PLACEHOLDER_EMPTY = "<!-- empty -->"
 
 ACTIONS = ("plan", "execute", "review", "close")
-SECTIONS = ("status", "architecture", "module", "devlog", "phase-summary")
+SECTIONS = ("architecture", "module")
 MODES = ("autonomous", "supervised")
 
 # NEXT state computation per D-impl-3 (state-transition table used standalone).
@@ -464,49 +464,13 @@ def build_context(args: argparse.Namespace) -> AssemblerContext:
 
 
 # ---------------------------------------------------------------------------
-# 9. Section renderers (status snapshot)
+# 9. Shared snapshot renderers
 #
-# Per ARCH §8 the `--section status` output is a fast-to-read snapshot,
-# distinct from the full assembled prompt: no Worker Contract banner, no
-# instructions, no module contract — just orientation.
+# Leaf renderers shared by the worker-prompt assembly (Current Phase Steps,
+# Gotchas, Recent Activity). The operator-facing `--section status` /
+# `phase-summary` / `devlog` views were removed in Phase 3a (FU-39); those
+# projections now live in `i2c.control` + the `i2c` CLI (D-pkg-14).
 # ---------------------------------------------------------------------------
-
-
-def _fmt_dependencies(deps: list[str] | None) -> str:
-    if not deps:
-        return "(none — leaf module)"
-    return ", ".join(deps)
-
-
-def render_status_project(ctx: AssemblerContext) -> str:
-    """## Project Status — phase, state, budget, module, dependencies."""
-    p = ctx.project
-    phase_id = p.get("phase", 0)
-    record = ctx.current_phase_record()
-    if record is None:
-        # Status snapshot is tolerant — if no record matches (e.g., phase 0),
-        # render what we can and skip module/dependencies.
-        title = "(no phases.json record)"
-        regime = "—"
-        module = "—"
-        deps = "—"
-    else:
-        title = record.get("title", "—")
-        regime = record.get("regime", "—").title()
-        module = record.get("module", "—")
-        deps = _fmt_dependencies(record.get("dependencies"))
-
-    lines = ["## Project Status", ""]
-    lines.append(f"**Phase:** {phase_id} ({module}) {EMDASH} {title} ({regime})")
-    lines.append(f"**State:** {p.get('state', '—')}")
-    if "steps_remaining" in p:
-        lines.append(f"**Budget:** steps_remaining={p['steps_remaining']}")
-    elif p.get("budget_type") == "time" and "time_budget_seconds" in p:
-        lines.append(f"**Budget:** time_budget_seconds={p['time_budget_seconds']}")
-    if module != "—":
-        lines.append(f"**Module:** {module}")
-        lines.append(f"**Dependencies:** {deps}")
-    return "\n".join(lines)
 
 
 def render_current_phase_steps_table(ctx: AssemblerContext) -> str:
@@ -572,22 +536,6 @@ def render_recent_activity(ctx: AssemblerContext, n: int = 3) -> str:
         return "\n".join(lines)
     for e in entries:
         lines.append(_fmt_devlog_bullet(e))
-    return "\n".join(lines)
-
-
-def render_open_decisions(ctx: AssemblerContext) -> str:
-    """## Open Decisions — bullets, filtered to status=='open'."""
-    open_d = [d for d in ctx.decisions if d.get("status") == "open"]
-    lines = ["## Open Decisions", ""]
-    if not open_d:
-        lines.append(PLACEHOLDER_EMPTY)
-        return "\n".join(lines)
-    for d in open_d:
-        did = d.get("id", "?")
-        priority = d.get("priority", "—")
-        title = d.get("title", "")
-        decision = d.get("decision", "")
-        lines.append(f"- {did} [{priority} \u00b7 open] {title} {EMDASH} {decision}")
     return "\n".join(lines)
 
 
@@ -1193,25 +1141,6 @@ def build_full_prompt(ctx: AssemblerContext) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_section_status(ctx: AssemblerContext) -> str:
-    """`--section status` per ARCH §8.
-
-    Returns the assembled markdown for the status snapshot, with a trailing
-    newline per output invariants (§12).
-    """
-    parts = [
-        render_status_project(ctx),
-        render_current_phase_steps_table(ctx),
-        render_gotchas(ctx),
-        render_recent_activity(ctx, n=3),
-        render_open_decisions(ctx),
-    ]
-    body = "\n\n".join(parts)
-    if not body.endswith("\n"):
-        body += "\n"
-    return body
-
-
 def build_section_architecture(ctx: AssemblerContext) -> str:
     """`--section architecture` — verbatim ARCHITECTURE.md (per ARCH §10).
 
@@ -1252,190 +1181,6 @@ def build_section_module(ctx: AssemblerContext) -> str:
     return text
 
 
-def build_section_devlog(ctx: AssemblerContext) -> str:
-    """`--section devlog --phase N` — bulleted summary filtered to phase N."""
-    pid = ctx.current_phase_id()
-    entries = [e for e in ctx.devlog if e.get("phase") == pid]
-    lines = [f"## Phase {pid} Devlog", ""]
-    if not entries:
-        lines.append(PLACEHOLDER_EMPTY)
-    else:
-        for e in entries:
-            lines.append(_fmt_devlog_bullet(e))
-    body = "\n".join(lines)
-    if not body.endswith("\n"):
-        body += "\n"
-    return body
-
-
-# ---------------------------------------------------------------------------
-# 12b. --section phase-summary
-#
-# Operator's view at phase boundary (audit_boundary): "what happened in
-# phase N". Renders header + steps + decisions-added-this-phase + phase
-# devlog + open items. Distinct from --section status (which is
-# project-wide, current-state-focused) and from --section devlog
-# (which is just the devlog tail). See ARCH_assembler.md §8b.
-# ---------------------------------------------------------------------------
-
-
-def render_phase_summary_header(ctx: AssemblerContext, phase_id: int) -> str:
-    """## Phase N Summary — module: title (Regime, Status) + header table."""
-    record = None
-    for p in ctx.phases:
-        if p.get("id") == phase_id:
-            record = p
-            break
-    if record is None:
-        return (
-            f"## Phase {phase_id} Summary {EMDASH} (no phases.json record)\n\n"
-            f"{PLACEHOLDER_EMPTY}"
-        )
-    module = record.get("module", "—")
-    title = record.get("title", "")
-    regime = (record.get("regime", "") or "").title()
-    status = record.get("status", "")
-    deps = _fmt_dependencies(record.get("dependencies"))
-
-    # Compute devlog span: first → last timestamp for entries tagged to this phase.
-    phase_entries = [e for e in ctx.devlog if e.get("phase") == phase_id]
-    timestamps = [e.get("timestamp") for e in phase_entries if e.get("timestamp")]
-    if timestamps:
-        timestamps.sort()
-        spans = f"{timestamps[0]} {EMDASH} {timestamps[-1]} ({len(phase_entries)} devlog entries)"
-    else:
-        spans = f"(no devlog entries)"
-
-    head = f"## Phase {phase_id} Summary {EMDASH} {module}: {title} ({regime}, {status})"
-    lines = [
-        head,
-        "",
-        "| Field | Value |",
-        "|-------|-------|",
-        f"| Module | {module} |",
-        f"| Regime | {record.get('regime', '')} |",
-        f"| Dependencies | {deps} |",
-        f"| Status | {status} |",
-        f"| Spans | {spans} |",
-    ]
-    return "\n".join(lines)
-
-
-def render_phase_summary_steps(ctx: AssemblerContext, phase_id: int) -> str:
-    """## Steps — table filtered to this phase, in step-number order."""
-    steps = [s for s in ctx.steps if s.get("phase") == phase_id]
-    steps.sort(key=lambda s: s.get("step", 0))
-    lines = ["## Steps", ""]
-    if not steps:
-        lines.append(PLACEHOLDER_EMPTY)
-        return "\n".join(lines)
-    lines.append("| Step | Title | Status | Commit |")
-    lines.append("|------|-------|--------|--------|")
-    for s in steps:
-        step_id = f"{phase_id}.{s.get('step', '?')}"
-        title = s.get("title", "")
-        status = s.get("status", "")
-        commit = s.get("commit", "—") or "—"
-        lines.append(f"| {step_id} | {title} | {status} | {commit} |")
-    return "\n".join(lines)
-
-
-def render_phase_summary_decisions(ctx: AssemblerContext, phase_id: int) -> str:
-    """## Decisions Added in This Phase — filtered by decision.phase == N.
-
-    Δ1 (optional `phase` field on decisions.schema.json) is the clean
-    filter. Decisions authored before Δ1 lack the field and will not
-    appear; a footer note explains how to back-fill.
-    """
-    phase_decisions = [d for d in ctx.decisions if d.get("phase") == phase_id]
-    untagged = [d for d in ctx.decisions if "phase" not in d]
-    lines = ["## Decisions Added in This Phase", ""]
-    if not phase_decisions:
-        lines.append(PLACEHOLDER_EMPTY)
-    else:
-        for d in phase_decisions:
-            did = d.get("id", "?")
-            status = d.get("status", "")
-            priority = d.get("priority", "—")
-            title = d.get("title", "")
-            decision = d.get("decision", "")
-            lines.append(f"- **{did}** [{status} · {priority}] {title}")
-            lines.append(f"  Decision: {decision}")
-            rationale = d.get("rationale")
-            if rationale:
-                lines.append(f"  Rationale: {rationale}")
-            revisit = d.get("revisit_if")
-            if revisit:
-                lines.append(f"  Revisit if: {revisit}")
-    if untagged:
-        lines.append("")
-        lines.append(
-            f"<!-- {len(untagged)} decision(s) in decisions.json lack the optional `phase` field "
-            f"and are excluded from this view. Back-fill via "
-            f"`state.py update-record decisions.json --match id=D-N phase={phase_id}` if any belong here. -->"
-        )
-    return "\n".join(lines)
-
-
-def render_phase_summary_devlog(ctx: AssemblerContext, phase_id: int) -> str:
-    """## Phase Devlog — full history for this phase, bulleted."""
-    entries = [e for e in ctx.devlog if e.get("phase") == phase_id]
-    lines = ["## Phase Devlog", ""]
-    if not entries:
-        lines.append(PLACEHOLDER_EMPTY)
-        return "\n".join(lines)
-    for e in entries:
-        lines.append(_fmt_devlog_bullet(e))
-    return "\n".join(lines)
-
-
-def render_phase_summary_open_items(ctx: AssemblerContext, phase_id: int) -> str:
-    """## Open Items for Boundary Decision — phase-tagged open decisions.
-
-    Conservative scope: only lists decisions where `phase == N` AND
-    `status == open`. Other heuristics (text-matching `Deferred:` in
-    devlog summaries, scanning `contracts` fields) are deliberately
-    omitted in v1 — too brittle. Operator who needs broader scope can
-    grep .state/ directly.
-    """
-    open_phase = [
-        d for d in ctx.decisions
-        if d.get("phase") == phase_id and d.get("status") == "open"
-    ]
-    lines = ["## Open Items for Boundary Decision", ""]
-    if not open_phase:
-        lines.append(PLACEHOLDER_EMPTY)
-        return "\n".join(lines)
-    for d in open_phase:
-        did = d.get("id", "?")
-        priority = d.get("priority", "—")
-        title = d.get("title", "")
-        decision = d.get("decision", "")
-        lines.append(f"- {did} [{priority} · open] {title} {EMDASH} {decision}")
-    return "\n".join(lines)
-
-
-def build_section_phase_summary(ctx: AssemblerContext) -> str:
-    """`--section phase-summary --phase N` per ARCH_assembler.md §8b.
-
-    Operator's audit_boundary view: what happened in phase N. Composes
-    header, steps, decisions-added-this-phase, phase devlog, and
-    open items. Trailing newline per output invariants (§12).
-    """
-    phase_id = ctx.current_phase_id()
-    parts = [
-        render_phase_summary_header(ctx, phase_id),
-        render_phase_summary_steps(ctx, phase_id),
-        render_phase_summary_decisions(ctx, phase_id),
-        render_phase_summary_devlog(ctx, phase_id),
-        render_phase_summary_open_items(ctx, phase_id),
-    ]
-    body = "\n\n".join(parts)
-    if not body.endswith("\n"):
-        body += "\n"
-    return body
-
-
 # ---------------------------------------------------------------------------
 # 13. CLI + main
 # ---------------------------------------------------------------------------
@@ -1458,8 +1203,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--phase", type=int,
-        help="Phase number (positive int). Required with --action and "
-             "--section devlog.",
+        help="Phase number (positive int). Required with --action.",
     )
     parser.add_argument(
         "--mode", choices=MODES, default=None,
@@ -1516,22 +1260,10 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
             parser.error("--mode is only valid with --action")
         if getattr(args, "emit", "full") != "full":
             parser.error("--emit is only valid with --action")
-        # --phase is consumed only by devlog and phase-summary. The other
-        # sections (status, architecture, module) always report on
-        # project.json.phase or ignore phase entirely (ARCH §8); accepting
-        # --phase there silently misleads the caller (FU-17).
-        if args.section not in ("devlog", "phase-summary") and args.phase is not None:
+        # Neither surviving section (architecture, module) consumes --phase;
+        # accepting it would silently mislead the caller (FU-17).
+        if args.phase is not None:
             parser.error(f"--phase is not valid with --section {args.section}")
-        if args.section == "devlog":
-            if args.phase is None:
-                parser.error("--phase is required with --section devlog")
-            if args.phase < 1:
-                parser.error("--phase must be a positive integer")
-        if args.section == "phase-summary":
-            if args.phase is None:
-                parser.error("--phase is required with --section phase-summary")
-            if args.phase < 1:
-                parser.error("--phase must be a positive integer")
         if args.section == "module":
             if not args.module:
                 parser.error("--module is required with --section module")
@@ -1554,24 +1286,12 @@ def main(argv: list[str] | None = None) -> int:
 
     ctx = build_context(args)
 
-    if args.section == "status":
-        sys.stdout.write(build_section_status(ctx))
-        return 0
-
     if args.section == "architecture":
         sys.stdout.write(build_section_architecture(ctx))
         return 0
 
     if args.section == "module":
         sys.stdout.write(build_section_module(ctx))
-        return 0
-
-    if args.section == "devlog":
-        sys.stdout.write(build_section_devlog(ctx))
-        return 0
-
-    if args.section == "phase-summary":
-        sys.stdout.write(build_section_phase_summary(ctx))
         return 0
 
     if args.action is not None:

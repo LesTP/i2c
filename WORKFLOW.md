@@ -77,6 +77,16 @@ graph LR
 
 **Key insight:** Both paths use the same runner, same worker, same state files. The difference is who sits between the human and the runner: a deterministic program or an AI session.
 
+> **Current model:** [`DESIGN_packaging_v1.md`](DESIGN_packaging_v1.md) §7 is
+> authoritative for the driver/surface architecture and generalizes these two
+> paths. Both a chat-ops bot and an orchestrator are **drivers over the
+> deterministic `i2c.control` command API**; they differ only in who pulls the
+> levers — a deterministic Policy, a Human, or an LLM Agent. §7 factors the
+> design into three independent axes (transport/surface, worker backend,
+> orchestrator), so "Path A vs Path B" is really one axis — the orchestrator —
+> varying while the others stay fixed. Read the diagram above as the two common
+> configurations, not the full design.
+
 ---
 
 ## Invocation Flow
@@ -145,102 +155,24 @@ stateDiagram-v2
 
 **Always assembled** (every action): WORKER_SPEC (identity, loop, escalation, output contract, prohibitions), adapter (tool rules, project notes), project.json (state, gotchas), module list.
 
-After CLOSE the worker leaves the project in `audit_boundary`; the human (or an autonomous wrapper) clears the gate — see below.
+After CLOSE the worker leaves the project in `audit_boundary`; the human (or an autonomous wrapper) clears the gate — see *Detailed Action Map → Boundary clearing* below.
 
 ---
 
 ## Detailed Action Map
 
-### What happens BEFORE the worker starts
+The per-action procedure — what each of PLAN / EXECUTE / REVIEW / CLOSE reads,
+does, and writes, step by step — is the **canonical** content of
+`instructions/{plan,execute,review,close}.md` (the same text the assembler puts
+in the worker's prompt). See those files for the authoritative steps; the
+README's "four worker actions" table is the one-line summary. The diagrams
+above show how the runner wraps each action and what the assembler reads.
 
-```
-Dispatch request (human → driver/orchestrator → runner)
-  │
-  ├─ Runner calls: python -m i2c.state_machine
-  │   ├─ Reads: .state/project.json, .state/steps.json
-  │   ├─ Checks: halt state (audit_boundary / audit_escalation / done)? budget exhausted?
-  │   ├─ Computes: ACTION + NEXT
-  │   └─ If EXIT → runner stops, no worker invocation
-  │
-  ├─ Runner calls: python -m i2c.assemble_context --action $ACTION --phase $PHASE
-  │   ├─ Reads: WORKER_SPEC.md (identity, loop, escalation, output, prohibitions)
-  │   ├─ Reads: adapter file (tool rules, project notes, module list)
-  │   ├─ Reads: instructions/$ACTION.md (action procedure)
-  │   ├─ Reads: .state/project.json (state, gotchas)
-  │   ├─ Reads: PROJECT.md (if PLAN action)
-  │   ├─ Reads: ARCHITECTURE.md (if PLAN or REVIEW action)
-  │   ├─ Reads: ARCH_module.md (all actions)
-  │   ├─ Reads: .state/steps.json, devlog.jsonl, decisions.json (per action)
-  │   └─ Outputs: structured prompt with section delimiters
-  │
-  └─ Runner invokes worker with assembled prompt
-      └─ Worker has zero governance files to read — starts working immediately
-```
-
-### PLAN action
-
-| Step | What happens | Worker reads | Worker writes |
-|------|-------------|-------------|---------------|
-| 1 | Determine scope | (in prompt: PROJECT.md, ARCHITECTURE.md) | — |
-| 2 | Identify work regime | (in prompt: instructions/plan.md) | — |
-| 3 | Break into steps | (in prompt: ARCH_module.md) | — |
-| 4 | **If non-leaf module:** dependency probe | source files for dep verification | devlog.jsonl (probe result) |
-| 5 | Write step breakdown | — | steps.json (new step records) |
-| 6 | Transition state | — | project.json (state→execute) |
-| 7 | Commit + devlog | — | devlog.jsonl, git commit |
-
-### EXECUTE action (repeats per step)
-
-| Step | What happens | Worker reads | Worker writes |
-|------|-------------|-------------|---------------|
-| 1 | Pick next pending step | (in prompt: steps.json) | — |
-| 2 | Read context | source files, test files | — |
-| 3 | Implement | source files, test files | source files, test files |
-| 4 | Run tests | — | — |
-| 5 | Mark step complete | — | steps.json (step→complete) |
-| 6 | Log what happened | — | devlog.jsonl (append entry) |
-| 7 | Commit | — | git commit |
-| 8 | Transition state | — | project.json (state→review if last step) |
-
-### REVIEW action
-
-| Step | What happens | Worker reads | Worker writes |
-|------|-------------|-------------|---------------|
-| 1 | Identify phase scope | (in prompt: steps.json) | — |
-| 2 | Read all phase code | source files | — |
-| 3 | Check: dead code, arch drift, simplification | (in prompt: ARCHITECTURE.md) | — |
-| 4 | Categorize findings | — | — |
-| 5 | Apply must-fix + should-fix | source files | source files |
-| 6 | Log review findings | — | devlog.jsonl (review entry) |
-| 7 | Commit fixes | — | git commit |
-| 8 | Transition state | — | project.json (state→close) |
-
-### CLOSE action
-
-| Step | What happens | Worker reads | Worker writes |
-|------|-------------|-------------|---------------|
-| 1 | Run phase-level tests | source/test files | — |
-| 2 | **If non-leaf module:** integration check | consumer source/test files | devlog.jsonl |
-| 3 | Devlog learning review | (in prompt: devlog.jsonl) | project.json (gotchas[]) |
-| 4 | Contract scan + propagation | (in prompt: devlog.jsonl) | ARCH_*.md (if needed) |
-| 5 | Update phase status | — | phases.json (phase→complete) |
-| 6 | Set the human gate | — | project.json (state→audit_boundary) |
-| 7 | Commit | — | git commit |
-| 8 | Exit | — | EXIT signal |
-
-### After CLOSE — human gate
-
-| Step | Who | What happens | Reads | Writes |
-|------|-----|-------------|-------|--------|
-| 1 | Driver/Orch | Report phase complete | .state/, logs/ | chat message |
-| 2 | Human | Audit: review commits, decisions, contracts | git log, decisions.json | — |
-| 3 | Human | `/close` command | — | — |
-| 4 | Driver/Orch | Advance to next phase | — | project.json (phase=N+1, state=plan) |
-| 5 | Driver/Orch | Append audit record | — | audits.log |
-| 6 | Human | `/run N` — next phase begins | — | — |
-
-To end the project instead of advancing, the human declares it terminal:
-`i2c state set project.json state=done`.
+**Boundary clearing (after CLOSE):** the worker leaves the project in
+`audit_boundary`; the human (or an autonomous wrapper) clears the gate with
+`i2c state set project.json phase=N+1 state=plan` to advance, or
+`i2c state set project.json state=done` to terminate. See the README
+("Lifecycle states") and `DECISIONS.md` (D-state-*) for the full rules.
 
 ---
 
@@ -268,7 +200,7 @@ Common supervised commands:
 
 | Task | Command |
 |------|---------|
-| Cold-start orientation | `i2c assemble --section status` |
+| Cold-start orientation | `i2c status` |
 | Plan a phase | `i2c assemble --action plan --mode supervised` |
 | Mark a step done | `i2c state complete` + `i2c state append devlog.jsonl` |
 | Review a phase | `i2c assemble --action review --mode supervised` |

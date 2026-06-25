@@ -69,6 +69,28 @@ Active development: a multi-iteration loop and a pluggable backend interface
 
 ## How it works
 
+### Architecture: state vs content
+
+i2c splits the governance system into two layers, each with one owner:
+
+- **Structured state** (`.state/*.json`, `.jsonl`) — phases, steps, status,
+  decisions, log. Machine-readable JSON, written only through `i2c state`
+  (atomic, schema-validated), read by the state machine, the assembler, and
+  surfaces. This is the single source of truth.
+- **Narrative content** (markdown) — `PROJECT.md`, `ARCHITECTURE.md`,
+  `ARCH_*.md`, `WORKER_SPEC.md`, `instructions/*.md`, the adapter. Human-authored
+  context the worker reads to perform an action.
+
+The pipeline keeps the two cleanly separated: the **state machine** reads
+structured state to pick the next ACTION; the **assembler** combines both layers
+into one prompt; the **worker** receives that prompt and reads *zero* governance
+files — it only touches source/test code, and writes outcomes back through
+`i2c state`. JSON (not YAML or prose) is the state format so reads are
+unambiguous and every write is atomic and schema-checked.
+
+Design rationale and the full decision log: [`DECISIONS.md`](DECISIONS.md);
+historical design memos in [`archive/`](archive/).
+
 ### State model
 
 Every i2c project has a `.state/` directory holding five git-tracked files.
@@ -214,7 +236,7 @@ only the caller differs.
 
 ```bash
 # Cold-start orientation
-i2c assemble --section status
+i2c status
 
 # Per-action context, framed for human approval
 i2c assemble --action plan --phase N --mode supervised
@@ -387,4 +409,7 @@ is gitignored.
 - [`ref/SPEC_architecture.md`](ref/SPEC_architecture.md) +
   [`ref/GUIDE_architecture.md`](ref/GUIDE_architecture.md) — how to author the
   ARCH files that drive planning.
+- [`DECISIONS.md`](DECISIONS.md) — index of every architecture decision
+  (D1–D21, D-state-*, D-pkg-*, …) with status and a pointer to the
+  authoritative design doc.
 - [`WORKFLOW.md`](WORKFLOW.md) — actor topology and dispatch-flow diagrams.

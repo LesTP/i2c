@@ -144,6 +144,88 @@ class TestReadCommands(unittest.TestCase):
         self.assertEqual(rc, 0, msg=err)
         self.assertEqual(json.loads(out), [])  # fixture decisions untagged
 
+    def test_devlog_text(self):
+        with ChdirFixture(FIXTURE):
+            rc, out, err = run_cli("devlog", "--phase", "2")
+        self.assertEqual(rc, 0, msg=err)
+        self.assertIn("Append-only", out)
+
+    def test_devlog_json(self):
+        with ChdirFixture(FIXTURE):
+            rc, out, err = run_cli("devlog", "--phase", "1", "--json")
+        self.assertEqual(rc, 0, msg=err)
+        data = json.loads(out)
+        self.assertEqual([e["step"] for e in data], [1, 2, None])
+
+    def test_devlog_all_json(self):
+        with ChdirFixture(FIXTURE):
+            rc, out, err = run_cli("devlog", "--json")
+        self.assertEqual(rc, 0, msg=err)
+        self.assertEqual(len(json.loads(out)), 4)
+
+    def test_escalation_fixture_json(self):
+        with ChdirFixture(FIXTURE):
+            rc, out, err = run_cli("escalation", "--json")
+        self.assertEqual(rc, 0, msg=err)
+        data = json.loads(out)
+        self.assertEqual(data["phase"], 2)
+        self.assertFalse(data["is_escalated"])
+        self.assertIsNone(data["entry"])
+
+    def test_logs_empty_text(self):
+        with ChdirFixture(FIXTURE):
+            rc, out, err = run_cli("logs")
+        self.assertEqual(rc, 0, msg=err)
+        self.assertIn("no iterations logged", out)
+
+
+# ---------------------------------------------------------------------------
+# logs + escalation (FU-34)
+# ---------------------------------------------------------------------------
+
+
+class TestLogsAndEscalationCli(unittest.TestCase):
+    @staticmethod
+    def _seed_logs(p: TempProject) -> None:
+        log_dir = p.root / "logs" / "loop"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "summary.log").write_text(
+            '2026-06-25T04:03:35+00:00 | iter=1 | backend=claude | '
+            'action=EXECUTE | exit=0 | reason="step done"\n',
+            encoding="utf-8",
+        )
+        (log_dir / "iteration_001.txt").write_text("transcript X", encoding="utf-8")
+
+    def test_logs_index_json(self):
+        with TempProject() as p:
+            self._seed_logs(p)
+            rc, out, err = run_cli("logs", "--json")
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(out)
+            self.assertEqual(data[0]["iter"], 1)
+            self.assertIsNone(data[0]["transcript"])
+
+    def test_logs_transcript_text(self):
+        with TempProject() as p:
+            self._seed_logs(p)
+            rc, out, err = run_cli("logs", "--iter", "1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("transcript X", out)
+
+    def test_logs_unknown_iter_exits_2(self):
+        with TempProject() as p:
+            self._seed_logs(p)
+            rc, out, err = run_cli("logs", "--iter", "99")
+            self.assertEqual(rc, 2)
+            self.assertIn("ERROR", err)
+
+    def test_escalation_detected_text(self):
+        with TempProject() as p:
+            p.patch_project(state="audit_escalation")
+            rc, out, err = run_cli("escalation")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("Escalated: yes", out)
+
 
 # ---------------------------------------------------------------------------
 # clear-boundary (write; temp copy)
@@ -321,11 +403,12 @@ class TestStatePassthrough(unittest.TestCase):
 
 
 class TestAssemblePassthrough(unittest.TestCase):
-    def test_assemble_section_status(self):
+    def test_assemble_section_architecture(self):
         with ChdirFixture(FIXTURE):
-            rc, out, err = run_cli("assemble", "--section", "status")
+            rc, out, err = run_cli("assemble", "--section", "architecture")
+        # Fixture has no ARCHITECTURE.md → placeholder, but the section is valid
+        # and forwards through the passthrough (rc 0).
         self.assertEqual(rc, 0, msg=err)
-        self.assertIn("## Project Status", out)
 
     def test_assemble_action_emit_forwards(self):
         # Proves a leading `--action` (an option-like token) forwards through
@@ -338,11 +421,15 @@ class TestAssemblePassthrough(unittest.TestCase):
             )
         self.assertIn("module contract missing", err)
 
-    def test_assemble_section_phase_summary(self):
+    def test_assemble_removed_operator_sections_rejected(self):
+        # Operator-derived sections were removed in Phase 3a (FU-39); they are
+        # no longer valid --section choices. Operators use `i2c status` /
+        # `i2c phase-summary` / `i2c devlog` instead.
         with ChdirFixture(FIXTURE):
-            rc, out, err = run_cli("assemble", "--section", "phase-summary", "--phase", "2")
-        self.assertEqual(rc, 0, msg=err)
-        self.assertIn("Phase 2 Summary", out)
+            for section in ("status", "phase-summary", "devlog"):
+                rc, out, err = run_cli("assemble", "--section", section)
+                self.assertEqual(rc, 2, msg=f"{section}: {out}{err}")
+                self.assertIn("invalid choice", err)
 
 
 class TestInitEjectCli(unittest.TestCase):

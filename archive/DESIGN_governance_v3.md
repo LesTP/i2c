@@ -1,3 +1,18 @@
+> # ⚠️ HISTORICAL DESIGN RECORD — not the current spec
+>
+> Preserved for the *why*. Several parts are **superseded**:
+> - State model → the 7-state lifecycle (`DESIGN_state_lifecycle_v1.md`, same
+>   folder; summarized in [`../README.md`](../README.md)).
+> - Dispatch / assembly specifics → [`../ARCH_assembler.md`](../ARCH_assembler.md).
+> - Orchestrator contract (§7.5) + codexbot (Appendix C) → the control-surface
+>   design in [`../DESIGN_packaging_v1.md`](../DESIGN_packaging_v1.md) §7.
+> - Deployment "copy the framework in" (§8) → the installable package
+>   (`../DESIGN_packaging_v1.md` §5).
+> - Per-decision status for D1–D21: [`../DECISIONS.md`](../DECISIONS.md).
+>
+> Still current: the state-vs-content split (§2), what-stays-markdown (§5),
+> and the JSON rationale (§6) — these are summarized in `../README.md`.
+
 # Design Spec — i2c: Structured State and Deterministic Dispatch
 
 **Status:** Accepted (state-model superseded — see note below)

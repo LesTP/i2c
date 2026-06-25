@@ -172,22 +172,22 @@ def main() -> int:
         v.validate_devlog_jsonl(devlog)
         print(f"  [OK] devlog.jsonl validates ({len(devlog.read_text().splitlines())} entries)")
 
-        # --- 9. Assembler --section status against the working state ---
-        print("\n--- 9. Run i2c assemble --section status ---")
+        # --- 9. i2c status (control-backed snapshot) against the working state ---
+        print("\n--- 9. Run i2c status ---")
         env = {**dict(__import__("os").environ), "PYTHONIOENCODING": "utf-8"}
         proc = subprocess.run(
-            [sys.executable, "-m", "i2c.assemble_context", "--section", "status"],
+            [sys.executable, "-m", "i2c.cli", "status"],
             capture_output=True, text=True, cwd=str(work.parent), env=env,
         )
         if proc.returncode != 0:
-            print(f"FAIL: assembler --section status (rc={proc.returncode})")
+            print(f"FAIL: i2c status (rc={proc.returncode})")
             print(f"  [stderr] {proc.stderr}")
             return 1
-        for expected in ("## Project Status", "## Current Phase Steps", "## Gotchas"):
+        for expected in ("Phase:", "State:", "Steps (phase"):
             if expected not in proc.stdout:
-                print(f"FAIL: assembler output missing {expected!r}", file=sys.stderr)
+                print(f"FAIL: i2c status output missing {expected!r}", file=sys.stderr)
                 return 1
-        print("  [OK] status snapshot includes Project Status, Current Phase Steps, Gotchas")
+        print("  [OK] status snapshot includes Phase, State, Steps")
 
         print("\n=== SMOKE TEST PASSED ===")
         return 0

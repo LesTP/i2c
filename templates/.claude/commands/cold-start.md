@@ -9,7 +9,7 @@ gotchas, recent activity, and open decisions.
 Run:
 
 ```bash
-python3 tools/assemble_context.py --section status
+i2c status
 ```
 
 Read the output carefully and report what you see. Specifically:
@@ -28,4 +28,5 @@ If the state is a halt state (`audit_boundary`, `audit_escalation`, or
 See `DESIGN_state_lifecycle_v1.md` §3 for what each halt state means and
 the expected human/wrapper recovery write.
 
-Full assembler contract: see `ARCH_assembler.md` §8.
+`i2c status` is the control-backed snapshot (`i2c.control.status`); add
+`--json` for structured output.

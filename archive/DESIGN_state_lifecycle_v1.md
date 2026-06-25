@@ -1,3 +1,11 @@
+> # ⚠️ HISTORICAL DESIGN RECORD — shipped; preserved for the *why*
+>
+> The 7-state lifecycle this memo introduced is **current** — the model lives in
+> [`../README.md`](../README.md) ("Lifecycle states") and the decisions in
+> [`../DECISIONS.md`](../DECISIONS.md) (D-state-1..7). The body below is a
+> historical implementation record (commit-by-commit plan, code-surface diffs,
+> the one-time clankercourts migration) — kept for context, not for action.
+
 # State-Lifecycle Redesign v1
 
 > Design memo. Replaces the current `(state, blocked)` two-variable

@@ -68,7 +68,7 @@ The `python tools/<x>.py` commands below are historical — code now lives at
 - `python tools/state_machine.py` outputs ACTION + NEXT (read-only).
 - `python tools/invariants.py --action <name>` checks the post-action invariants from FU-22.
 - `python tools/run_iteration.py [--backend claude|codex] [--model sonnet] [--max-budget-usd 5.00]` drives one cold-start worker invocation end-to-end. **Codex backend** is functional (Phase 3.D shipped). Per-iter `tokens_in / tokens_out / tokens_cached` appended to `summary.log` for both backends (FU-33 closed 2026-06-10).
-- `python tools/assemble_context.py --section status | architecture | module | devlog | phase-summary` for single-section views. `--section phase-summary --phase N` is the operator's audit_boundary view (ARCH_assembler.md §8b).
+- `i2c assemble --section architecture | module` for worker mid-step file context. **Operator views moved to the `i2c` CLI in Phase 3a (FU-39):** `i2c status`, `i2c phase-summary --phase N`, `i2c decisions [--phase N]`, `i2c devlog --phase N` (all `--json`-capable; control-backed).
 - `python tools/assemble_context.py --step-budget N` controls whether `multi_step_only` subsections appear (default 1 strips; >1 keeps). Runner still hard-codes 1 — multi-iteration loop is Phase 3.C, not yet shipped.
 - `python tools/assemble_context.py --action A --phase N --emit {full,system,user}` (FU-35) splits the prompt into a cache-stable prefix (`system` = WORKER CONTRACT + TOOL RULES) and a per-iteration body (`user` = PROJECT CONTEXT + ACTION CONTEXT + Output Contract); `full` (default) is byte-identical to before. The claude runner path routes `system` through `--append-system-prompt-file` for prompt-cache reuse; codex uses `full` + server-side prefix caching.
 - **Codexbot Telegram surface for i2c projects** (`75ca84e`, 2026-06-09): `/start` renders assembler status, `/run N [to-review]` invokes the consumer-local shim, `/close` advances `phase=N+1 state=plan`, `/audit` renders phase-summary. Restart per `~/claude-code-workspace/projects/pirozhok/README.md`.
@@ -88,15 +88,23 @@ console surface (`i2c/cli.py`); `i2c init` / `i2c eject` scaffolding;
 `i2c.toml` run config; and **§8 `schema_version` + `i2c migrate`**
 (versioned in-place `.state/` migrations). This eliminates the consumer
 copy-and-sync model — consumers now `pip install` and carry only their own
-`.state/` + docs. **Phase 3 (next):** the pluggable backend protocol
-(FU-38 — Gemini / OpenRouter), then the public distribution name + first
-release/tag (Q-pkg-1, at which point CHANGELOG's `Unreleased` is cut to a
+**Phase 3 (next):** the control-surface track now **leads
+with FU-39 — the single projection layer** (`DESIGN_packaging_v1.md` §7.7,
+D-pkg-14/15: `control` is the one structured view; the assembler's operator
+`--section` modes are deprecated), so FU-34 (`escalation`/`logs`), portfolio
+views (§7.6), and transports/orchestrators are built final-form *on* it rather
+than *beside* it. The pluggable backend protocol (FU-38 — Gemini / OpenRouter)
+runs as an independent parallel track; then the public distribution name +
+first release/tag (Q-pkg-1, at which point CHANGELOG's `Unreleased` is cut to a
 release).
 
 **Active priorities (smallest → largest scope):**
 1. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes (≥1 more CC ARCH authored under the Pattern A/B v2 template). ~15 lines of doc once we know what works.
 2. **Phase 3.C** — multi-iteration loop. **Re-evaluate after measuring FU-35 cache hits** (the prompt-cache split shipped 2026-06-21; caching likely captures most of the token-savings motivation, so 3.C's remaining justification is cross-step reasoning continuity + fewer spin-ups, weighed against the e2e-vintage multi-iteration reliability cost). Wrap `run_iteration.py` once we have real data on what single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
-3. **Codexbot follow-up surface (deferred parts of 18a)** — `/decisions, /escalation, /logs, /review` on i2c projects. Blocked on FU-34 upstream (`--section escalation`, `--section iteration`).
+3. **Packaging Phase 3 control surface** — **FU-39 (3a, single projection layer) and FU-34 (3b, `escalation()`/`logs()`) both shipped 2026-06-25.** `i2c.control` is now the single structured layer with full read coverage (`status`/`phase-summary`/`decisions`/`devlog`/`escalation`/`logs`, all `--json`). **Next: 3c** portfolio-scope views (§7.6 — `control.status`/`escalation` mapped over N roots) and **3d** transports + orchestrator protocol (§7). The deferred codexbot commands (`/escalation`, `/logs`, `/review`) are now unblocked as thin callers of `control` — pending the codexbot `--json` migration. Backend abstraction (§6, FU-38) runs as an independent parallel track.
+
+**Recently shipped (2026-06-25):**
+- **FU-39 — single projection layer (packaging Phase 3a).** Removed the assembler's operator-derived `--section` modes (`build_section_status` / `build_section_phase_summary` / `build_section_devlog` + their operator-only renderers); `SECTIONS` is now `(architecture, module)` (verbatim file passthroughs / worker mid-step providers only). Added `control.devlog()` + `i2c devlog`, completing CLI parity (`i2c status` / `phase-summary` / `decisions` / `devlog`, all `--json`). Operator views are now single-sourced in `i2c.control`, formatted at the CLI — the prose/structure duplication is gone (D-pkg-14/15, D-arch-13). **Worker-prompt bytes proven unchanged** by `tests/test_prompt_golden.py` (18 golden snapshots across action×backend×mode, generated pre-removal, green post-removal). ARCH_assembler §8 rewritten as the "operator views moved to control" note; docs (README/WORKFLOW/examples/templates) point at the CLI; smoke test step 9 uses `i2c status`. FU-34 (Phase 3b) is now unblocked. **codexbot must migrate** its prose-parsing of `i2c assemble --section …` to `i2c <cmd> --json` (lockstep with this removal).
 
 **Recently shipped (2026-06-22):**
 - **Packaging Phase 2 + §8** — see the *Active track* above. `tools/` moved
@@ -134,8 +142,8 @@ release).
 ```powershell
 $env:PYTHONIOENCODING="utf-8"
 i2c next-action                               # ACTION + NEXT (or: python -m i2c.cli next-action)
-i2c assemble --section status
-i2c assemble --section phase-summary --phase <N>
+i2c status                                   # control-backed project snapshot (--json for structured)
+i2c phase-summary --phase <N>                # operator boundary view
 i2c migrate --check                          # schema-drift check (exit 1 if a migration is needed)
 ```
 
@@ -155,7 +163,7 @@ i2c run --backend claude --max-budget-usd 2.00
 **Canonical references:**
 - Build status: `README.md` table
 - Assembler contract: `ARCH_assembler.md` (per-section spec; §8b for phase-summary)
-- Architectural rationale: `DESIGN_governance_v3.md`; state lifecycle: `DESIGN_state_lifecycle_v1.md`
+- Architectural rationale: `archive/DESIGN_governance_v3.md`; state lifecycle: `archive/DESIGN_state_lifecycle_v1.md` (both historical — see `archive/README.md`); decisions index: `DECISIONS.md`
 - ARCH-file authoring template: `ref/SPEC_architecture.md` + `ref/GUIDE_architecture.md`
 - Workflow diagrams: `WORKFLOW.md`
 - This file: the rolling backlog + live spec for FU-32 (progress log below)
@@ -183,8 +191,9 @@ i2c run --backend claude --max-budget-usd 2.00
 | FU-16 | Available Modules ARCHITECTURE.md fallback is naive | open | When the adapter's `## Available Modules` section is placeholder-only, the assembler grabs `## Implementation Sequence` from `ARCHITECTURE.md` verbatim and surfaces its body. If projects use richer Implementation Sequence tables (extra columns, longer prose), the rendered Available Modules section will be noisy. | Phase 2 / 3 pilots show real-world Implementation Sequence tables overflow the section. Tighten the fallback to extract only module names, or document a project convention for the fallback shape. |
 | FU-17 | `--phase` accepted (but ignored) with `--section status` | **closed** (2026-06-21) | See resolution note below. `_validate_args` now rejects `--phase` with `--section {status,architecture,module}` (the sections that don't consume it); ARCH §11.3 documents it; tests added. |
 | FU-18 | Assembler tests slow on Windows network share | open | `tests/test_assemble_context.py` runs in ~60s on `\\192.168.0.50\shared\...`. Primary cost: `TempProject(with_framework=True)` copies the full `instructions/` directory and WORKER_SPEC + both adapters per test invocation. | If iteration cost becomes painful, refactor `TempProject` to copy only what each test class needs (most renderer tests don't read instructions), or cache the framework copy per pytest session. Not a correctness issue. |
-| FU-23 | Assembler `--section status` omits `Budget:` line when `budget_type` is set but no counter populated | open (pilot-cosmetic) | clankercourts' `project.json` after Phase 1 close has `budget_type: "steps"` but no `steps_remaining`. The renderer's check is `if "steps_remaining" in p` and `elif p.get("budget_type") == "time" and "time_budget_seconds" in p` — both branches need the counter present. Result: the Budget line is silently omitted. Correct per ARCH §8 (which shows the line with a counter), but a stronger snapshot would render `**Budget:** steps (no remaining count set)` so the operator sees the mode even when the runner hasn't populated the count yet. | Cosmetic; address opportunistically. |
-| FU-34 | Additional `--section` projections for codexbot consumers | open (partially closed by `--section phase-summary`) | `--section phase-summary --phase N` shipped 2026-06-09 (covers operator's boundary-review use case). Two more projections still useful for codexbot integration: `--section escalation --phase N` (last `escalate` devlog entry + surrounding context: preceding 3 entries + relevant decisions); `--section iteration --iter N` (captures from `logs/loop/iteration_NNN.txt` plus state snapshot at that point). Each ~50-100 LOC. Together replace the "20 screens of markdown dump" pattern with targeted structured projections for downstream UIs (`/audit`, `/escalation`, `/logs`, `/review`). | Codexbot integration session starts implementing `/escalation` and `/logs` commands and needs structured projections instead of raw file reads. |
+| FU-23 | Assembler `--section status` omits `Budget:` line when `budget_type` is set but no counter populated | **closed** (2026-06-25, obviated by FU-39) | `--section status` was removed in Phase 3a; the operator snapshot is now `i2c status`, whose budget rendering lives in `cli._fmt_budget` (renders whatever `control.status().budget` provides). The original cosmetic gap no longer has a surface. |
+| FU-34 | `escalation()` / `logs()` projections for surface consumers | **closed** (2026-06-25, Phase 3b) | Landed as **`control` dataclass projections** (not assembler sections): `escalation(phase=None) -> EscalationView` (the `audit_escalation` flag + last `escalate`/`blocked` devlog entry + up to 3 preceding in-phase entries + phase-tagged open decisions — pure `.state/`, mirrors `phase_summary`); `logs(limit=10) -> list[IterationLog]` (parses `logs/loop/summary.log` via a regex matching `run_iteration.write_summary_line`) + `logs_transcript(iter=N)` (attaches `iteration_NNN.txt` on demand; `NotFoundError` for an unknown iter). CLI parity added: `i2c escalation [--phase N]`, `i2c logs [--iter N] [--limit N]`, both `--json`. Tests in `tests/test_control.py` (`TestEscalation`, `TestLogs`) + `tests/test_cli.py` (`TestLogsAndEscalationCli`). Replaces the old `--section escalation`/`--section iteration` plan (which predated the control architecture and would have deepened the §7.7 duplication). | Unblocks the deferred codexbot commands (`/escalation`, `/logs`, `/review` → thin callers of `control`) and the portfolio cross-project monitor (§7.6, `control.escalation` over N roots). |
+| FU-39 | Single projection layer — de-duplicate operator views between assembler and `control` | **closed** (2026-06-25, Phase 3a) | Phase 2 added `i2c.control` (structured) but left the assembler's operator-facing `--section` modes (`status`, `phase-summary`, `devlog`) in place, so the same `.state/` projections were derived twice. **Shipped:** removed those three section builders + their operator-only renderers from `assemble_context.py` (`SECTIONS` is now `(architecture, module)`); added `control.devlog()` + `i2c devlog` for CLI parity; operator views are now single-sourced in `i2c.control`, formatted by the `i2c` CLI (`status`/`phase-summary`/`decisions`/`devlog`, all `--json`). Worker-prompt bytes proven unchanged by `tests/test_prompt_golden.py` (18 golden snapshots, generated pre-removal). ARCH_assembler §8 → "operator views moved to control" note + D-arch-13. Shared leaf renderers (Gotchas / Current Phase Steps / Recent Activity) and the byte-locked worker-prompt path were left untouched (D-pkg-15). | Foundation for Phase 3; FU-34 (Phase 3b) now unblocked. Follow-up: codexbot migrates prose-parsing → `i2c <cmd> --json`. |
 
 ## Tooling — runner
 

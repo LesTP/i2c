@@ -2,7 +2,7 @@
 
 **Status:** Contract spec. Implementation deferred to Phase 1.3.
 **Lives at:** `tools/assemble_context.py`
-**Supersedes:** Scattered specifications in `DESIGN_governance_v3.md` §3 / §7.5 / Appendix B, `WORKFLOW.md`, instruction files, `README.md`. Where this contract and any earlier file disagree, this contract wins for assembler behavior. The earlier files remain useful as design rationale.
+**Supersedes:** Scattered specifications in `archive/DESIGN_governance_v3.md` §3 / §7.5 / Appendix B, `WORKFLOW.md`, instruction files, `README.md`. Where this contract and any earlier file disagree, this contract wins for assembler behavior. The earlier files remain useful as design rationale.
 
 ---
 
@@ -49,11 +49,8 @@ The assembler is intentionally narrow. It does **not**:
 
 ```
 assemble_context.py --action ACTION --phase N [--mode {autonomous,supervised}] [--emit {full,system,user}]
-assemble_context.py --section status
 assemble_context.py --section architecture
 assemble_context.py --section module --module NAME
-assemble_context.py --section devlog --phase N
-assemble_context.py --section phase-summary --phase N
 ```
 
 `--action` and `--section` are mutually exclusive. Exactly one must be specified.
@@ -67,9 +64,9 @@ passthrough); the runner invokes `assemble_context.py` directly.
 | Flag | Required when | Accepted values | Default |
 |------|---------------|-----------------|---------|
 | `--action` | building a full prompt | `plan`, `execute`, `review`, `close` | — |
-| `--phase` | with `--action` (always); with `--section devlog`; with `--section phase-summary` | positive integer | — |
+| `--phase` | with `--action` (always) | positive integer | — |
 | `--mode` | optional with `--action` | `autonomous`, `supervised` | `autonomous` |
-| `--section` | building a single section | `status`, `architecture`, `module`, `devlog`, `phase-summary` | — |
+| `--section` | building a single section | `architecture`, `module` | — |
 | `--module` | only with `--section module` | non-empty module name | — |
 | `--step-budget` | optional with `--action` | positive integer | `1` |
 | `--emit` | optional with `--action` | `full`, `system`, `user` | `full` |
@@ -107,16 +104,12 @@ i2c assemble --action execute --phase 11 --emit user
 # Supervised assistant, per-action
 i2c assemble --action plan --phase 12 --mode supervised
 
-# Cold-start orientation (single-section)
-i2c assemble --section status
-
-# Phase-boundary audit (operator-facing; see §8b)
-i2c assemble --section phase-summary --phase 11
-
-# Mid-step context requests (worker, multi-step mode only)
+# Single-section context (worker mid-step or operator)
 i2c assemble --section architecture
 i2c assemble --section module --module event_store
-i2c assemble --section devlog --phase 11
+
+# Operator views moved to the i2c CLI (Phase 3a, see §8):
+#   i2c status        i2c phase-summary --phase N        i2c devlog --phase N
 ```
 
 ---
@@ -369,133 +362,28 @@ When the assembler builds the PLAN prompt for a phase whose `dependencies` array
 
 ---
 
-## 8. `--section status` Content Specification
+## 8. Operator views — moved to `i2c.control` (removed Phase 3a)
 
-The `status` section is the assembler's cold-start / orientation snapshot. It is **not** a full assembled prompt — it has no Worker Contract banner, no instructions, no module contract. It is a fast-to-read summary for humans and orchestrators.
+The assembler previously rendered three operator-facing prose sections —
+`--section status`, `--section phase-summary`, and `--section devlog`. They were
+**removed in Phase 3a (FU-39, D-arch-13)** because they duplicated the
+projections already in `i2c.control` — the prose-vs-structure dual maintenance
+i2c exists to eliminate (D-pkg-7/14). Operator and surface views are now
+structured dataclasses from `control`, formatted at the surface:
 
-Output:
+| Removed assembler section | Replacement |
+|---------------------------|-------------|
+| `--section status` | `control.status()` → `i2c status` (text) / `i2c status --json` |
+| `--section phase-summary --phase N` | `control.phase_summary(phase=N)` → `i2c phase-summary --phase N [--json]` |
+| `--section devlog --phase N` | `control.devlog(phase=N)` → `i2c devlog --phase N [--json]` |
 
-```
-## Project Status
-
-**Phase:** 11 (Orchestrator) — Build
-**State:** execute
-**Budget:** steps_remaining=4
-**Module:** orchestrator
-**Dependencies:** event_store
-
-## Current Phase Steps
-
-| Step | Title | Status | Commit |
-|------|-------|--------|--------|
-| 11.1 | Pipeline topology with DI | complete | abc1234 |
-| 11.2 | Event loop with debounced extraction | complete | def5678 |
-| 11.3 | Slash command routing | pending | — |
-| 11.4 | End-to-end test | pending | — |
-
-## Gotchas
-
-- jq empty string vs null: use // "default" to avoid silent failures
-- sed -i behaves differently on macOS (requires backup extension)
-
-## Recent Activity (last 3 devlog entries)
-
-- 11.2 execute → complete (def5678) — Event loop with debounced extraction
-- 11.1 execute → complete (abc1234) — Pipeline topology with DI
-- 11.0 plan  → complete — Phase 11 broken into 4 steps
-
-## Open Decisions
-
-- D-12 [critical · open] Round structure: signal-based vs time-based — TBD
-```
-
-If any optional section is empty (`gotchas: []`, no recent activity, no open decisions), render the heading with `<!-- empty -->` immediately under it.
-
-`--section status` does not accept `--phase` — it always reports on the project's current phase.
-
----
-
-## 8b. `--section phase-summary` Content Specification
-
-Operator's view at `state=audit_boundary`: “what happened in phase N?” Distinct from `--section status` (which is project-wide and current-state-focused) and from `--section devlog` (which is only the devlog tail). Designed to be the single thing a reviewer reads before clearing the gate.
-
-Requires `--phase N` (positive integer). The targeted phase may be any phase — most commonly the current one (under audit) or a recently-completed one (retrospective).
-
-Output:
-
-```
-## Phase 11 Summary — orchestrator: Pipeline + event loop (Build, complete)
-
-| Field | Value |
-|-------|-------|
-| Module | orchestrator |
-| Regime | build |
-| Dependencies | event_store |
-| Status | complete |
-| Spans | 2026-06-04T09:30:00Z — 2026-06-06T16:11:00Z (7 devlog entries) |
-
-## Steps
-
-| Step | Title | Status | Commit |
-|------|-------|--------|--------|
-| 11.1 | Pipeline topology with DI | complete | abc1234 |
-| 11.2 | Event loop with debounced extraction | complete | def5678 |
-| 11.3 | Slash command routing | complete | 9876fed |
-| 11.4 | End-to-end test | complete | 5432cba |
-
-## Decisions Added in This Phase
-
-- **D-18** [closed · medium] Title
-  Decision: …
-  Rationale: …
-- **D-19** [closed · low] Title
-  Decision: …
-
-<!-- N decision(s) in decisions.json lack the optional `phase` field and are excluded from this view. Back-fill via `state.py update-record decisions.json --match id=D-N phase=11` if any belong here. -->
-
-## Phase Devlog
-
-- 11.0 plan → complete — phase planned, 4 steps
-- 11.1 execute → complete (abc1234) — …
-- 11.2 execute → complete (def5678) — …
-- …
-- 11. review → complete — N findings, M Must applied
-- 11. close → complete — phase complete, gate set
-
-## Open Items for Boundary Decision
-
-- D-20 [high · open] Open thread — …
-```
-
-### 8b.1 Source mapping
-
-| Section | Source | Filter |
-|---------|--------|--------|
-| Header | `phases.json[id=N]` + `devlog.jsonl` timestamps for entries with `phase=N` | match phase id |
-| Steps | `steps.json` | `step.phase == N`, sorted by `step.step` |
-| Decisions Added in This Phase | `decisions.json` | `decision.phase == N` |
-| Phase Devlog | `devlog.jsonl` | `entry.phase == N`, in file order |
-| Open Items for Boundary Decision | `decisions.json` | `decision.phase == N AND decision.status == open` |
-
-### 8b.2 Decisions filter and back-fill note
-
-The Decisions Added in This Phase section relies on the optional `phase: integer` field on `decisions.schema.json` (added 2026-06-09 to support this section). Decisions authored before that field shipped lack it and will not appear, even if they were chronologically authored during the targeted phase.
-
-When `decisions.json` contains any records without the `phase` field, the section appends a footer comment naming the count and the `state.py update-record` command for back-filling. Reviewer chooses whether the missing records belong in this phase’s audit.
-
-### 8b.3 Deliberate exclusions
-
-Kept out to prevent excess:
-
-- **Full Module Contract** — the ARCH file is already large; reviewer pulls it via `--section module --module NAME` on demand.
-- **`ARCHITECTURE.md`** — reviewer reaches for it only if they suspect cross-module drift; pull via `--section architecture`.
-- **Project-wide decision history** — only phase-tagged decisions appear. Reviewer wants the audit scope, not the entire archive.
-- **`project.json.gotchas`** — not phase-tagged. CLOSE devlog entries typically mention new gotchas promoted; that signal lives in the Phase Devlog section.
-- **Deferred-work heuristics** (text-matching `Deferred:` in summaries) — too brittle for v1; operator greps `.state/devlog.jsonl` directly if needed.
-
-### 8b.4 Empty / unknown phase
-
-When `phases.json` has no record with `id == N`, the header renders `## Phase N Summary — (no phases.json record)` followed by an empty-marker comment; subsequent sections render with whatever data exists (typically all empty). Exit code remains 0 — unknown phases are not a required-input failure for this section (it’s a reporting tool; the operator is allowed to ask about a phase that doesn’t exist yet and get a clean empty response).
+The assembler now exposes only worker-prompt assembly (`--action`) and the two
+verbatim file-passthrough sections (`--section architecture`, `--section
+module`). Per D-pkg-15 the byte-locked worker-prompt path stays isolated from
+`control`; the shared leaf renderers (Current Phase Steps, Gotchas, Recent
+Activity — §4.1) remain in the assembler for the prompt's use only, and the
+worker prompt is byte-identical across this change (golden snapshots in
+`tests/test_prompt_golden.py`).
 
 ---
 
@@ -533,8 +421,6 @@ In multi-step mode (`STEP_BUDGET > 1`), the worker loops the state machine itsel
 |---------|----------|
 | `--section architecture` | Need the full ARCHITECTURE.md to reason about cross-module wiring during a refactor step |
 | `--section module --module $NAME` | Need a different module's contract than the active phase's module (e.g., reviewing how a consumer uses this module's API) |
-| `--section devlog --phase $PHASE` | Need an older phase's devlog for context |
-| `--section status` | Re-orient after a long action drained context window |
 
 `--action` is **not** callable mid-step. Re-assembling the full prompt mid-step would duplicate context already in the worker's window and burn tokens. The runner is the only caller authorized to issue full-prompt assemblies.
 
@@ -554,7 +440,7 @@ Note that the `multi_step_only` marker mechanism used to strip `WORKER_SPEC.md`'
 | `project.json` schema-invalid | always required |
 | `phases.json` missing or schema-invalid | always required (state machine needs it too) |
 | `steps.json` missing or schema-invalid | always required |
-| No record in `phases.json` with `id == project.json.phase` | required for every action EXCEPT `--action plan` (which creates the record per `instructions/plan.md` step 4 — see DESIGN_state_lifecycle_v1.md §6.4); always required for `--section` requests |
+| No record in `phases.json` with `id == project.json.phase` | required for every action EXCEPT `--action plan` (which creates the record per `instructions/plan.md` step 4 — see archive/DESIGN_state_lifecycle_v1.md §6.4); always required for `--section` requests |
 | `instructions/$ACTION.md` missing from **both** project-root and the installed package | required for `--action` (resolved override→packaged, §4.2; failure only if absent from both) |
 | `WORKER_SPEC.md` missing from **both** project-root and the installed package | required (resolved override→packaged, §4.2) |
 | Adapter file (`CLAUDE.md` or `CODEX.md`) missing | required (backend chosen by runner / caller; assembler reads whichever is named) |
@@ -583,7 +469,7 @@ Nothing is written to stdout on exit 1.
 | Adapter Available Modules section empty and ARCHITECTURE fallback also empty | `<!-- empty -->` under `## Available Modules` |
 | Current phase is phase 1 (no prior phase) | `## Prior Phase Summary` heading omitted entirely (not even an empty marker — phase 1 has nothing to summarize) |
 | Current phase record has no `module` field | `## Module Contract` heading omitted entirely |
-| `--action plan` AND no phases.json record for current phase | `## Phase: N — (record to be created by PLAN)` heading; `## Current Phase` body renders a placeholder comment pointing to `instructions/plan.md` step 4; dep-probe conditional section strips (`dependencies_nonempty` evaluator returns False). See DESIGN_state_lifecycle_v1.md §6.4. |
+| `--action plan` AND no phases.json record for current phase | `## Phase: N — (record to be created by PLAN)` heading; `## Current Phase` body renders a placeholder comment pointing to `instructions/plan.md` step 4; dep-probe conditional section strips (`dependencies_nonempty` evaluator returns False). See archive/DESIGN_state_lifecycle_v1.md §6.4. |
 
 Optional degradations all exit 0. The worker sees the placeholders and decides whether the absence matters. None of these block assembly.
 
@@ -596,11 +482,9 @@ Optional degradations all exit 0. The worker sees the placeholders and decides w
 | `--action` with unknown value | exit 2 (argparse `choices` enforces) |
 | `--section` with unknown value | exit 2 (argparse `choices` enforces) |
 | `--phase` missing when `--action` is set | exit 2 |
-| `--phase` missing when `--section devlog` | exit 2 |
-| `--phase` missing when `--section phase-summary` | exit 2 |
 | `--module` missing when `--section module` | exit 2 |
 | `--mode` specified with `--section` | exit 2 |
-| `--phase` specified with `--section {status,architecture,module}` | exit 2 (these sections don't consume `--phase`; FU-17) |
+| `--phase` specified with `--section {architecture,module}` | exit 2 (these sections don't consume `--phase`; FU-17) |
 | non-default `--emit` specified with `--section` | exit 2 |
 | `--phase` is not a positive integer | exit 2 |
 
@@ -647,12 +531,13 @@ Locked decisions, captured inline so the contract's rationale travels with it.
 | **D-arch-4** | Title Case section names throughout | Matches the DESIGN sketch, the most-quoted reference. Standardizing eliminates the drift surfaced during cross-reference. |
 | **D-arch-5** | `Decisions` section included for all four actions | PLAN authors D-IDs and would collide without seeing existing decisions. Size cost is negligible. |
 | **D-arch-6** | `Current Phase` and `Current Phase Steps` are two distinct sections | Different sources (`phases.json` record vs `steps.json` filter) and different consumers. Conflating them was a documentation oversight. |
-| **D-arch-7** | Mid-step `--section X` is documented and bounded | Per D16. Bounded to four section types (§10) so it doesn't sprawl into a runtime tool. `--action` is not callable mid-step. |
+| **D-arch-7** | Mid-step `--section X` is documented and bounded | Per D16. Bounded to two section types (§10) so it doesn't sprawl into a runtime tool. `--action` is not callable mid-step. (Originally four; `status`/`devlog` removed in Phase 3a — see §8.) |
 | **D-arch-8** | Available Modules: adapter primary, ARCHITECTURE.md fallback | Adapter has the `Available Modules` placeholder explicitly for this purpose. Architecture is a sensible fallback when the placeholder is unfilled. |
-| **D-arch-9** | This contract is authoritative; DESIGN_governance_v3.md gets a forward-pointer | Avoids rewriting the design doc while making the authority explicit. |
+| **D-arch-9** | This contract is authoritative; archive/DESIGN_governance_v3.md gets a forward-pointer | Avoids rewriting the design doc while making the authority explicit. |
 | **D-arch-10** | Output is markdown / UTF-8 / LF / trailing newline | No source specified; pick the existing toolchain convention. |
 | **D-arch-11** | `--mode {autonomous,supervised}`, autonomous default | Default-only would surprise readers when they grep for `--mode autonomous` and find no examples; explicit values keep the surface obvious. |
 | **D-arch-12** | `--emit {full,system,user}` exposes the cache split in the assembler, not the runner (FU-35) | The stable/volatile boundary is a property of the prompt's region structure (§6), which the assembler owns. Exposing it as a flag keeps the runner a thin caller and makes the split independently testable (`full == system.rstrip() + "\n\n" + user`). The runner can't inject Anthropic `cache_control` markers anyway — it pipes plaintext to the `claude -p` / `codex exec` CLIs — so the reachable lever is routing the stable prefix through Claude Code's `--append-system-prompt-file`. |
+| **D-arch-13** | Operator-facing `--section` views (`status`, `phase-summary`, `devlog`) removed; the assembler is worker-prompt assembly + verbatim file passthrough (`architecture`, `module`) only (Phase 3a / FU-39) | They duplicated `i2c.control`'s projections — the prose-vs-structure dual maintenance i2c exists to kill (D-pkg-7/14). Views now come from `control` formatted at the `i2c` CLI; the byte-locked prompt path stays isolated from `control` (D-pkg-15), proven by golden snapshots in `tests/test_prompt_golden.py`. |
 
 ---
 
@@ -662,3 +547,4 @@ Locked decisions, captured inline so the contract's rationale travels with it.
 |------|--------------|-----|
 | 2026-06-04 | Initial contract spec | Phase 1 build-order step 7.5 — author the contract before Phase 1.3 implementation and step 8 slash wrappers. Resolves section-name drift and undocumented edge cases surfaced by a cross-reference of all framework files. |
 | 2026-06-21 | Added `--emit {full,system,user}` (FU-35) | Prompt-cache support: expose the region structure's stable/volatile boundary so the runner can route the cache-stable prefix through Claude Code's system prompt. `full` output unchanged. See §3.2, §6, D-arch-12. |
+| 2026-06-25 | Removed `--section {status,phase-summary,devlog}` (FU-39 / Phase 3a) | De-duplicate operator views against `i2c.control`; views now come from the `i2c` CLI. Worker prompts byte-identical (golden test). See §8, D-arch-13. |
