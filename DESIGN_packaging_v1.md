@@ -383,8 +383,9 @@ output (the §7.1 prose-vs-structure hazard, one level up):
 - **Cross-project status / next-action** — discover every `.state/` under a
   root and render each project's phase, state, next action, and open
   escalations in one structured view (`i2c.control.status` mapped over N
-  roots; e.g. `i2c status --all`). Highest-value item: it answers "which
-  project needs me?" for the common supervised case.
+  roots; shipped as `control.portfolio` / `i2c portfolio [--root PATH]`).
+  Highest-value item: it answers "which project needs me?" for the common
+  supervised case.
 - **Cross-project monitor / debug** — surface *which* loop halted and why,
   across all projects. Depends on the FU-34 `escalation` / `logs`
   projections backing `control.escalation()` / `control.logs()`.
@@ -515,7 +516,11 @@ operator-facing sections.
     + `i2c escalation` / `i2c logs`; index parsed from `summary.log`,
     transcripts on demand.)**
   - **3c — portfolio-scope views (§7.6):** `control.status` / `escalation`
-    mapped over N roots (`i2c status --all`).
+    mapped over N roots (`i2c portfolio`).
+    **(Shipped 2026-06-25: `control.discover_projects` + `control.portfolio`
+    → `i2c portfolio [--root PATH]`; one `ProjectBrief` per project over the
+    existing `status`/`escalation`/`next_action` projections, ordered
+    escalations/boundaries first, per-project load errors captured.)**
   - **3d — transports + orchestration (§7):** TG/Discord extras and the
     orchestrator protocol + reference drivers (Human/Policy/Agent), all over
     `control`.

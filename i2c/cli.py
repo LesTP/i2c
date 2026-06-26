@@ -16,6 +16,7 @@ Subcommands::
     i2c devlog [--phase N]           # devlog entries (optionally filtered)
     i2c escalation [--phase N]       # current escalation signal
     i2c logs [--iter N] [--limit N]  # iteration index, or one transcript via --iter
+    i2c portfolio [--root PATH]       # cross-project 'which needs me?' view
     i2c clear-boundary [--terminate] # advance past / terminate an audit_boundary
     i2c run [--backend ...] ...      # one cold-start worker iteration
     i2c migrate [--check|--dry-run]  # upgrade .state/ to the current schema
@@ -213,6 +214,31 @@ def _render_log_transcript(e: control.IterationLog) -> str:
     return head + "\n" + body
 
 
+def _render_portfolio(r: control.PortfolioReport) -> str:
+    if not r.projects:
+        return f"No i2c projects found under {r.root}"
+    lines = [f"Portfolio: {r.root}  ({len(r.projects)} project(s))", ""]
+    for p in r.projects:
+        if p.error:
+            lines.append(f"  !! {p.name}  [load error] {p.error}")
+            continue
+        if p.is_escalated:
+            flag, label = "!!", "ESCALATED"
+        elif p.state == "audit_boundary":
+            flag, label = " *", "audit_boundary"
+        else:
+            flag, label = "  ", p.state
+        line = f"  {flag} {p.name}: phase {p.phase} [{label}] next={p.next_action}"
+        if p.module:
+            line += f" module={p.module}"
+        if p.open_decisions:
+            line += f" open_dec={p.open_decisions}"
+        lines.append(line)
+        if p.is_escalated and p.escalation_reason:
+            lines.append(f"        reason: {p.escalation_reason}")
+    return "\n".join(lines)
+
+
 def _render_boundary(r: control.BoundaryResult) -> str:
     return f"{r.outcome} — phase {r.phase}, state {r.state}"
 
@@ -287,6 +313,18 @@ def cmd_logs(args: argparse.Namespace) -> int:
     except control.ControlError as e:
         return _fail(e)
     _emit(result, as_json=args.json, renderer=renderer)
+    return 0
+
+
+def cmd_portfolio(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    root = Path(args.root) if args.root else None
+    try:
+        report = control.portfolio(root=root)
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(report, as_json=args.json, renderer=_render_portfolio)
     return 0
 
 
@@ -494,6 +532,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index mode: keep the last N iterations (default 10).",
     )
     p_logs.set_defaults(func=cmd_logs)
+
+    p_pf = sub.add_parser(
+        "portfolio",
+        parents=[json_parent],
+        help="Cross-project view: every project under --root (default CWD), "
+        "escalations/boundaries first.",
+    )
+    p_pf.add_argument(
+        "--root", default=None,
+        help="Parent folder to scan for projects. Default: current directory.",
+    )
+    p_pf.set_defaults(func=cmd_portfolio)
 
     p_cb = sub.add_parser(
         "clear-boundary",

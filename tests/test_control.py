@@ -321,6 +321,84 @@ class TestLogs(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# portfolio() + discover_projects()
+# ---------------------------------------------------------------------------
+
+
+class TestPortfolio(unittest.TestCase):
+    @staticmethod
+    def _make(root: Path, specs: dict) -> None:
+        """Create one fixture-copy project per spec entry, applying
+        project.json overrides."""
+        for name, overrides in specs.items():
+            dst = root / name
+            shutil.copytree(FIXTURE, dst)
+            if overrides:
+                pj = dst / ".state" / "project.json"
+                data = json.loads(pj.read_text(encoding="utf-8"))
+                data.update(overrides)
+                pj.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    def test_discovers_all_projects(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_pf_") as tmp:
+            root = Path(tmp)
+            self._make(root, {"a": {}, "b": {}, "c": {}})
+            self.assertEqual(
+                [p.name for p in c.discover_projects(root)], ["a", "b", "c"]
+            )
+
+    def test_skips_noise_and_does_not_descend(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_pf_") as tmp:
+            root = Path(tmp)
+            self._make(root, {"a": {}})
+            (root / "node_modules").mkdir()
+            (root / ".hidden").mkdir()
+            # A nested project inside a/ must not be discovered separately.
+            shutil.copytree(FIXTURE, root / "a" / "nested")
+            self.assertEqual([p.name for p in c.discover_projects(root)], ["a"])
+
+    def test_orders_attention_first(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_pf_") as tmp:
+            root = Path(tmp)
+            self._make(root, {
+                "calm": {},  # execute
+                "boundary": {"state": "audit_boundary"},
+                "stuck": {"state": "audit_escalation"},
+                "finished": {"state": "done"},
+            })
+            _append_devlog(root / "stuck", {
+                "phase": 2, "step": 2, "action": "execute", "outcome": "escalate",
+                "summary": "blocked on upstream API", "contracts": [],
+                "timestamp": "2026-06-03T12:00:00Z",
+            })
+            report = c.portfolio(root)
+            order = [p.name for p in report.projects]
+            self.assertEqual(order[0], "stuck")      # escalation first
+            self.assertEqual(order[1], "boundary")   # then boundary
+            self.assertEqual(order[-1], "finished")  # done last
+            stuck = report.projects[0]
+            self.assertTrue(stuck.is_escalated)
+            self.assertEqual(stuck.escalation_reason, "blocked on upstream API")
+            self.assertEqual(stuck.next_action, "EXIT")
+
+    def test_captures_load_error_and_floats_it(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_pf_") as tmp:
+            root = Path(tmp)
+            self._make(root, {"ok": {}, "broken": {}})
+            (root / "broken" / ".state" / "project.json").write_text(
+                '{"phase": 1, "state": "BOGUS"}', encoding="utf-8"
+            )
+            report = c.portfolio(root)
+            broken = next(p for p in report.projects if p.name == "broken")
+            self.assertIsNotNone(broken.error)
+            self.assertEqual(report.projects[0].name, "broken")  # floats to top
+
+    def test_empty_root(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_pf_") as tmp:
+            self.assertEqual(c.portfolio(Path(tmp)).projects, [])
+
+
+# ---------------------------------------------------------------------------
 # clear_boundary()
 # ---------------------------------------------------------------------------
 

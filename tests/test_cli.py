@@ -227,6 +227,24 @@ class TestLogsAndEscalationCli(unittest.TestCase):
             self.assertIn("Escalated: yes", out)
 
 
+class TestPortfolioCli(unittest.TestCase):
+    def test_portfolio_json(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_pf_cli_") as tmp:
+            root = Path(tmp)
+            shutil.copytree(FIXTURE, root / "a")
+            shutil.copytree(FIXTURE, root / "b")
+            rc, out, err = run_cli("portfolio", "--root", str(root), "--json")
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(out)
+            self.assertEqual(len(data["projects"]), 2)
+
+    def test_portfolio_text_empty(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_pf_cli2_") as tmp:
+            rc, out, err = run_cli("portfolio", "--root", tmp)
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("No i2c projects found", out)
+
+
 # ---------------------------------------------------------------------------
 # clear-boundary (write; temp copy)
 # ---------------------------------------------------------------------------

@@ -153,6 +153,29 @@ class IterationLog:
     transcript: str | None = None  # logs/loop/iteration_NNN.txt, on demand
 
 
+@dataclass
+class ProjectBrief:
+    """One project's line in a portfolio view (§7.6) — enough to answer
+    'which project needs me?' without opening each one."""
+
+    root: str
+    name: str
+    phase: int
+    state: str
+    module: str | None
+    next_action: str
+    is_escalated: bool
+    escalation_reason: str | None
+    open_decisions: int
+    error: str | None = None  # set instead of the rest when the project failed to load
+
+
+@dataclass
+class PortfolioReport:
+    root: str
+    projects: list[ProjectBrief]
+
+
 # ---------------------------------------------------------------------------
 # Project root discovery (raises, unlike the assembler's sys.exit version)
 # ---------------------------------------------------------------------------
@@ -457,6 +480,95 @@ def clear_boundary(root: Path | None = None, *, advance: bool = True) -> Boundar
 
     _state.atomic_write_json(_state_path(root, "project.json"), project)
     return BoundaryResult(outcome=outcome, phase=new_phase, state=project["state"])
+    raise NotFoundError(f"No iteration {iter} in {_runner.SUMMARY_LOG_NAME}")
+
+
+# ---------------------------------------------------------------------------
+# Portfolio: control projections mapped across many projects (§7.6)
+# ---------------------------------------------------------------------------
+
+# Directory names never worth descending into while discovering projects.
+_PORTFOLIO_SKIP = {
+    ".git", ".hg", ".svn", "node_modules", "__pycache__", ".state", "logs",
+    ".venv", "venv", ".mypy_cache", ".pytest_cache", "dist", "build",
+}
+
+# Sort key: surface what needs the operator first. Lower = more urgent.
+_STATE_RANK = {
+    "audit_escalation": 0,
+    "audit_boundary": 1,
+    "plan": 2, "execute": 2, "review": 2, "close": 2,
+    "done": 4,
+}
+
+
+def discover_projects(root: Path) -> list[Path]:
+    """Every directory under ``root`` (inclusive) that holds
+    ``.state/project.json``. Does not descend below a discovered project, and
+    skips VCS / build / dependency noise. Sorted by path."""
+    root = Path(root).absolute()
+    found: list[Path] = []
+    stack: list[Path] = [root]
+    while stack:
+        d = stack.pop()
+        if (d / ".state" / "project.json").is_file():
+            found.append(d)
+            continue  # a project is a leaf — don't descend into it
+        try:
+            stack.extend(
+                c for c in d.iterdir()
+                if c.is_dir()
+                and c.name not in _PORTFOLIO_SKIP
+                and not c.name.startswith(".")
+            )
+        except (PermissionError, OSError):
+            continue
+    found.sort()
+    return found
+
+
+def _project_brief(proj: Path) -> ProjectBrief:
+    """Assemble one ProjectBrief over the existing control projections
+    (``status`` / ``escalation`` / ``next_action``). A per-project load failure
+    is captured in ``error`` so one broken project can't break the sweep."""
+    try:
+        s = status(proj)
+        esc = escalation(proj)
+        disp = next_action(proj)
+    except ControlError as e:
+        return ProjectBrief(
+            root=str(proj), name=proj.name, phase=0, state="?", module=None,
+            next_action="?", is_escalated=False, escalation_reason=None,
+            open_decisions=0, error=str(e),
+        )
+    return ProjectBrief(
+        root=str(proj),
+        name=proj.name,
+        phase=s.phase,
+        state=s.state,
+        module=s.module,
+        next_action=disp.action,
+        is_escalated=esc.is_escalated,
+        escalation_reason=(esc.entry.summary if (esc.is_escalated and esc.entry) else None),
+        open_decisions=len(s.open_decisions),
+    )
+
+
+def _attention_rank(b: ProjectBrief) -> tuple[int, str]:
+    if b.error:
+        return (-1, b.name)  # broken projects float to the very top
+    return (_STATE_RANK.get(b.state, 3), b.name)
+
+
+def portfolio(root: Path | None = None) -> PortfolioReport:
+    """Map the control projections across every project under ``root`` (default
+    CWD). Answers 'which project needs me?' — projects are ordered with
+    escalations and boundaries first. Pure read; does not require ``root``
+    itself to be a project."""
+    root = (root or Path.cwd()).absolute()
+    briefs = [_project_brief(p) for p in discover_projects(root)]
+    briefs.sort(key=_attention_rank)
+    return PortfolioReport(root=str(root), projects=briefs)
 
 
 # ---------------------------------------------------------------------------
