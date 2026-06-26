@@ -101,7 +101,25 @@ release).
 **Active priorities (smallest → largest scope):**
 1. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes (≥1 more CC ARCH authored under the Pattern A/B v2 template). ~15 lines of doc once we know what works.
 2. **Phase 3.C** — multi-iteration loop. **Re-evaluate after measuring FU-35 cache hits** (the prompt-cache split shipped 2026-06-21; caching likely captures most of the token-savings motivation, so 3.C's remaining justification is cross-step reasoning continuity + fewer spin-ups, weighed against the e2e-vintage multi-iteration reliability cost). Wrap `run_iteration.py` once we have real data on what single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
-3. **Packaging Phase 3 control surface** — **FU-39 (3a), FU-34 (3b), and portfolio views (3c) all shipped 2026-06-25.** `i2c.control` is the single structured layer with full read coverage (`status`/`phase-summary`/`decisions`/`devlog`/`escalation`/`logs`, all `--json`) plus a cross-project `portfolio` view (`i2c portfolio [--root PATH]`). **Next: 3d** transports + orchestrator protocol (§7). The deferred codexbot commands (`/escalation`, `/logs`, `/review`) are now unblocked as thin callers of `control` — pending the codexbot `--json` migration. Backend abstraction (§6, FU-38) runs as an independent parallel track.
+3. **Packaging Phase 3 control surface** — **3a (FU-39), 3b (FU-34), 3c (portfolio), and 3d-Telegram all shipped.** `i2c.control` is the single structured layer; the `i2c` CLI and a Telegram bot (`pip install i2c[telegram]`, `i2c serve telegram`) are thin surfaces over it. **Remaining in §7:** a Discord extra and the optional `/ask` Agent layer + orchestrator protocol references. Backend abstraction (§6, FU-38) runs as an independent parallel track.
+
+**Recently shipped (2026-06-26):**
+- **3d — Telegram surface (`DESIGN_packaging_v1.md` §7.1, D-pkg-10).** A clean,
+  i2c-native bot — *separate from the internal e2e codexbot*, which stays as-is
+  serving e2e (its `LogReader` path is untouched). Structure: a pure
+  `i2c/surfaces/telegram_core.py` `dispatch()` (over `i2c.control`, no telegram
+  import, fully unit-tested) + a thin `i2c/surfaces/telegram.py` PTB wiring shell
+  (lazy-imported). Commands: read (`/status /portfolio /next /phasesummary
+  /decisions /devlog /escalation /logs /projects /use`) + admin-gated mutating
+  (`/run /batch /clearboundary`). Auth is surface-enforced via an `[telegram].admins`
+  allowlist (Q-pkg-6 answered: surface, not `control`); token from
+  `I2C_TELEGRAM_TOKEN` (env only). Ships as `pip install i2c[telegram]`,
+  run via `i2c serve telegram`. Reads run in-process; `/run`/`/batch` shell
+  `i2c run` with the project as CWD (run_iteration resolves project from CWD) on
+  a worker thread. Also extracted the operator-text renderers into `i2c/render.py`
+  shared by the CLI and the bot (no new duplication). The deferred codexbot
+  commands (`/escalation`, `/logs`, `/review`) are obsoleted by this bot for i2c
+  projects. clankercourts moves here when it resumes (no codexbot stopgap needed).
 
 **Recently shipped (2026-06-25):**
 - **FU-39 — single projection layer (packaging Phase 3a).** Removed the assembler's operator-derived `--section` modes (`build_section_status` / `build_section_phase_summary` / `build_section_devlog` + their operator-only renderers); `SECTIONS` is now `(architecture, module)` (verbatim file passthroughs / worker mid-step providers only). Added `control.devlog()` + `i2c devlog`, completing CLI parity (`i2c status` / `phase-summary` / `decisions` / `devlog`, all `--json`). Operator views are now single-sourced in `i2c.control`, formatted at the CLI — the prose/structure duplication is gone (D-pkg-14/15, D-arch-13). **Worker-prompt bytes proven unchanged** by `tests/test_prompt_golden.py` (18 golden snapshots across action×backend×mode, generated pre-removal, green post-removal). ARCH_assembler §8 rewritten as the "operator views moved to control" note; docs (README/WORKFLOW/examples/templates) point at the CLI; smoke test step 9 uses `i2c status`. FU-34 (Phase 3b) is now unblocked. **codexbot must migrate** its prose-parsing of `i2c assemble --section …` to `i2c <cmd> --json` (lockstep with this removal).

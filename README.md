@@ -273,6 +273,25 @@ REVIEW↔Review); CLOSE is mostly housekeeping with no clean human equivalent.
 
 ---
 
+## Chat surface (Telegram)
+
+A Telegram bot exposes the same views and actions over chat — a thin,
+deterministic adapter over `i2c.control` (no LLM logic in the bot; it dispatches
+the same operations the CLI does). Install the optional extra:
+
+```bash
+pip install i2c[telegram]
+export I2C_TELEGRAM_TOKEN=...                 # bot token (environment only)
+i2c serve telegram --root /path/to/projects
+```
+
+The bot scans `--root` for projects, so one bot serves a whole portfolio. Read
+commands (`/status`, `/portfolio`, `/escalation`, `/logs`, …) are open; mutating
+commands (`/run`, `/batch`, `/clearboundary`) are gated to the admin user IDs in
+the `[telegram]` table of `i2c.toml`.
+
+---
+
 ## Bootstrap a new i2c project
 
 1. **Create the project directory** and initialize git.

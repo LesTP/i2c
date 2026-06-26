@@ -5,9 +5,9 @@ project root, rather than re-typing flags. Precedence is **CLI flag > i2c.toml >
 built-in default** (the resolution lives in ``cli.cmd_run``; this module only
 reads and validates the file).
 
-Only the ``[run]`` table is read today (``backend`` / ``model`` /
-``max_budget_usd``). Unknown keys are ignored for forward-compatibility.
-Secrets / API keys do **not** belong here — use environment variables.
+Only the ``[run]`` and ``[telegram]`` tables are read today. Unknown keys are
+ignored for forward-compatibility. Secrets / API keys (the bot token, provider
+keys) do **not** belong here — use environment variables.
 """
 
 from __future__ import annotations
@@ -35,6 +35,18 @@ class RunConfig:
     backend: str | None = None
     model: str | None = None
     max_budget_usd: float | None = None
+
+
+@dataclass
+class TelegramConfig:
+    """Non-secret settings for the Telegram surface, read from ``[telegram]``.
+    The bot token is **not** here — it comes from the ``I2C_TELEGRAM_TOKEN``
+    environment variable. ``admins`` is the allowlist of Telegram user IDs
+    permitted to issue mutating commands; ``root`` is the portfolio folder the
+    bot scans (default: the bot's working directory)."""
+
+    admins: tuple[int, ...] = ()
+    root: str | None = None
 
 
 def _find_config(start: Path) -> Path | None:
@@ -83,3 +95,37 @@ def load_run_config(start: Path | None = None) -> RunConfig:
         budget = float(budget)
 
     return RunConfig(backend=backend, model=model, max_budget_usd=budget)
+
+
+def load_telegram_config(start: Path | None = None) -> TelegramConfig:
+    """Load the ``[telegram]`` settings from the nearest ``i2c.toml`` (or empty).
+
+    Raises ``ConfigError`` on a parse failure or an invalid value. The bot token
+    is never read from here — only from the environment.
+    """
+    path = _find_config(start or Path.cwd())
+    if path is None:
+        return TelegramConfig()
+
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError) as e:
+        raise ConfigError(f"{path}: could not parse: {e}") from e
+
+    tg = data.get("telegram", {})
+    if not isinstance(tg, dict):
+        raise ConfigError(f"{path}: [telegram] must be a table")
+
+    admins_raw = tg.get("admins", [])
+    if not isinstance(admins_raw, list) or any(
+        isinstance(a, bool) or not isinstance(a, int) for a in admins_raw
+    ):
+        raise ConfigError(
+            f"{path}: [telegram].admins must be a list of integer Telegram user IDs"
+        )
+
+    root = tg.get("root")
+    if root is not None and not isinstance(root, str):
+        raise ConfigError(f"{path}: [telegram].root must be a string")
+
+    return TelegramConfig(admins=tuple(admins_raw), root=root)

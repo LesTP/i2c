@@ -524,6 +524,10 @@ operator-facing sections.
   - **3d — transports + orchestration (§7):** TG/Discord extras and the
     orchestrator protocol + reference drivers (Human/Policy/Agent), all over
     `control`.
+    **(Telegram shipped 2026-06-26: `i2c/surfaces/telegram_core.py` pure
+    dispatch + `i2c/surfaces/telegram.py` PTB shell; `pip install i2c[telegram]`,
+    `i2c serve telegram`; surface-enforced admin allowlist. Discord + the `/ask`
+    Agent layer + orchestrator references remain.)**
   - **Backend abstraction (§6)** — independent parallel track (axis 2):
     Gemini (agentic-CLI path) then OpenRouter (raw-API + harness, §6.1).
   - **Polish:** CI matrix (Linux/macOS/Windows — FU-27 cross-platform, FU-18

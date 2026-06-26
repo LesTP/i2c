@@ -41,6 +41,11 @@ classifiers = [
     "Topic :: Software Development :: Code Generators",
 ]
 
+# Optional transport surfaces (§7.1, D-pkg-10): thin chat adapters over
+# i2c.control. Core install stays stdlib + jsonschema; the bot deps are opt-in.
+[project.optional-dependencies]
+telegram = ["python-telegram-bot>=21"]
+
 # [project.urls]
 # Homepage = "..."      # add when the public repository exists
 # Repository = "..."
@@ -49,7 +54,7 @@ classifiers = [
 i2c = "i2c.cli:main"  # console entry point over the i2c package
 
 [tool.setuptools]
-packages = ["i2c"]
+packages = ["i2c", "i2c.surfaces"]
 
 [tool.setuptools.package-data]
 # Framework-canonical assets ship inside the package. Schemas resolve via

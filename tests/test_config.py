@@ -86,5 +86,44 @@ class TestLoadRunConfig(unittest.TestCase):
                 config.load_run_config(root)
 
 
+class TestLoadTelegramConfig(unittest.TestCase):
+    def test_no_file_returns_empty(self):
+        with TempDir() as root:
+            cfg = config.load_telegram_config(root)
+            self.assertEqual(cfg.admins, ())
+            self.assertIsNone(cfg.root)
+
+    def test_reads_telegram_table(self):
+        with TempDir() as root:
+            _write(root, '[telegram]\nadmins = [111, 222]\nroot = "/work"\n')
+            cfg = config.load_telegram_config(root)
+            self.assertEqual(cfg.admins, (111, 222))
+            self.assertEqual(cfg.root, "/work")
+
+    def test_admins_must_be_ints(self):
+        with TempDir() as root:
+            _write(root, '[telegram]\nadmins = ["nope"]\n')
+            with self.assertRaises(config.ConfigError):
+                config.load_telegram_config(root)
+
+    def test_bool_is_not_a_valid_admin_id(self):
+        with TempDir() as root:
+            _write(root, "[telegram]\nadmins = [true]\n")
+            with self.assertRaises(config.ConfigError):
+                config.load_telegram_config(root)
+
+    def test_root_must_be_string(self):
+        with TempDir() as root:
+            _write(root, "[telegram]\nroot = 5\n")
+            with self.assertRaises(config.ConfigError):
+                config.load_telegram_config(root)
+
+    def test_absent_table_is_empty(self):
+        with TempDir() as root:
+            _write(root, '[run]\nbackend = "claude"\n')
+            cfg = config.load_telegram_config(root)
+            self.assertEqual(cfg.admins, ())
+
+
 if __name__ == "__main__":
     unittest.main()
