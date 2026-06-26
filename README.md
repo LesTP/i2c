@@ -36,16 +36,24 @@ autonomous runs**. It has driven a real multi-phase software project
 end-to-end — fourteen phases, autonomously, across both the Claude and Codex
 backends.
 
-It now ships as an **installable package**: `pip install` puts the `i2c`
-console command on your `PATH` and bundles the framework assets (JSON Schemas,
+It ships as an **installable package**: `pip install` puts the `i2c` console
+command on your `PATH` and bundles the framework assets (JSON Schemas,
 `WORKER_SPEC.md`, `instructions/`, adapters, templates) as package data, so a
 consuming project carries only its own `.state/` and docs — no copied framework
 code. `i2c init` scaffolds a new project, and `i2c migrate` performs versioned
 in-place `.state/` upgrades (see
 [Versioning & migration](#versioning--migration)).
 
-Active development: a multi-iteration loop and a pluggable backend interface
-(so providers beyond Claude and Codex can be added).
+On top of the state model sits a **single structured command layer**
+(`i2c.control`) with an operator CLI — `i2c status` / `portfolio` /
+`phase-summary` / `decisions` / `devlog` / `escalation` / `logs` (all with a
+`--json` mode) plus the `clear-boundary` action — and an optional **Telegram
+surface** (see [Chat surface](#chat-surface-telegram)). Both are thin,
+deterministic adapters over the same command API.
+
+Active development: pluggable backends beyond Claude and Codex (e.g. Gemini /
+OpenRouter), a Discord surface and an optional conversational agent layer, and a
+multi-iteration loop.
 
 ---
 

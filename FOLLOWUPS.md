@@ -15,32 +15,23 @@ to a phase) / `partially closed` / `closed` / `wontfix`.
 
 ## Cold-start summary (next session entry point)
 
-**Where we are (2026-06-12).** i2c data foundation, prose layer,
-autonomous-loop foundation, **state lifecycle v1** (FU-30 closed; 7-state
-enum: `plan`, `execute`, `review`, `close`, `audit_boundary`,
-`audit_escalation`, `done`), **autonomous-PLAN readiness work** (FU-32
-Δ1/Δ2/Δ4 + Δ4 v2 Pattern A/B collapse + `--section phase-summary`),
-**codexbot Phase 18a MVP** (i2c-aware `/start`, `/run` via shim,
-`/close`, `/audit`), and **exit-signal trim to 2 lines** (FU-7 closed
-2026-06-12; schema requires only `exit_code` + `reason`,
-`additionalProperties: false`, `exit_code` enum `[0, 2]`) all shipped. CC
-has run **Phases 2–14** autonomously across both backends (claude +
-codex); Phase 7 close validated all four new i2c handlers end-to-end
-from Telegram; Phase 14 (extraction commitments-only) validated FU-7's
-2-line block across 7 iterations on both backends with zero malformed
-signals. ARCH template at `ref/SPEC_architecture.md` +
-`ref/GUIDE_architecture.md` (Pattern A / Pattern B variants); phases
-5–7 authored against it on CC.
-
-**Recent cleanups (2026-06-12):** dead-surface audit prompted by FU-7
-surfaced and removed (a) `STOP_BEFORE_REVIEW` env var (parallel mechanism
-to the shim's `--to-review` flag; never set in production) — ~60 LOC
-removed across `state_machine.py`, tests, and prose; (b) stale
-`state_machine.sh` active-tense references in worker-facing prose
-(WORKER_SPEC.md, README.md, schema description, assembler docstring) —
-the bash script was rewritten as `state_machine.py` during Phase 3.A but
-prose hadn't caught up. **FU-37** added to capture the practice
-(opportunistic dead-surface mining at session starts).
+**Where we are (2026-06-26).** Foundation (data + prose + autonomous-loop),
+**state lifecycle v1** (7-state enum: `plan`, `execute`, `review`, `close`,
+`audit_boundary`, `audit_escalation`, `done`), and **packaging Phase 1–2**
+(installable package, `i2c` console, `i2c init`/`eject`, `i2c.toml`,
+`schema_version` + `i2c migrate`) are all shipped. **Packaging Phase 3 — the
+control surface — is now complete:** `i2c.control` is the single structured
+projection/command layer (3a / FU-39 removed the assembler's duplicate operator
+sections; worker prompts proven byte-identical by golden snapshots), exposing the
+full read surface (`status` / `phase-summary` / `decisions` / `devlog` /
+`escalation` / `logs` / `portfolio`, all `--json`) plus the `clear-boundary`
+action, a cross-project portfolio view (3c), and a Telegram bot (3d,
+`pip install i2c[telegram]` → `i2c serve telegram`). The doc set was consolidated:
+a single decisions index (`DECISIONS.md`), historical design memos moved to
+`archive/`, and `WORKFLOW.md` / sub-READMEs de-duplicated. CC drove **Phases
+2–14** autonomously across both backends (claude + codex) earlier in the project.
+See **Recently shipped** below for per-item detail and **Active priorities** for
+what's next.
 
 `FOLLOWUPS.md` is the rolling backlog + live spec for the remaining
 FU-32 Δ5 work (deferred until template proves out further).
@@ -88,15 +79,15 @@ console surface (`i2c/cli.py`); `i2c init` / `i2c eject` scaffolding;
 `i2c.toml` run config; and **§8 `schema_version` + `i2c migrate`**
 (versioned in-place `.state/` migrations). This eliminates the consumer
 copy-and-sync model — consumers now `pip install` and carry only their own
-**Phase 3 (next):** the control-surface track now **leads
-with FU-39 — the single projection layer** (`DESIGN_packaging_v1.md` §7.7,
-D-pkg-14/15: `control` is the one structured view; the assembler's operator
-`--section` modes are deprecated), so FU-34 (`escalation`/`logs`), portfolio
-views (§7.6), and transports/orchestrators are built final-form *on* it rather
-than *beside* it. The pluggable backend protocol (FU-38 — Gemini / OpenRouter)
-runs as an independent parallel track; then the public distribution name +
-first release/tag (Q-pkg-1, at which point CHANGELOG's `Unreleased` is cut to a
-release).
+**Phase 3 — control surface (shipped 2026-06-25/26).** The whole control-surface
+track landed final-form on the single projection layer: FU-39 (3a, `control` is
+the one structured view; the assembler's operator `--section` modes removed),
+FU-34 (3b, `escalation`/`logs`), the portfolio view (3c, §7.6), and the Telegram
+bot (3d, §7.1 / D-pkg-10). **Remaining in §7:** a Discord extra and the optional
+`/ask` Agent layer + orchestrator-protocol references. The pluggable backend
+protocol (FU-38 — Gemini / OpenRouter, §6) runs as an independent parallel track;
+then the public distribution name + first release/tag (Q-pkg-1, at which point
+CHANGELOG's `Unreleased` is cut to a release).
 
 **Active priorities (smallest → largest scope):**
 1. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes (≥1 more CC ARCH authored under the Pattern A/B v2 template). ~15 lines of doc once we know what works.

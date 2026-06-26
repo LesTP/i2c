@@ -8,6 +8,33 @@ This is the public counterpart to `FOLLOWUPS.md` (internal tracking).
 
 ## [Unreleased]
 
+The Phase-3 control-surface arc: a single structured command/projection layer
+(`i2c.control`) with an operator CLI and a Telegram surface over it.
+
+### Added
+
+- **`i2c.control` command API + operator CLI.** Structured, typed read views and
+  actions exposed as `i2c` subcommands: `status`, `next-action`, `phase-summary`,
+  `decisions`, `devlog`, `escalation`, `logs`, `portfolio`, and `clear-boundary`,
+  each with a `--json` mode for structured consumers.
+- **Cross-project portfolio view.** `i2c portfolio [--root PATH]` discovers every
+  project under a folder and reports each one's phase, state, next action, and
+  escalation — escalations and boundaries first — to answer "which project needs
+  me?".
+- **Telegram surface (optional extra).** `pip install i2c[telegram]` then
+  `i2c serve telegram` runs a deterministic chat bot over `i2c.control`; mutating
+  commands are gated to an admin allowlist (`[telegram]` in `i2c.toml`) and the
+  bot token is read only from the environment.
+
+### Changed
+
+- **Operator views moved to the CLI / `control`.** The assembler's operator-facing
+  `--section status`, `--section phase-summary`, and `--section devlog` modes were
+  removed; use the corresponding `i2c` commands (with `--json`) instead. The
+  worker-prompt assembly and the `--section architecture` / `--section module`
+  passthroughs are unchanged, and worker prompts are byte-for-byte identical
+  (verified by committed golden snapshots).
+
 ## [0.1.0]
 
 The Phase-2 packaging arc: i2c becomes an installable library with a stable
