@@ -575,6 +575,13 @@ precisely so we don't lay another duplicated brick.
 - **Q-pkg-7:** which transports and orchestrator references to ship first
   (e.g., Telegram + PolicyOrchestrator), and how much of the
   `AgentOrchestrator` to provide vs leave to operators.
+- **Q-pkg-8:** failure recovery — should `reconcile`/`diagnose`/`fix` be
+  **bounded worker actions** (single system, LLM reasoning in the worker per
+  §7.4) rather than a separate orchestrator-diagnoser? A large share of past
+  recovery is *workflow/state reconciliation* (meta-view), not code fixes.
+  Concept + planning TODOs captured in
+  [`FUTURE_recovery.md`](FUTURE_recovery.md). Needs a design pass (start by
+  mining real escalation history, bucketed reconcile / code-fix / spec).
 
 ## 12. Decisions
 
