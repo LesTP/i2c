@@ -12,13 +12,19 @@
 > exit reminder, pre-FU-7) before anyone noticed, surfaced 2026-06-21 while
 > porting FU-35.
 >
-> Status: **partially implemented** (updated 2026-06-22). Phase 1 shipped
+> Status: **partially implemented** (updated 2026-06-26). Phase 1 shipped
 > 2026-06-21 (shareable demo) and Phase 2 shipped 2026-06-22 (the real
-> package — §5 + `i2c.control`, plus §8 versioning/migration pulled forward);
-> Phase 3 (backend abstraction §6, control/orchestration §7, CI) remains.
-> This memo records the decisions taken in the packaging discussion and the
-> design they imply; current status lives in `FOLLOWUPS.md` (internal) and
-> `CHANGELOG.md` (public). Implementation is phased (see §10).
+> package — §5 + `i2c.control`, plus §8 versioning/migration pulled forward).
+> Phase 3 is well underway: the control-surface track 3a–3c shipped
+> 2026-06-25 (single projection layer / FU-39; `escalation()` + `logs()`
+> projections; portfolio views), and the Telegram surface (first half of 3d)
+> shipped 2026-06-26. **Remaining:** the rest of 3d — the Discord surface,
+> the `/ask` Agent layer, and the orchestrator protocol + reference drivers
+> (Human/Policy/Agent) — plus the backend abstraction §6 (Gemini then
+> OpenRouter) and the CI/polish track. This memo records the decisions taken
+> in the packaging discussion and the design they imply; current status lives
+> in `FOLLOWUPS.md` (internal) and `CHANGELOG.md` (public). Implementation is
+> phased (see §10).
 >
 > Authors: operator + assistant, 2026-06-21.
 

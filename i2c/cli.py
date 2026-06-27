@@ -311,6 +311,66 @@ def cmd_migrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_import(report: Any) -> str:
+    lines: list[str] = []
+    header = "APPLIED" if report.applied else "DRY-RUN (no files written)"
+    lines.append(f"i2c import — Dialect {report.dialect} — {header}")
+    lines.append(f"  root: {report.root}")
+    lines.append(f"  validation: {'ok' if report.validation_ok else 'FAILED'}")
+    lines.append("  .state/ files:")
+    for f in report.files:
+        lines.append(f"    - {f}")
+    if report.manual_review:
+        lines.append("  manual review:")
+        for m in report.manual_review:
+            lines.append(f"    ! {m}")
+    if report.warnings:
+        lines.append("  notes:")
+        for w in report.warnings:
+            lines.append(f"    - {w}")
+    if not report.applied:
+        lines.append("  (re-run with --apply to write .state/)")
+    return "\n".join(lines)
+
+
+def _render_doctor(report: Any) -> str:
+    marks = {"ok": "ok  ", "warn": "WARN", "fail": "FAIL"}
+    lines = ["i2c doctor"]
+    for c in report.checks:
+        lines.append(f"  [{marks.get(c.status, c.status)}] {c.name}: {c.detail}")
+        if c.remedy and c.status != "ok":
+            lines.append(f"         -> {c.remedy}")
+    lines.append("  " + ("all checks passed" if report.ok() else "FAILURES present"))
+    return "\n".join(lines)
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from i2c import doctor
+
+    report = doctor.run_checks()
+    _emit(report, as_json=args.json, renderer=_render_doctor)
+    return 0 if report.ok() else 1
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from i2c import import_e2e
+
+    root = Path(args.path) if args.path else Path.cwd()
+    try:
+        report = import_e2e.import_project(
+            root,
+            apply=args.apply,
+            port_history=args.port_history,
+            force=args.force,
+        )
+    except import_e2e.ImportE2EError as e:
+        return _fail(e)
+    _emit(report, as_json=args.json, renderer=_render_import)
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
@@ -509,6 +569,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Report the changes that would be applied without writing.",
     )
     p_migrate.set_defaults(func=cmd_migrate)
+
+    p_doctor = sub.add_parser(
+        "doctor",
+        parents=[json_parent],
+        help="Check the i2c install/environment (PATH, deps, schemas, "
+        "backends, project .state).",
+    )
+    p_doctor.set_defaults(func=cmd_doctor)
+
+    p_import = sub.add_parser(
+        "import",
+        parents=[json_parent],
+        help="Migrate a Dialect-A (prose e2e) project to .state/ "
+        "(dry-run by default).",
+    )
+    p_import.add_argument(
+        "path", nargs="?", default=None,
+        help="Project root to convert. Default: current directory.",
+    )
+    p_import.add_argument(
+        "--apply", action="store_true",
+        help="Write .state/ (default: dry-run, no files written).",
+    )
+    p_import.add_argument(
+        "--port-history", action="store_true",
+        help="Reserved: port DEVLOG/steps history instead of snapshot "
+        "(not yet implemented).",
+    )
+    p_import.add_argument(
+        "--force", action="store_true",
+        help="Overwrite an existing .state/project.json.",
+    )
+    p_import.set_defaults(func=cmd_import)
 
     # Passthrough subcommands. Dispatch is handled by a short-circuit in main()
     # (forwarding raw argv to the tool's own argparse) — registered here only so

@@ -68,10 +68,44 @@ multi-iteration loop.
 - **For supervised runs:** any capable coding assistant that can run the
   `i2c` commands; no backend CLI required.
 - **The `i2c` command:** the worker/operator surface is the `i2c` console
-  command, installed from this package. Run `pip install -e .` (editable, for
-  development) or `pip install <repo>`; this puts an `i2c` entry point on your
-  `PATH`. If the Python scripts directory isn't on `PATH`, the equivalent
-  `python -m i2c.cli …` always works.
+  command, installed from this package. **Recommended: `pipx install i2c`** —
+  pipx puts the `i2c` entry point on your `PATH` (run `pipx ensurepath` once)
+  and installs into an isolated environment, which also sidesteps the
+  externally-managed-environment restriction below. Alternatives: a virtualenv
+  (`python -m venv .venv && .venv/bin/pip install i2c`) or, for framework
+  development, an editable install (`pip install -e .`).
+  - **`i2c` must be on `PATH`.** Worker procedures and adapters call the
+    `i2c` console command directly (e.g. `i2c state …`), so the entry point
+    has to be resolvable as a command — not only importable. Verify your
+    install with `i2c doctor` (it checks PATH and login-shell PATH, the
+    `jsonschema` dependency, packaged schemas, an `i2c.toml` parser, and a
+    backend CLI), or minimally `i2c --version` (the command, not
+    `python -m i2c.cli`). The `python -m i2c.cli …` form always works as an
+    operator fallback, but it does **not** satisfy the worker, which invokes
+    bare `i2c`.
+  - **Externally-managed environments (PEP 668).** On Debian/Ubuntu,
+    Homebrew Python, and most containers, a plain `pip install` fails with
+    `externally-managed-environment`. Use **pipx** or a **venv** (above). Only
+    on a disposable/container environment is `pip install --break-system-packages`
+    an acceptable shortcut.
+  - **Autonomous / containerized runs need `i2c` on the *system* PATH.**
+    Install i2c in the environment where the worker executes (e.g. the
+    container), which may differ from your laptop — and put it on the
+    **login-shell** PATH, not just your interactive one. This matters because
+    backends differ in how they run the worker's shell commands: the **codex**
+    backend runs every command via `bash -lc` (a login shell), which
+    **rebuilds PATH from `/etc/profile` + `~/.profile` and discards the
+    launching process's PATH** — so exporting `PATH` before `i2c run`, or a
+    `--user` install under `~/.local/bin`, is **not** enough: codex's
+    `i2c state` calls fail with `i2c: command not found` partway through a
+    phase. (The **claude** backend preserved the inherited PATH in our testing
+    and tolerated a `~/.local/bin` install, but a system PATH is the robust
+    setup for *either* backend.) Put `i2c` on a system/login-shell PATH:
+    `pipx` (`pipx ensurepath`), a system install, or symlink the launcher into
+    `/usr/local/bin` (`sudo ln -s "$(command -v i2c)" /usr/local/bin/i2c`).
+    Confirm on that host with `i2c doctor` — its **i2c on login-shell PATH**
+    check probes a real `bash -lc` shell and fails when only `~/.local/bin`
+    has it.
 
 ---
 
@@ -305,15 +339,20 @@ the `[telegram]` table of `i2c.toml`.
 1. **Create the project directory** and initialize git.
 
 2. **Install the framework** so the `i2c` command and the bundled schemas are
-   available — from this checkout for development:
+   available:
 
    ```bash
-   pip install -e .        # or: pip install <path-or-VCS-url to i2c>
+   pipx install i2c        # recommended: puts `i2c` on PATH + isolated env
+   # or, for framework development from this checkout:
+   pip install -e .        # inside a venv; see Requirements re: PEP 668
    ```
 
    This installs the `i2c` console command and the bundled assets — JSON
    Schemas, `WORKER_SPEC.md`, and `instructions/` (package data). Your project
-   carries **no** framework Python or canonical markdown.
+   carries **no** framework Python or canonical markdown. Confirm your install
+   with `i2c doctor` before continuing (it checks PATH, dependencies, schemas,
+   and backends) — see [Requirements](#requirements) for PATH, PEP 668
+   (externally-managed environments), and autonomous/containerized setup notes.
 
 3. **Scaffold the project** with `i2c init` (run in the project root):
 
