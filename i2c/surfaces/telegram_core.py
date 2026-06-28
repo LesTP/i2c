@@ -9,6 +9,19 @@ sender, calls ``dispatch``, and sends the resulting ``Reply``.
 ``dispatch`` is synchronous and complete (it even runs ``/run`` and ``/batch``
 to completion). The shell decides threading — it runs dispatch off the event
 loop for long-running mutating commands so the bot stays responsive.
+
+Command surface (DESIGN_surface_backends_v1.md §4):
+
+- ``/audit [proj] [facet]`` — the read hub; ``facet`` ∈ {∅→summary, ``phase N``,
+  ``decisions [N]``, ``devlog [N]``, ``escalation``, ``logs [N]`` /
+  ``logs iter N``}.
+- ``/portfolio`` — cross-project view.
+- ``/setdir <proj>`` — set the chat's current project.
+- ``/commands`` (``/start``) — this listing.
+- ``/run [proj] [N] [backend]`` — up to N iterations (default 1) on a **single**
+  backend (arg, else the project default), stopping at a halt or non-zero exit.
+- ``/batch [proj]`` — loop to a halt using the **per-action** backend map.
+- ``/endphase [proj] [last]`` — clear an ``audit_boundary`` (``last`` = terminate).
 """
 
 from __future__ import annotations
@@ -19,20 +32,28 @@ from typing import Callable
 
 from i2c import control, render
 
-READ_COMMANDS = frozenset({
-    "status", "portfolio", "next", "phasesummary", "decisions", "devlog",
-    "escalation", "logs", "projects", "help", "start", "use",
-})
-MUTATING_COMMANDS = frozenset({"run", "batch", "clearboundary"})
+READ_COMMANDS = frozenset({"audit", "portfolio", "setdir", "commands", "start"})
+MUTATING_COMMANDS = frozenset({"run", "batch", "endphase"})
 ALL_COMMANDS = READ_COMMANDS | MUTATING_COMMANDS
+
+# Runaway guard for /batch (which has no explicit count). A phase always
+# progresses to a halt (execute consumes steps → review → close → boundary),
+# so this is only a safety net against a stuck loop.
+_BATCH_MAX = 50
+
+_BACKENDS = ("claude", "codex")
 
 _HELP = (
     "i2c bot commands\n"
-    "Read: /status [proj] /portfolio /next [proj] /phasesummary [proj] N\n"
-    "      /decisions [proj] [N] /devlog [proj] N /escalation [proj]\n"
-    "      /logs [proj] [N] | /logs [proj] iter N  /projects  /use <proj>\n"
-    "Admin: /run [proj]  /batch [proj] N  /clearboundary [proj] [terminate]\n"
-    "Most commands take an optional project name; otherwise the /use current "
+    "Read:  /audit [proj] [facet]\n"
+    "         facet: (none)=summary | phase N | decisions [N] | devlog [N]\n"
+    "                | escalation | logs [N] | logs iter N\n"
+    "       /portfolio        cross-project view\n"
+    "       /setdir <proj>    set the current project\n"
+    "Admin: /run [proj] [N] [backend]   N iters (default 1) on one backend\n"
+    "       /batch [proj]               full phase, per-action backends, to a halt\n"
+    "       /endphase [proj] [last]     clear the audit_boundary (last = terminate)\n"
+    "Most commands take an optional project name; otherwise the /setdir current "
     "project (or the only project) is used."
 )
 
@@ -82,14 +103,15 @@ def dispatch(
     is_admin: bool,
     root: Path,
     current: str | None = None,
-    run_iteration_fn: Callable[[Path], int] | None = None,
+    run_iteration_fn: Callable[[Path, str | None], int] | None = None,
 ) -> Reply:
-    """Run one command and return a Reply. ``run_iteration_fn(proj)`` (pre-bound
-    with backend/model/budget by the surface, and run with the project as CWD)
+    """Run one command and return a Reply. ``run_iteration_fn(proj, backend)``
+    (the surface shells ``i2c run`` with the project as CWD; ``backend`` is an
+    optional single-backend override, else the project's per-action map applies)
     backs ``/run`` and ``/batch``; it is injectable so tests can supply a fake."""
     command = command.lower().lstrip("/")
 
-    if command in ("help", "start"):
+    if command in ("commands", "start"):
         return Reply(_HELP)
 
     if command not in ALL_COMMANDS:
@@ -101,12 +123,9 @@ def dispatch(
     # Root-scoped (no project resolution).
     if command == "portfolio":
         return Reply(render._render_portfolio(control.portfolio(root)))
-    if command == "projects":
-        names = [p.name for p in control.discover_projects(root)]
-        return Reply("Projects: " + (", ".join(names) if names else "(none)"))
-    if command == "use":
+    if command == "setdir":
         if not args:
-            return Reply("Usage: /use <project>", ok=False)
+            return Reply("Usage: /setdir <project>", ok=False)
         names = {p.name for p in control.discover_projects(root)}
         if args[0] not in names:
             return Reply(
@@ -125,68 +144,100 @@ def dispatch(
         return Reply(f"Error: {e}", ok=False)
 
 
-def _dispatch_project(
-    command: str,
-    rest: list[str],
-    proj: Path,
-    run_iteration_fn: Callable[[Path], int] | None,
-) -> Reply:
-    if command == "status":
+def _parse_run_args(rest: list[str]) -> tuple[int, str | None]:
+    """From /run's args (after project): an integer count (default 1) and an
+    optional backend token (claude/codex)."""
+    n = 1
+    backend: str | None = None
+    for a in rest:
+        if a.isdigit():
+            n = int(a)
+        elif a in _BACKENDS:
+            backend = a
+    return n, backend
+
+
+def _audit(rest: list[str], proj: Path) -> Reply:
+    """The /audit read hub — route by facet to a control projection."""
+    if not rest:
         return Reply(render._render_status(control.status(proj)))
-    if command == "next":
-        return Reply(render._render_dispatch(control.next_action(proj)))
-    if command == "phasesummary":
-        n = _int_arg(rest)
+    facet, sub = rest[0].lower(), rest[1:]
+    if facet == "phase":
+        n = _int_arg(sub)
         if n is None:
-            return Reply("Usage: /phasesummary [project] <phase>", ok=False)
+            return Reply("Usage: /audit [proj] phase <N>", ok=False)
         return Reply(render._render_phase_summary(control.phase_summary(proj, phase=n)))
-    if command == "decisions":
-        return Reply(render._render_decisions(control.decisions(proj, phase=_int_arg(rest))))
-    if command == "devlog":
-        return Reply(render._render_devlog_list(control.devlog(proj, phase=_int_arg(rest))))
-    if command == "escalation":
+    if facet == "decisions":
+        return Reply(render._render_decisions(control.decisions(proj, phase=_int_arg(sub))))
+    if facet == "devlog":
+        return Reply(render._render_devlog_list(control.devlog(proj, phase=_int_arg(sub))))
+    if facet == "escalation":
         return Reply(render._render_escalation(control.escalation(proj)))
-    if command == "logs":
-        if rest and rest[0] == "iter":
-            n = _int_arg(rest[1:])
+    if facet == "logs":
+        if sub and sub[0] == "iter":
+            n = _int_arg(sub[1:])
             if n is None:
-                return Reply("Usage: /logs [project] iter <n>", ok=False)
+                return Reply("Usage: /audit [proj] logs iter <n>", ok=False)
             rec = control.logs_transcript(proj, iter=n)
             text = render._render_log_transcript(rec)
             doc = rec.transcript if (rec.transcript and len(text) > 3500) else None
             return Reply(text, document=doc)
-        return Reply(render._render_logs(control.logs(proj, limit=_int_arg(rest) or 10)))
-    if command == "clearboundary":
-        terminate = "terminate" in rest
+        return Reply(render._render_logs(control.logs(proj, limit=_int_arg(sub) or 10)))
+    return Reply(
+        f"Unknown /audit facet {facet!r}. "
+        "Use: phase N | decisions | devlog | escalation | logs",
+        ok=False,
+    )
+
+
+def _dispatch_project(
+    command: str,
+    rest: list[str],
+    proj: Path,
+    run_iteration_fn: Callable[[Path, str | None], int] | None,
+) -> Reply:
+    if command == "audit":
+        return _audit(rest, proj)
+
+    if command == "endphase":
+        terminate = "last" in rest
         result = control.clear_boundary(proj, advance=not terminate)
         return Reply(render._render_boundary(result))
+
     if command == "run":
         if run_iteration_fn is None:
             return Reply("run is not available on this surface.", ok=False)
-        rc = run_iteration_fn(proj)
+        n, backend = _parse_run_args(rest)
+        ran, last_rc = 0, 0
+        for _ in range(n):
+            if control.next_action(proj).action == "EXIT":
+                break  # reached a halt (boundary / escalation / done)
+            last_rc = run_iteration_fn(proj, backend)
+            ran += 1
+            if last_rc != 0:
+                break  # escalation / failure halts the series
+        state = control.status(proj).state
+        be = backend or "project default/map"
+        msg = f"Ran {ran}/{n} on {be}; now state={state} (last exit={last_rc})."
         tail = control.logs(proj, limit=1)
-        msg = f"Ran one iteration (exit={rc})."
         if tail:
             msg += f" {tail[-1].action} -> {tail[-1].reason}"
-        return Reply(msg, ok=(rc == 0))
+        return Reply(msg, ok=(last_rc == 0))
+
     if command == "batch":
         if run_iteration_fn is None:
             return Reply("batch is not available on this surface.", ok=False)
-        n = _int_arg(rest)
-        if n is None:
-            return Reply("Usage: /batch [project] <count>", ok=False)
-        ran = 0
-        last_rc = 0
-        for _ in range(n):
+        ran, last_rc = 0, 0
+        for _ in range(_BATCH_MAX):
             if control.next_action(proj).action == "EXIT":
-                break  # reached a halt state (boundary / escalation / done)
-            last_rc = run_iteration_fn(proj)
+                break  # halt state reached
+            last_rc = run_iteration_fn(proj, None)  # None → per-action map
             ran += 1
             if last_rc != 0:
                 break  # escalation / failure halts the batch
         state = control.status(proj).state
         return Reply(
-            f"Batch done: {ran}/{n} iteration(s) run; now state={state} "
+            f"Batch done: {ran} iteration(s); now state={state} "
             f"(last exit={last_rc}).",
             ok=(last_rc == 0),
         )

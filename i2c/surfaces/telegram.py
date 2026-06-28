@@ -22,7 +22,6 @@ from io import BytesIO
 from pathlib import Path
 
 from i2c import config
-from i2c import run_iteration as _runner
 from i2c.surfaces import telegram_core as tc
 
 TOKEN_ENV = "I2C_TELEGRAM_TOKEN"
@@ -73,29 +72,19 @@ class _ChatState:
 
 
 def _make_runner(root: Path):
-    """Return ``fn(proj) -> int`` that runs one worker iteration for a project.
+    """Return ``fn(proj, backend=None) -> int`` that runs one worker iteration.
 
     Shells ``i2c run`` with the project as CWD because ``run_iteration``
-    resolves its project from the working directory (no root parameter); this
-    also gives process isolation for the long-running worker. Backend/model/budget
-    come from the project's ``i2c.toml`` ``[run]`` (falling back to built-ins)."""
-    def _run(proj: Path) -> int:
-        cfg = config.load_run_config(proj)
-        backend = cfg.backend or "claude"
-        model = cfg.model or _runner.DEFAULT_MODEL
-        budget = (
-            cfg.max_budget_usd
-            if cfg.max_budget_usd is not None
-            else _runner.DEFAULT_MAX_BUDGET_USD
-        )
-        return subprocess.run(
-            [
-                sys.executable, "-m", "i2c.cli", "run",
-                "--backend", backend, "--model", model,
-                "--max-budget-usd", str(budget),
-            ],
-            cwd=str(proj),
-        ).returncode
+    resolves its project from the working directory; this also gives process
+    isolation for the long-running worker. Model/budget and the per-action
+    backend map come from the project's ``i2c.toml`` (read by ``cmd_run``); a
+    non-None ``backend`` forces a single backend for that invocation via
+    ``--backend``."""
+    def _run(proj: Path, backend: str | None = None) -> int:
+        cmd = [sys.executable, "-m", "i2c.cli", "run"]
+        if backend:
+            cmd += ["--backend", backend]
+        return subprocess.run(cmd, cwd=str(proj)).returncode
 
     return _run
 

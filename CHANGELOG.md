@@ -13,6 +13,13 @@ The Phase-3 control-surface arc: a single structured command/projection layer
 
 ### Added
 
+- **Per-action backend selection.** An optional `[run.backends]` table in
+  `i2c.toml` maps each worker action (plan/execute/review/close) to a backend,
+  resolved once the dispatched action is known. Lets a run spread load across
+  backends (e.g. heavy execute on codex; plan/review/close on claude) or use an
+  independent reviewer. Precedence: `i2c run --backend` (force single) >
+  `[run.backends][action]` > `[run].backend` > `claude`. Backward-compatible:
+  with no map, behavior is unchanged.
 - **`i2c.control` command API + operator CLI.** Structured, typed read views and
   actions exposed as `i2c` subcommands: `status`, `next-action`, `phase-summary`,
   `decisions`, `devlog`, `escalation`, `logs`, `portfolio`, and `clear-boundary`,
@@ -28,6 +35,13 @@ The Phase-3 control-surface arc: a single structured command/projection layer
 
 ### Changed
 
+- **Telegram surface refactored to a tighter, self-documenting command set.**
+  Reads consolidated under `/audit [facet]` (summary by default, plus
+  `phase N` / `decisions` / `devlog` / `escalation` / `logs`); `/run` gains
+  `[N] [backend]` (single-backend series); `/batch` runs a full phase to a halt
+  using the per-action backend map; `/use`→`/setdir`, `/help`→`/commands`,
+  `/clearboundary`→`/endphase [last]`; `/status`, `/next`, `/projects` removed
+  (folded into `/audit` / `/portfolio`).
 - **Operator views moved to the CLI / `control`.** The assembler's operator-facing
   `--section status`, `--section phase-summary`, and `--section devlog` modes were
   removed; use the corresponding `i2c` commands (with `--json`) instead. The

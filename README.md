@@ -327,10 +327,18 @@ export I2C_TELEGRAM_TOKEN=...                 # bot token (environment only)
 i2c serve telegram --root /path/to/projects
 ```
 
-The bot scans `--root` for projects, so one bot serves a whole portfolio. Read
-commands (`/status`, `/portfolio`, `/escalation`, `/logs`, …) are open; mutating
-commands (`/run`, `/batch`, `/clearboundary`) are gated to the admin user IDs in
-the `[telegram]` table of `i2c.toml`.
+The bot scans `--root` for projects, so one bot serves a whole portfolio.
+Commands:
+
+- **Read (open):** `/audit [proj] [facet]` — the read hub; `facet` is
+  `(none)` → summary, or `phase N` / `decisions [N]` / `devlog [N]` /
+  `escalation` / `logs [N]` / `logs iter N`. Plus `/portfolio` (cross-project),
+  `/setdir <proj>` (set the current project), `/commands`.
+- **Admin (gated to the `admins` in the `[telegram]` table of `i2c.toml`):**
+  `/run [proj] [N] [backend]` — N iterations (default 1) on a single backend;
+  `/batch [proj]` — run a whole phase to a halt, choosing the backend
+  per-action from `[run.backends]`; `/endphase [proj] [last]` — clear the
+  `audit_boundary` (advance, or `last` to terminate).
 
 ---
 
