@@ -99,10 +99,18 @@ async def _send(update, reply: tc.Reply) -> None:
         await update.message.reply_document(buf)
 
 
+async def _set_command_menu(app) -> None:
+    """post_init hook: register the slash-command menu so Telegram's "/" list
+    and Menu button stay in sync with the code (no manual BotFather step)."""
+    from telegram import BotCommand
+
+    await app.bot.set_my_commands([BotCommand(c, d) for c, d in tc.COMMAND_MENU])
+
+
 def build_application(token: str, root: Path, admins: frozenset[int], state_path: Path):
     """Build the python-telegram-bot Application with one handler per command."""
     Application, CommandHandler = _require_ptb()
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(_set_command_menu).build()
     chat_state = _ChatState(state_path)
     runner = _make_runner(root)
 

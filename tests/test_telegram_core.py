@@ -277,5 +277,16 @@ class TestEndphase(unittest.TestCase):
             self.assertIn("terminated", r.text)
 
 
+class TestCommandMenu(unittest.TestCase):
+    def test_menu_entries_are_valid(self):
+        self.assertTrue(tc.COMMAND_MENU)
+        for name, desc in tc.COMMAND_MENU:
+            self.assertIn(name, tc.ALL_COMMANDS, msg=name)
+            # Telegram command rules: lowercase, 1-32 chars, [a-z0-9_].
+            self.assertTrue(name.islower() and name.isidentifier(), msg=name)
+            self.assertLessEqual(len(name), 32, msg=name)
+            self.assertTrue(0 < len(desc) <= 256, msg=name)
+
+
 if __name__ == "__main__":
     unittest.main()

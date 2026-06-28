@@ -43,18 +43,35 @@ _BATCH_MAX = 50
 
 _BACKENDS = ("claude", "codex")
 
+# Telegram slash-command menu (the "/" autocomplete + Menu button). Registered
+# on startup via set_my_commands (see surfaces/telegram._set_command_menu), so it
+# stays in sync with the code. Names must be Telegram-legal (lowercase, <=32).
+COMMAND_MENU: list[tuple[str, str]] = [
+    ("audit", "Audit a project: summary | phase N | decisions | devlog | escalation | logs"),
+    ("portfolio", "Cross-project view — which project needs attention"),
+    ("run", "Admin: run N iterations on one backend (default 1)"),
+    ("batch", "Admin: run a full phase to a halt (backend per action)"),
+    ("endphase", "Admin: clear the audit_boundary (advance; 'last' to terminate)"),
+    ("setdir", "Show or set the current project"),
+    ("commands", "Show all commands"),
+]
+
 _HELP = (
     "i2c bot commands\n"
-    "Read:  /audit [proj] [facet]\n"
-    "         facet: (none)=summary | phase N | decisions [N] | devlog [N]\n"
-    "                | escalation | logs [N] | logs iter N\n"
-    "       /portfolio        cross-project view\n"
-    "       /setdir <proj>    set the current project\n"
-    "Admin: /run [proj] [N] [backend]   N iters (default 1) on one backend\n"
-    "       /batch [proj]               full phase, per-action backends, to a halt\n"
-    "       /endphase [proj] [last]     clear the audit_boundary (last = terminate)\n"
-    "Most commands take an optional project name; otherwise the /setdir current "
-    "project (or the only project) is used."
+    "\n"
+    "Read:\n"
+    " /audit [proj] [facet] — Project audit. facet: (none)=summary | phase N "
+    "| decisions [N] | devlog [N] | escalation | logs [N] | logs iter N\n"
+    " /portfolio — Cross-project view (which project needs me?)\n"
+    " /setdir <proj> — Show or set the current project\n"
+    "\n"
+    "Admin:\n"
+    " /run [proj] [N] [backend] — Run N iterations (default 1) on one backend\n"
+    " /batch [proj] — Run a full phase to a halt; backend chosen per action\n"
+    " /endphase [proj] [last] — Clear the audit_boundary (advance; last = terminate)\n"
+    "\n"
+    "/start and /commands show this list. Most commands take an optional project "
+    "name; otherwise the /setdir current project (or the only one) is used."
 )
 
 
