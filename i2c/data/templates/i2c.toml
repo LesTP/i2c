@@ -9,3 +9,12 @@
 # backend = "[Backend]"      # claude | codex
 # model = "sonnet"
 # max_budget_usd = 5.00
+
+# Optional: per-action backend, overriding [run].backend for that action.
+# Lets you spread load across backends (e.g. heavy EXECUTE on codex, the rest
+# on claude) or use an independent reviewer. `i2c run --backend X` overrides all.
+# [run.backends]
+# plan = "claude"
+# execute = "codex"
+# review = "claude"
+# close = "claude"

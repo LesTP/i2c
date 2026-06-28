@@ -337,9 +337,24 @@ class TestRun(unittest.TestCase):
             )
             with ChdirFixture(Path(tmp)):
                 cap = self._run_capture("run")
-        self.assertEqual(cap["backend"], "codex")
+        # No --backend override: [run].backend flows as the runner's default,
+        # and the explicit override is None (resolution happens in the runner).
+        self.assertIsNone(cap["backend"])
+        self.assertEqual(cap["default_backend"], "codex")
         self.assertEqual(cap["model"], "opus")
         self.assertEqual(cap["max_budget_usd"], 2.5)
+
+    def test_toml_backends_map_forwarded(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_cli_bmap_") as tmp:
+            (Path(tmp) / "i2c.toml").write_text(
+                '[run]\nbackend = "claude"\n'
+                '[run.backends]\nexecute = "codex"\n',
+                encoding="utf-8",
+            )
+            with ChdirFixture(Path(tmp)):
+                cap = self._run_capture("run")
+        self.assertEqual(cap["backend_map"], {"execute": "codex"})
+        self.assertEqual(cap["default_backend"], "claude")
 
     def test_cli_flag_overrides_toml(self):
         with tempfile.TemporaryDirectory(prefix="i2c_cli_toml2_") as tmp:
@@ -354,7 +369,9 @@ class TestRun(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="i2c_cli_notoml_") as tmp:
             with ChdirFixture(Path(tmp)):
                 cap = self._run_capture("run")
-        self.assertEqual(cap["backend"], "claude")
+        self.assertIsNone(cap["backend"])
+        self.assertEqual(cap["default_backend"], "claude")
+        self.assertEqual(cap["backend_map"], {})
         self.assertEqual(cap["model"], run_iteration.DEFAULT_MODEL)
         self.assertEqual(cap["max_budget_usd"], run_iteration.DEFAULT_MAX_BUDGET_USD)
 

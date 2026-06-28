@@ -571,5 +571,62 @@ class TestAssemblePromptBackend(unittest.TestCase):
             self.assertNotEqual(claude_out, codex_out)
 
 
+class TestBackendResolution(unittest.TestCase):
+    """Per-action backend resolution: explicit override > map[action] > default.
+    The fixture dispatches EXECUTE, so the 'execute' key (or default) decides."""
+
+    def _run(self, *, backend=None, backend_map=None, default_backend="claude"):
+        claude_calls: list[bool] = []
+        codex_calls: list[bool] = []
+
+        def fake_claude(prompt, *, cwd, model, max_budget_usd, system_prompt_file=None):
+            claude_calls.append(True)
+            return 0, signal_block()
+
+        def fake_codex(prompt, *, cwd):
+            codex_calls.append(True)
+            jsonl = json.dumps({
+                "type": "item.completed",
+                "item": {"type": "agent_message", "text": signal_block()},
+            }) + "\n"
+            return 0, jsonl, signal_block()
+
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = ri.run_iteration(
+                backend=backend,
+                backend_map=backend_map,
+                default_backend=default_backend,
+                model="sonnet",
+                max_budget_usd=5.0,
+                claude_invoker=fake_claude,
+                codex_invoker=fake_codex,
+            )
+        return rc, claude_calls, codex_calls, err.getvalue()
+
+    def test_map_selects_codex_for_execute(self):
+        with TempProject():
+            rc, cc, xc, err = self._run(backend_map={"execute": "codex"})
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual((len(cc), len(xc)), (0, 1))
+
+    def test_explicit_override_beats_map(self):
+        with TempProject():
+            rc, cc, xc, err = self._run(
+                backend="claude", backend_map={"execute": "codex"}
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual((len(cc), len(xc)), (1, 0))
+
+    def test_falls_back_to_default_when_action_absent_from_map(self):
+        with TempProject():
+            # action is EXECUTE; map only has 'plan' -> default_backend decides.
+            rc, cc, xc, err = self._run(
+                backend_map={"plan": "codex"}, default_backend="codex"
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual((len(cc), len(xc)), (0, 1))
+
+
 if __name__ == "__main__":
     unittest.main()

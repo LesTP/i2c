@@ -59,6 +59,34 @@ class TestLoadRunConfig(unittest.TestCase):
             cfg = config.load_run_config(root)
             self.assertEqual(cfg.backend, "claude")
 
+    def test_no_backends_is_empty_dict(self):
+        with TempDir() as root:
+            _write(root, '[run]\nbackend = "claude"\n')
+            cfg = config.load_run_config(root)
+            self.assertEqual(cfg.backends, {})
+
+    def test_reads_backends_map(self):
+        with TempDir() as root:
+            _write(
+                root,
+                '[run]\nbackend = "claude"\n'
+                '[run.backends]\nplan = "claude"\nexecute = "codex"\n',
+            )
+            cfg = config.load_run_config(root)
+            self.assertEqual(cfg.backends, {"plan": "claude", "execute": "codex"})
+
+    def test_backends_invalid_action_key_raises(self):
+        with TempDir() as root:
+            _write(root, '[run.backends]\nbuild = "codex"\n')
+            with self.assertRaises(config.ConfigError):
+                config.load_run_config(root)
+
+    def test_backends_invalid_backend_value_raises(self):
+        with TempDir() as root:
+            _write(root, '[run.backends]\nexecute = "gemini"\n')
+            with self.assertRaises(config.ConfigError):
+                config.load_run_config(root)
+
     def test_found_from_subdir(self):
         with TempDir() as root:
             _write(root, '[run]\nbackend = "codex"\n')

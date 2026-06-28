@@ -471,13 +471,20 @@ def write_summary_line(
 
 def run_iteration(
     *,
-    backend: str,
+    backend: str | None = None,
+    backend_map: dict[str, str] | None = None,
+    default_backend: str = "claude",
     model: str,
     max_budget_usd: float,
     claude_invoker=invoke_claude,
     codex_invoker=invoke_codex,
 ) -> int:
     """Execute one iteration end-to-end and return the runner exit code.
+
+    Backend selection (resolved once the action is known): an explicit
+    ``backend`` override (e.g. CLI ``--backend``) wins; otherwise the
+    per-action ``backend_map`` (from ``[run.backends]``) is consulted by the
+    dispatched action, falling back to ``default_backend`` (``[run].backend``).
 
     ``claude_invoker`` and ``codex_invoker`` are seams for tests; defaults
     delegate to the real subprocess wrappers. Each invoker's signature
@@ -491,6 +498,15 @@ def run_iteration(
         action, next_state = run_state_machine(root)
     except RunnerError as e:
         sys.stderr.write(f"ERROR: {e}\n")
+        return 2
+
+    # 1b. Resolve the backend for this action. Explicit override wins; else the
+    #     per-action map keyed by the dispatched action; else the default.
+    #     (EXIT is not a real action — it resolves to the default and is only
+    #     used as the summary label.)
+    backend = backend or (backend_map or {}).get(action.lower(), default_backend)
+    if backend not in ("claude", "codex"):
+        sys.stderr.write(f"ERROR: unknown backend {backend!r}\n")
         return 2
 
     # 2. ACTION: EXIT short-circuit.
@@ -507,12 +523,7 @@ def run_iteration(
         sys.stdout.write(line + "\n")
         return 0
 
-    # 3. Backend validation.
-    if backend not in ("claude", "codex"):
-        sys.stderr.write(f"ERROR: unknown backend {backend!r}\n")
-        return 2
-
-    # 4. Assemble prompt(s). Claude routes the cache-stable prefix
+    # 3. Assemble prompt(s). Claude routes the cache-stable prefix
     #    (WORKER CONTRACT + TOOL RULES) through its system prompt for
     #    prompt-cache reuse (FU-35); the volatile body goes on stdin. Codex
     #    has no system-prompt flag, so it sends one combined prompt and

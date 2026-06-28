@@ -190,12 +190,13 @@ def cmd_clear_boundary(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    # Resolve run settings with precedence: CLI flag > i2c.toml > built-in.
+    # Resolve run settings. Backend precedence: --backend flag (forces a single
+    # backend) > [run.backends][action] (per-action map, resolved in the runner)
+    # > [run].backend > built-in claude. Model/budget: flag > i2c.toml > default.
     try:
         cfg = config.load_run_config()
     except config.ConfigError as e:
         return _fail(e)
-    backend = args.backend or cfg.backend or "claude"
     model = args.model or cfg.model or run_iteration.DEFAULT_MODEL
     if args.max_budget_usd is not None:
         max_budget_usd = args.max_budget_usd
@@ -204,7 +205,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     else:
         max_budget_usd = run_iteration.DEFAULT_MAX_BUDGET_USD
     return control.run_iteration(
-        backend=backend, model=model, max_budget_usd=max_budget_usd
+        backend=args.backend,
+        backend_map=cfg.backends,
+        default_backend=cfg.backend or "claude",
+        model=model,
+        max_budget_usd=max_budget_usd,
     )
 
 
@@ -488,8 +493,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_run.add_argument(
         "--backend", choices=("claude", "codex"), default=None,
-        help="Backend to invoke. Precedence: this flag > i2c.toml [run].backend "
-        "> claude.",
+        help="Force a single backend for every action this run. Without it, "
+        "the per-action [run.backends] map applies, then [run].backend, then "
+        "claude.",
     )
     p_run.add_argument(
         "--model", default=None,

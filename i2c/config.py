@@ -12,7 +12,7 @@ keys) do **not** belong here — use environment variables.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 try:  # Python 3.11+
@@ -22,6 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - 3.10 fallback
 
 CONFIG_FILENAME = "i2c.toml"
 _BACKENDS = ("claude", "codex")
+_RUN_ACTIONS = ("plan", "execute", "review", "close")
 
 
 class ConfigError(Exception):
@@ -35,6 +36,9 @@ class RunConfig:
     backend: str | None = None
     model: str | None = None
     max_budget_usd: float | None = None
+    backends: dict[str, str] = field(default_factory=dict)
+    """Optional per-action backend overrides from ``[run.backends]`` — maps a
+    worker action (plan/execute/review/close) to a backend. Empty when unset."""
 
 
 @dataclass
@@ -94,7 +98,26 @@ def load_run_config(start: Path | None = None) -> RunConfig:
             raise ConfigError(f"{path}: [run].max_budget_usd must be a number")
         budget = float(budget)
 
-    return RunConfig(backend=backend, model=model, max_budget_usd=budget)
+    backends_raw = run.get("backends", {})
+    if not isinstance(backends_raw, dict):
+        raise ConfigError(f"{path}: [run.backends] must be a table")
+    backends: dict[str, str] = {}
+    for action, be in backends_raw.items():
+        if action not in _RUN_ACTIONS:
+            raise ConfigError(
+                f"{path}: [run.backends] key {action!r} is not a valid action; "
+                f"expected one of {_RUN_ACTIONS}"
+            )
+        if be not in _BACKENDS:
+            raise ConfigError(
+                f"{path}: [run.backends].{action} is {be!r}; "
+                f"expected one of {_BACKENDS}"
+            )
+        backends[action] = be
+
+    return RunConfig(
+        backend=backend, model=model, max_budget_usd=budget, backends=backends
+    )
 
 
 def load_telegram_config(start: Path | None = None) -> TelegramConfig:
