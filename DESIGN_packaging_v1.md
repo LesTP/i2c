@@ -566,9 +566,10 @@ precisely so we don't lay another duplicated brick.
   rather than two-plus-a-guess. Keep the capability-flag shape (D-pkg-5)
   now. Open sub-point: the protocol must model the agentic harness for
   raw-API backends (§6.1).
-- **Q-pkg-5:** transition plan for the existing internal consumers
-  (clankercourts) — adopt the package, or stay on the copy model until
-  the package stabilizes?
+- **Q-pkg-5:** *(resolved 2026-06-29)* transition plan for the existing
+  internal consumers — clankercourts (the sole predecessor) adopted the
+  package via a one-off hand migration; the broader e2e → i2c fleet
+  migration is scoped in `DESIGN_migration_v1.md`.
 - **Q-pkg-6:** authentication / permission model for public chat surfaces —
   who may issue mutating commands (`run`, `clear_boundary`) vs read-only
   ones (`status`, `audit`)? Per-surface (TG admin list) or in `i2c.control`?

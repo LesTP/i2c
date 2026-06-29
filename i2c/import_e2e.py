@@ -1,13 +1,10 @@
-"""``i2c import`` — migrate a Dialect-A (prose e2e) project to ``.state/``.
+"""``i2c import`` — migrate an **e2e (prose-state)** project to ``.state/``.
 
-The fleet converter scoped in ``DESIGN_migration_v1.md``. It targets **Dialect
-A only** (prose e2e: ``DEVPLAN.md`` frontmatter + markdown, bash state machine);
-first-gen i2c (Dialect B, e.g. clankercourts) is a one-off hand migration (§5.2)
-and is **refused** here.
+The fleet converter scoped in ``DESIGN_migration_v1.md``. It targets e2e
+prose-state projects (``DEVPLAN.md`` frontmatter + markdown, bash state machine).
 
-Three stages (§5): **detect → transform → report**.
+Two stages (§5): **transform → report**.
 
-- *detect* — classify the project by machinery (not by framework name).
 - *transform* — serialize the unambiguous prose state into schema-valid
   ``.state/`` JSON: ``project.json`` (frontmatter + gotchas) and
   ``decisions.json`` (``DECISIONS.md`` with status/priority mapping). History is
@@ -36,13 +33,8 @@ from i2c.migrate import CURRENT_SCHEMA_VERSION
 
 
 class ImportE2EError(Exception):
-    """An import precondition failed (wrong dialect, bad data, refusing to clobber)."""
+    """An import precondition failed (not an e2e project, bad data, refusing to clobber)."""
 
-
-# Dialect labels (DESIGN_migration_v1.md §2).
-DIALECT_A = "A"  # prose e2e
-DIALECT_B = "B"  # first-gen i2c (copy model)
-DIALECT_UNKNOWN = "unknown"
 
 # e2e → i2c value mappings.
 _STATUS_MAP = {"closed": "closed", "open": "open", "superseded": "superseded"}
@@ -59,7 +51,6 @@ _REGIMES = {"build", "refine", "explore"}
 class ImportReport:
     """Structured outcome of an import (rendered by the CLI; ``--json``-able)."""
 
-    dialect: str
     applied: bool
     root: str
     files: list[str] = field(default_factory=list)
@@ -67,22 +58,6 @@ class ImportReport:
     warnings: list[str] = field(default_factory=list)
     validation_ok: bool = False
     built_state: dict[str, Any] = field(default_factory=dict)
-
-
-# ---------------------------------------------------------------------------
-# Detection (§2 signals — by machinery, not framework name)
-# ---------------------------------------------------------------------------
-
-
-def detect_dialect(root: Path) -> str:
-    """Classify a project root as Dialect A, B, or unknown."""
-    root = Path(root)
-    # B first: a vendored first-gen i2c carries .state/ + a python state tool.
-    if (root / ".state").is_dir() and (root / "tools" / "state.py").is_file():
-        return DIALECT_B
-    if (root / "DEVPLAN.md").is_file():
-        return DIALECT_A
-    return DIALECT_UNKNOWN
 
 
 # ---------------------------------------------------------------------------
@@ -358,21 +333,15 @@ def import_project(
     port_history: bool = False,
     force: bool = False,
 ) -> ImportReport:
-    """Convert a Dialect-A project at ``root``. Dry-run unless ``apply``."""
+    """Convert an e2e (prose-state) project at ``root``. Dry-run unless ``apply``."""
     root = Path(root)
     if not root.is_dir():
         raise ImportE2EError(f"{root} is not a directory.")
 
-    dialect = detect_dialect(root)
-    if dialect == DIALECT_B:
+    if not (root / "DEVPLAN.md").is_file():
         raise ImportE2EError(
-            "first-gen i2c (Dialect B, e.g. clankercourts) detected — that is a "
-            "one-off hand migration, see DESIGN_migration_v1.md §5.2. `i2c "
-            "import` handles Dialect A (prose e2e) only."
-        )
-    if dialect != DIALECT_A:
-        raise ImportE2EError(
-            f"{root} is not a Dialect-A project (no DEVPLAN.md). Nothing to import."
+            f"{root} has no DEVPLAN.md — not an e2e (prose-state) project; "
+            "nothing to import."
         )
 
     state_dir = root / ".state"
@@ -382,7 +351,7 @@ def import_project(
             "overwrite (pass --force to re-import)."
         )
 
-    report = ImportReport(dialect=dialect, applied=False, root=str(root))
+    report = ImportReport(applied=False, root=str(root))
 
     # Transform.
     project = _build_project(root)

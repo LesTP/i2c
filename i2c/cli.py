@@ -319,7 +319,7 @@ def cmd_migrate(args: argparse.Namespace) -> int:
 def _render_import(report: Any) -> str:
     lines: list[str] = []
     header = "APPLIED" if report.applied else "DRY-RUN (no files written)"
-    lines.append(f"i2c import — Dialect {report.dialect} — {header}")
+    lines.append(f"i2c import — {header}")
     lines.append(f"  root: {report.root}")
     lines.append(f"  validation: {'ok' if report.validation_ok else 'FAILED'}")
     lines.append("  .state/ files:")
@@ -587,7 +587,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_import = sub.add_parser(
         "import",
         parents=[json_parent],
-        help="Migrate a Dialect-A (prose e2e) project to .state/ "
+        help="Migrate an e2e (prose-state) project to .state/ "
         "(dry-run by default).",
     )
     p_import.add_argument(

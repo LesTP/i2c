@@ -1,4 +1,4 @@
-"""Tests for i2c/import_e2e.py — `i2c import` (Dialect-A converter)."""
+"""Tests for i2c/import_e2e.py — `i2c import` (e2e prose-state converter)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 from i2c import import_e2e
 from i2c import validate as v
 
-# A minimal but realistic Dialect-A DEVPLAN: frontmatter, a Gotchas section,
-# two clean phases, and a deliberate id collision (two `## Phase 2:`).
+# A minimal but realistic e2e prose-state DEVPLAN: frontmatter, a Gotchas
+# section, two clean phases, and a deliberate id collision (two `## Phase 2:`).
 DEVPLAN = """\
 ---
 phase: 1
@@ -83,32 +83,12 @@ class TempDir:
         self._tmp.cleanup()
 
 
-def _make_dialect_a(root: Path) -> None:
+def _make_e2e_project(root: Path) -> None:
     (root / "DEVPLAN.md").write_text(DEVPLAN, encoding="utf-8")
     (root / "DECISIONS.md").write_text(DECISIONS, encoding="utf-8")
     tools = root / "tools"
     tools.mkdir()
     (tools / "state_machine.sh").write_text("# bash state machine\n", encoding="utf-8")
-
-
-class TestDetect(unittest.TestCase):
-    def test_detect_dialect_a(self):
-        with TempDir() as root:
-            _make_dialect_a(root)
-            self.assertEqual(import_e2e.detect_dialect(root), import_e2e.DIALECT_A)
-
-    def test_detect_dialect_b(self):
-        with TempDir() as root:
-            (root / ".state").mkdir()
-            (root / "tools").mkdir()
-            (root / "tools" / "state.py").write_text("# i2c tool\n", encoding="utf-8")
-            self.assertEqual(import_e2e.detect_dialect(root), import_e2e.DIALECT_B)
-
-    def test_detect_unknown(self):
-        with TempDir() as root:
-            self.assertEqual(
-                import_e2e.detect_dialect(root), import_e2e.DIALECT_UNKNOWN
-            )
 
 
 class TestParsers(unittest.TestCase):
@@ -140,7 +120,7 @@ class TestParsers(unittest.TestCase):
 class TestImportProject(unittest.TestCase):
     def test_dry_run_writes_nothing(self):
         with TempDir() as root:
-            _make_dialect_a(root)
+            _make_e2e_project(root)
             report = import_e2e.import_project(root, apply=False)
             self.assertFalse(report.applied)
             self.assertTrue(report.validation_ok)
@@ -148,7 +128,7 @@ class TestImportProject(unittest.TestCase):
 
     def test_apply_writes_valid_state(self):
         with TempDir() as root:
-            _make_dialect_a(root)
+            _make_e2e_project(root)
             report = import_e2e.import_project(root, apply=True)
             self.assertTrue(report.applied)
             project = v.validate_state_file(root / ".state" / "project.json")
@@ -169,7 +149,7 @@ class TestImportProject(unittest.TestCase):
 
     def test_blocked_close_maps_to_audit_boundary(self):
         with TempDir() as root:
-            _make_dialect_a(root)
+            _make_e2e_project(root)
             (root / "DEVPLAN.md").write_text(
                 DEVPLAN.replace("blocked: false", "blocked: true").replace(
                     "state: plan", "state: close"
@@ -181,17 +161,15 @@ class TestImportProject(unittest.TestCase):
             self.assertEqual(project["state"], "audit_boundary")
             self.assertTrue(report.applied)
 
-    def test_refuses_dialect_b(self):
+    def test_refuses_non_e2e(self):
         with TempDir() as root:
-            (root / ".state").mkdir()
-            (root / "tools").mkdir()
-            (root / "tools" / "state.py").write_text("#\n", encoding="utf-8")
+            # No DEVPLAN.md → not an e2e prose-state project.
             with self.assertRaises(import_e2e.ImportE2EError):
                 import_e2e.import_project(root, apply=True)
 
     def test_refine_current_phase_sets_time_budget(self):
         with TempDir() as root:
-            _make_dialect_a(root)
+            _make_e2e_project(root)
             (root / "DEVPLAN.md").write_text(
                 DEVPLAN.replace(
                     "## Phase 1: Foundations\n**Status:** Complete\n**Regime:** Build",
@@ -205,7 +183,7 @@ class TestImportProject(unittest.TestCase):
 
     def test_refuses_non_integer_phase(self):
         with TempDir() as root:
-            _make_dialect_a(root)
+            _make_e2e_project(root)
             (root / "DEVPLAN.md").write_text(
                 DEVPLAN.replace("phase: 1", "phase: MVP.4d"), encoding="utf-8"
             )
@@ -214,7 +192,7 @@ class TestImportProject(unittest.TestCase):
 
     def test_overwrite_guard(self):
         with TempDir() as root:
-            _make_dialect_a(root)
+            _make_e2e_project(root)
             import_e2e.import_project(root, apply=True)
             with self.assertRaises(import_e2e.ImportE2EError):
                 import_e2e.import_project(root, apply=True)
