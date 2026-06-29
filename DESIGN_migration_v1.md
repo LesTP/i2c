@@ -10,7 +10,9 @@
 > Status: **audit in progress.** This memo records the dialect taxonomy and
 > the converter design that follows from it; the per-project audit table
 > (§4) is being filled in as real implementations are inspected. Three
-> consumers audited so far (toolkit, diplomat, clankercourts).
+Four consumers audited (toolkit, diplomat, phosphene, clankercourts);
+> **toolkit** (Dialect A) and **clankercourts** (Dialect B) are now migrated
+> onto the package.
 >
 > Authors: operator + assistant, 2026-06-26.
 
@@ -127,7 +129,7 @@ against the pointed implementations.
 | **toolkit** | A (prose e2e) | 1 | 4 / plan, unblocked | 9 modules, all complete | Done | 5-line exit; DEVLOG newest-first (drift); GOVERNANCE symlink `../e2e/`; names fw "e2e". `CLANKMATES_CLIENT_PLAN.md` sub-plan holds some steps. |
 | **diplomat** | A (prose e2e) | 1 | 48 / close, blocked | ~17 ARCH modules; heavy research tooling | In dev — at a phase boundary | Names fw "From Idea to Code" but runs e2e machinery. `DEVLOG_archive.md` → large history. Exit-signal format *TBD*. Biggest data-conversion job. |
 | **phosphene** | A (prose e2e) | 1 | `MVP.4d` / execute, blocked | 9 ARCH modules; depends on toolkit | In dev — MVP | **Alphanumeric phase ID** (`MVP.4d`) — confirms axis 5. GOVERNANCE.md + DEVLOG+archive; many `DESIGN_*.md`. Same machinery as toolkit/diplomat. |
-| **clankercourts** | B (first-gen i2c) | 1 | 15 / plan | ~13 modules; phases 1–14 done, 15 pending | In dev — phase 15/19 | Clean i2c `.state/`; **schema v0** (no `schema_version`; `budget_type:"steps"`; **no `blocked` field** → 0→1 drop-blocked is a no-op, just stamp version). Vendored `tools/state.py`+`schemas/`+`instructions/`; 2-line exit. Mojibake in stored JSON (`§`→`Â§`) from copied writer — converter should normalize encoding. Migration = packaging only. |
+| **clankercourts** | B (first-gen i2c) | 1 | 15 / plan | ~13 modules; phases 1–14 done, 15 pending | **Migrated 2026-06-29** | Clean i2c `.state/`; **schema v0** (no `schema_version`; `budget_type:"steps"`; **no `blocked` field** → 0→1 drop-blocked is a no-op, just stamp version). Vendored `tools/state.py`+`schemas/`+`instructions/`; 2-line exit. Mojibake from the copied writer — normalized at byte level (5 fixes across `decisions.json` + `phases.json`). Migration was packaging-only; **done 2026-06-29** (commits 904d32b, c3aacfd) — see §5.2. |
 | *(others)* | *TBD* | | | | | codexbot + any further consumers the operator points to. |
 
 **Reading so far:** the fleet spans the *entire* evolution of the framework
@@ -233,6 +235,18 @@ almost entirely deletion + find-replace + an existing command:
   `instructions/*.md` can stay as project-local overrides (§5.3 of the
   packaging memo's resolution order); everything unmodified is dropped.
 
+  **Executed 2026-06-29** (commits 904d32b encoding, c3aacfd cut-over):
+  de-vendored onto the package; `i2c migrate` stamped schema v1; 5 mojibake
+  fixes across `decisions.json` + `phases.json`. Verified `i2c doctor` /
+  `status` / `assemble` clean, no `src`/`tests` breakage. Two deviations from
+  this recipe: (a) `schemas/map.schema.json` is project-specific (used by
+  `src/` + two tests), so it was **kept in place** — only the 6 i2c schemas
+  were deleted; (b) `run-iteration.sh` (a codexbot shim already pointing at a
+  missing path) was **deleted**, not retargeted — clankercourts is driven via
+  `i2c run` / the Telegram bot, and repointing codexbot is a separate
+  follow-up. Also: the copied-writer mojibake spanned `phases.json` too, not
+  just `decisions.json`.
+
 ### 5.3 Shared end-state validator
 
 Both classes finish with the same checks so "migrated" means one thing:
@@ -331,10 +345,9 @@ snapshot-don't-port de-risks done projects.
 - **Q-mig-3:** how much step fidelity do in-dev Class A projects need —
   current phase only, or all open phases? (Closed phases collapse to
   summaries regardless.)
-- **Q-mig-4:** *(partially answered)* clankercourts' `.state/` is clean i2c
+- **Q-mig-4:** *(resolved 2026-06-29)* clankercourts' `.state/` is clean i2c
   shape at schema **v0** (no `schema_version`; no `blocked` field → the 0→1
-  drop-blocked migration is a no-op, so it needs only a version stamp). Still
-  to confirm: `i2c migrate --check` against it; whether `budget_type` matches
+  drop-blocked migration is a no-op, so it needs only a version stamp). Confirmed 2026-06-29 (clankercourts migrated, §5.2): `i2c migrate --check` against it; whether `budget_type` matches
   the current schema's budget field name; and encoding normalization (mojibake
   `Â§`).
 - **Q-mig-5:** *(updated)* phosphene confirmed (Dialect A, in-dev). Still
@@ -365,7 +378,7 @@ snapshot-don't-port de-risks done projects.
    (§5.1.1).
 5. Next: run it against **diplomat** (the 48-phase stress test for the phase/
    collision parser), and decide **Q-mig-7** (alphanumeric phases) before
-   **phosphene**. Migrate clankercourts by hand (§5.2) when convenient.
+   **phosphene**. *(clankercourts hand-migrated 2026-06-29, §5.2.)*
 6. Take toolkit fully onto the package via the staged cut-over (§5.4): Stage 1
    cut-over → spin up the Telegram bot → run the queued phase(s) → finalize.
 
@@ -376,7 +389,7 @@ snapshot-don't-port de-risks done projects.
 | D-mig-1 | Two migration classes exist, but only Dialect A (prose-e2e→i2c) is automated; Dialect B (first-gen i2c) is N=1 (clankercourts) and handled as a one-off hand migration. Detect by machinery, not by framework name. | proposed |
 | D-mig-2 | `i2c import` is single-dialect (Dialect A only); on detecting Dialect B it refuses and points to the §5.2 hand-migration recipe. No `--dialect` matrix. | proposed |
 | D-mig-3 | Class A done-project history is snapshot-not-ported by default (`--port-history` to opt in). | proposed |
-| D-mig-4 | clankercourts' one-off migration reuses the existing `i2c migrate` for schema reconciliation (stamp version; drop-blocked is a no-op) plus de-vendor + tool-surface retarget + encoding normalization. Done by hand, once. | proposed |
+| D-mig-4 | clankercourts' one-off migration reuses the existing `i2c migrate` for schema reconciliation (stamp version; drop-blocked is a no-op) plus de-vendor + tool-surface retarget + encoding normalization. Done by hand, once. | proposed; **executed 2026-06-29** |
 | D-mig-5 | Narrative docs (PROJECT/ARCHITECTURE/ARCH_*/API) are pass-through in every class; the converter never rewrites them. | proposed |
 | D-mig-6 | Migration is staged: serialize (`i2c import`) → cut-over (manual, §5.4) → trial → finalize. The runtime switch (adapters + neutralize shadowing markdown + i2c.toml + install) precedes any i2c trial; a project never runs both loops at once. | proposed |
 | D-mig-7 | Migration tooling is fleet-internal and one-time: excluded from the public i2c surface at release (public adoption is greenfield-only); the cut-over stays manual rather than a tool feature. | proposed |
