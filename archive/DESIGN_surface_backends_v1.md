@@ -1,10 +1,16 @@
 # DESIGN — Telegram surface refactor + per-action multi-backend (v1)
 
-> **Status:** specified, ready to implement. Scope is the **bot surface**
-> (`i2c.surfaces.telegram*`) plus the shared **backend resolution**
-> (config → runner → CLI) that both `i2c run` and the bot inherit. The CLI's own
-> command set (`i2c status`, `i2c logs`, …) is **out of scope**. Originates from
-> the bot-command + multi-backend discussion (2026-06-27).
+> **Status: ✅ implemented & shipped, then archived (2026-06-29).** Both halves
+> landed: Part A (per-action `[run.backends]` resolution in config → runner →
+> CLI) and Part B (the Telegram surface refactor + slash-command menu). All
+> decisions D-sb-1..6 are accepted. Kept for the *why*, not the *what* —
+> current truth lives in `../README.md` + `../CHANGELOG.md` (per-action
+> backends, the Telegram command set) and `../DESIGN_packaging_v1.md` §6/§7
+> (backend abstraction + control surface). Original scope was the **bot
+> surface** (`i2c.surfaces.telegram*`) plus the shared **backend resolution**
+> (config → runner → CLI) that both `i2c run` and the bot inherit; the CLI's own
+> command set (`i2c status`, `i2c logs`, …) was out of scope. Originated from the
+> bot-command + multi-backend discussion (2026-06-27).
 
 ## 1. Motivation
 
