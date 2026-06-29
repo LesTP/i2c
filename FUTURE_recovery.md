@@ -1,9 +1,20 @@
 # Recovery Actions — `reconcile` / `diagnose` / `fix` (FUTURE)
 
-> **Status: concept, needs planning. Not scheduled.** Captured so it isn't
-> lost. Originates from the bot-command discussion (2026-06-27). Builds on the
+> **Status: GRADUATED → see [`DESIGN_recovery_v1.md`](DESIGN_recovery_v1.md).**
+> The reconcile-first **v1** is built (deterministic drift audit + `diagnose` +
+> human-gated `reconcile` + out-of-band dispatch). This file is retained for the
+> original concept and the **Phase 0 empirical sweep** (the design's evidentiary
+> basis). The full `fix` code-repair agent remains FUTURE.
+>
+> Originates from the bot-command discussion (2026-06-27). Builds on the
 > structured-escalation foundation already in i2c (worker `escalate`/`blocked`
 > devlog entries + `control.escalation` + `control.logs_transcript`).
+>
+> **Stale-wording note (corrected in DESIGN_recovery_v1.md §9):** quotes below
+> referencing a "5-line result block" and `project.json.blocked` reflect older
+> i2c versions. The current exit signal is the **2-line** `EXIT:`/`REASON:`
+> block, and the schema has **no `blocked` field** — the gate is
+> `state == audit_boundary`.
 
 ## Idea
 
@@ -11,6 +22,24 @@ Turn troubleshooting of failed/stuck iterations into **bounded worker actions**
 — invoked on demand against a target iteration — rather than an open-ended
 orchestrator. There are **two distinct recovery shapes**, and the first is the
 more common.
+
+## Operator note (2026-06-29): diagnose-first
+
+The two modes below are *outcomes*, not independent entry points. The operator
+can't know a failure is a `reconcile` (workflow-drift) case rather than a
+code/spec case **without diagnosing it first** — so `reconcile` cannot be invoked
+blind. Implication for the design: **`diagnose` is the single entry point**, and
+its classification must add a **workflow-drift / reconcile** class alongside
+env / code / spec, then route:
+
+- `workflow-drift` → `reconcile` (often just the deterministic state-vs-git
+  audit + a small finish/advance)
+- `code` → `fix`  ·  `spec` → hand to human  ·  `env` → fix / operator
+
+The deterministic drift audit described in Mode 1 effectively *is* the
+reconcile-case detector, so it belongs **inside `diagnose`** as a cheap
+prefilter: run it first; if it explains the failure, route to `reconcile`.
+`reconcile` / `fix` remain the remediations, gated behind the diagnosis.
 
 ## Mode 1 — `reconcile`: workflow/state meta-view (the common case)
 
@@ -69,7 +98,11 @@ The work has a real blocker needing a change.
 
 ## Open design questions
 
-- **Out-of-band dispatch.** PLAN/EXECUTE/REVIEW/CLOSE come *from* the state
+- **diagnose-first (operator note, 2026-06-29).** `reconcile` is not an
+  independent entry point — settle whether `diagnose` always runs first, with a
+  cheap deterministic state-vs-git drift prefilter that can short-circuit to
+  `reconcile`. See the "diagnose-first" note above.
+- **Out-of-band dispatch.**
   machine; recovery actions are operator-targeted at an iteration. Needs an
   explicit-action dispatch path (`i2c run --action reconcile --target N`) that
   bypasses normal state-machine progression.
@@ -107,6 +140,88 @@ The work has a real blocker needing a change.
    avoid orchestrator cost — they're chosen for **single-system simplicity**
    (one loop, more actions) over two separate systems. Revisit whether genuinely
    multi-step investigation belongs in the orchestrator.
+
+## Phase 0 — escalation sweep findings (2026-06-29)
+
+Planning TODO #1 done. Mined the failure history of **diplomat** (e2e, ~49
+phases + 21 self-play runs → 33 incidents), **clankercourts** (i2c, 124 devlog
+entries), and **toolkit** (i2c, phases 5–6). Each incident bucketed reconcile /
+code / spec / env, and judged for i2c-relevance (prevent / detectable /
+orthogonal).
+
+**Distribution (diplomat, the volume source):** code 16 · env 7 · reconcile 6 ·
+spec 3. **clankercourts:** 1 escalation (contract↔code drift, judgment-class),
+~0 classic reconcile drift in the committed record (i2c discipline prevented it),
+plus code/non-determinism caught at REVIEW. **toolkit:** the canonical reconcile
+case — step 5.3 committed (`5b1fb2b`) but left `pending` because `i2c state
+complete` hit a PATH bug; fixed by **reconciliation, not code**.
+
+**Conclusions:**
+1. **Reconcile is the only class a recovery feature can actually own.** ~26 of
+   diplomat's 33 incidents (all code + env + spec) are **orthogonal** — real
+   bugs / platform limits / design ambiguity that no state format prevents or
+   detects; caught by REVIEW + human judgment, not recovery. Recovery ≠ "fix
+   failures broadly"; recovery = **workflow-state drift**.
+2. **The reconcile cases are real, recurring, deterministically tractable.**
+   Dominant cause: the autonomous loop (esp. the **codex** backend) dies/cuts off
+   **mid-iteration before bookkeeping** → commit-without-checkbox, uncommitted
+   work, `steps_remaining` drift (diplomat #2/#3, toolkit 5.3). A structured
+   `.state`-vs-git/disk audit catches these mechanically. **This is the v1.**
+3. **i2c already prevents one e2e drift class** (diplomat #1: the bash
+   checkbox-parsing state machine stalling a transition) — so i2c *reduces* but
+   doesn't eliminate reconcile need (loop-death is orthogonal to state format).
+4. **diagnose-first confirmed** (operator note above): reconcile cases were only
+   identifiable by inspecting state-vs-reality — i.e. a diagnosis. The
+   deterministic drift-audit *is* the diagnosis for the reconcile class.
+
+**Hard design caveats (from the logs):**
+- **False positives:** CRLF-only diffs on NTFS + `python`/`i2c` PATH differences
+  (diplomat #30/#31) will make a naive git-vs-disk audit cry wolf. Reconcile
+  must normalize line-endings / ignore cosmetic-only diffs or operators won't
+  trust it.
+- **Multi-source context:** the devlog has a **post-success bias** (entries are
+  written after a step succeeds) — a failure-context assembler must read
+  `.state` + git/disk + the `phases.json` gate + gotchas + loop logs, not the
+  devlog alone.
+- **Human-gated:** "real fix vs temp instrumentation" in a dirty tree
+  (diplomat #4) is a judgment call — reconcile *surfaces* drift, never
+  auto-commits.
+
+**Loop-log sweep (2026-06-29, closes the earlier fidelity gap).** Parsed the
+per-iteration `logs/loop/summary.log` of all three projects (one structured line
+per iteration: signal/exit/backend/action/reason). Non-clean exits: **diplomat
+17/220 (8%)**, **clankercourts 7/97 (7%)**, **toolkit 1/44 (2%)** — plus
+diplomat had 9 `ERROR`-signal iterations (codex turn-health circuit-breaker
+forced-exits). This **contradicts the devlog's near-zero reading** and confirms
+its post-success bias. Findings that matter for recovery:
+- **The #1 i2c failure trigger is an ambiguous/malformed exit signal** — the
+  worker (esp. **codex**) finished without emitting a parseable 2-line exit
+  signal (clankercourts: 5 of 7 non-clean exits). The loop then can't tell what
+  state the work is in → the operator must reconcile (did the edit land? commit?
+  step status?). This is precisely the reconcile/diagnose case, and it's the
+  most common one in the real i2c project.
+- **i2c ALREADY has a deterministic state-drift detector.** clankercourts hit a
+  `post-CLOSE invariants failed: project.json.blocked must be true after CLOSE`
+  (exit 2) — i2c runs post-action invariant checks and halts on violation. So
+  reconcile is **not greenfield**: it extends existing detect-and-halt into
+  detect-and-**reconcile**.
+- **toolkit's one non-clean exit is the canonical 5.3 case at loop level:**
+  `state CLI unavailable (i2c not found), so .state/ step completion could not be
+  recorded` (env cause → reconcile remedy).
+- **diplomat's codex turn-health forced-exits (7)** are reconcile-adjacent: work
+  completed + committed but the iteration was cut at the turn guard, leaving
+  bookkeeping uncertain.
+
+Net: the reconcile/recovery trigger runs ~**7–8%** of iterations in *both* e2e
+and i2c — real and recurring, just hidden from the success-biased devlog.
+
+**Scope implication (proposed):** formalize a **narrow reconcile-first v1** — a
+deterministic state-vs-(git/disk) drift audit + human-gated finish/advance,
+fronted by `diagnose`, **built on i2c's existing post-action invariant checks**
+(extend detect-and-halt into detect-and-reconcile) and triggered primarily by
+the **ambiguous/malformed-exit-signal** case (the #1 real trigger). **Defer** a
+full `fix` / code-diagnosis agent — code bugs are the majority of failures but
+are orthogonal to recovery (handled by the REVIEW regime + normal dev).
 
 ## Out of scope (for now)
 

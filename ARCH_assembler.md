@@ -63,13 +63,20 @@ passthrough); the runner invokes `assemble_context.py` directly.
 
 | Flag | Required when | Accepted values | Default |
 |------|---------------|-----------------|---------|
-| `--action` | building a full prompt | `plan`, `execute`, `review`, `close` | — |
+| `--action` | building a full prompt | `plan`, `execute`, `review`, `close`, `diagnose`, `reconcile` | — |
 | `--phase` | with `--action` (always) | positive integer | — |
 | `--mode` | optional with `--action` | `autonomous`, `supervised` | `autonomous` |
 | `--section` | building a single section | `architecture`, `module` | — |
 | `--module` | only with `--section module` | non-empty module name | — |
+| `--target` | optional with `--action` (recovery) | positive integer | — |
 | `--step-budget` | optional with `--action` | positive integer | `1` |
 | `--emit` | optional with `--action` | `full`, `system`, `user` | `full` |
+
+`diagnose` / `reconcile` are the out-of-band **recovery** actions
+(DESIGN_recovery_v1.md): they render a `## Failure Context` Region-3 section
+(the deterministic drift audit for `--target`, via a lazy `control.diagnose`
+call — the one place assembly invokes the read-only `git` drift audit) and emit
+no Next State. `--target` selects which iteration's failure context to render.
 
 The mode flag is *only* meaningful with `--action`. Specifying `--mode` together with `--section` is a CLI argument error. The same holds for `--emit`: it is only meaningful with `--action`, and a non-default `--emit` with `--section` is a CLI argument error.
 

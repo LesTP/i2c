@@ -185,8 +185,8 @@ def eject_asset(root: Path, asset: str, *, force: bool = False) -> list[Path]:
     """Copy packaged override-resolved asset(s) into ``root`` for local editing.
 
     ``asset`` is ``WORKER_SPEC.md``, an ``instructions/<action>.md``, or the
-    token ``instructions`` (all four). Raises ``ScaffoldError`` on an unknown
-    asset or when a local copy exists and ``force`` is not set.
+    token ``instructions`` (all action procedures). Raises ``ScaffoldError`` on
+    an unknown asset or when a local copy exists and ``force`` is not set.
     """
     root = Path(root)
     written: list[Path] = []

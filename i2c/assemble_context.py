@@ -49,7 +49,12 @@ EMDASH = "—"  # U+2014
 
 PLACEHOLDER_EMPTY = "<!-- empty -->"
 
-ACTIONS = ("plan", "execute", "review", "close")
+ACTIONS = ("plan", "execute", "review", "close", "diagnose", "reconcile")
+# Out-of-band recovery actions (DESIGN_recovery_v1.md): dispatched by
+# `i2c run --action <a> --target N`, not by the state machine. They share the
+# assembly machinery (ACTIONS / EJECTABLE pick them up) but use a failure-context
+# Region-3 recipe and emit no Next State (they don't drive linear progression).
+RECOVERY_ACTIONS = ("diagnose", "reconcile")
 SECTIONS = ("architecture", "module")
 MODES = ("autonomous", "supervised")
 
@@ -419,6 +424,7 @@ class AssemblerContext:
     section: str | None  # None for --action invocations
     phase: int | None  # required for --action and --section devlog
     module: str | None  # required for --section module
+    target: int | None = None  # recovery actions: which iteration to diagnose
     step_budget: int = 1  # runner-supplied; v1 always 1. Drives multi_step_only stripping.
     # State (lazy-populated; populated by build_context).
     project: dict[str, Any] = field(default_factory=dict)
@@ -453,6 +459,7 @@ def build_context(args: argparse.Namespace) -> AssemblerContext:
         section=getattr(args, "section", None),
         phase=getattr(args, "phase", None),
         module=getattr(args, "module", None),
+        target=getattr(args, "target", None),
         step_budget=getattr(args, "step_budget", 1) or 1,
     )
     ctx.project = _load_required_state(root, "project.json")
@@ -679,8 +686,13 @@ def compute_next_state(ctx: AssemblerContext) -> str:
 
 
 def render_next_state(ctx: AssemblerContext) -> str:
-    """## Next State: $STATE — stripped under --mode supervised (§9.2)."""
-    if ctx.action is None or ctx.mode == "supervised":
+    """## Next State: $STATE — stripped under --mode supervised (§9.2).
+
+    Also stripped for recovery actions: diagnose/reconcile are out-of-band and
+    do not drive the linear plan→execute→review→close progression, so there is
+    no single NEXT to compute (the procedure tells the worker exactly what to do).
+    """
+    if ctx.action is None or ctx.mode == "supervised" or ctx.action in RECOVERY_ACTIONS:
         return ""
     return f"## Next State: {compute_next_state(ctx)}"
 
@@ -837,6 +849,57 @@ def render_phase_devlog(ctx: AssemblerContext) -> str:
         return "\n".join(lines)
     for e in entries:
         lines.append(_fmt_devlog_bullet(e))
+    return "\n".join(lines)
+
+
+# --- Failure context (recovery actions) ------------------------------------
+
+
+def render_failure_context(ctx: AssemblerContext) -> str:
+    """## Failure Context — drift audit + target-iteration signal (recovery only).
+
+    The Region-3 opener for diagnose/reconcile. Runs the deterministic drift
+    audit (state-vs-git/disk) plus the target iteration's loop-log signal, so
+    the worker reasons from reality rather than the success-biased devlog. Reuses
+    ``control.diagnose`` via a lazy import — assemble_context must not import
+    control at module load (control → run_iteration → assemble_context cycle).
+    """
+    from i2c import control as _control
+
+    try:
+        d = _control.diagnose(ctx.project_root, target=ctx.target)
+    except _control.ControlError as e:
+        return f"## Failure Context\n\n<!-- diagnose unavailable: {e} -->"
+
+    target = f"iteration {d.target}" if d.target is not None else "(no loop log)"
+    lines = [
+        "## Failure Context",
+        "",
+        f"- Target: {target}",
+        f"- Classification: {d.classification}",
+        f"- Reconcilable: {'yes' if d.reconcilable else 'no'}",
+        f"- Phase / State: {d.phase} / {d.state}",
+    ]
+    if d.exit_code is not None:
+        suffix = f" {EMDASH} {d.reason}" if d.reason else ""
+        lines.append(f"- Iteration exit: {d.exit_code}{suffix}")
+    if d.malformed_signal:
+        lines.append(
+            "- Note: the target iteration's exit signal was missing or malformed "
+            "(true state unknown; the drift audit below reconstructs it)."
+        )
+    lines += ["", "### Drift Audit", ""]
+    if not d.findings:
+        lines.append("No deterministic state-vs-reality drift detected.")
+    else:
+        for f in d.findings:
+            tag = "reconcilable" if f.reconcilable else "judgment"
+            loc = ""
+            if f.phase is not None:
+                loc = f" [{f.phase}" + (f".{f.step}" if f.step is not None else "") + "]"
+            lines.append(f"- ({tag}){loc} {f.message}")
+            if f.proposal:
+                lines.append(f"  - proposed reconcile: {f.proposal}")
     return "\n".join(lines)
 
 
@@ -1010,6 +1073,28 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         render_current_phase_steps_table,
         render_phase_devlog,
         render_decisions,
+    ],
+    # Recovery actions (out-of-band). Failure context first — the drift audit and
+    # the target iteration's signal are what the worker reasons from — then the
+    # state/steps/devlog it needs to act.
+    "diagnose": [
+        render_failure_context,
+        render_module_contract,
+        render_project_state,
+        render_gotchas,
+        render_current_phase,
+        render_current_phase_steps_table,
+        render_phase_devlog,
+        render_architecture,
+        render_decisions,
+    ],
+    "reconcile": [
+        render_failure_context,
+        render_project_state,
+        render_gotchas,
+        render_current_phase,
+        render_current_phase_steps_table,
+        render_phase_devlog,
     ],
 }
 
@@ -1215,6 +1300,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Module name. Required with --section module.",
     )
     parser.add_argument(
+        "--target",
+        type=int,
+        default=None,
+        help=(
+            "Target iteration for recovery actions (--action diagnose/reconcile). "
+            "Selects which iteration's failure context the assembler renders. "
+            "Default: the latest iteration in logs/loop/summary.log."
+        ),
+    )
+    parser.add_argument(
         "--backend", choices=("claude", "codex"), default="claude",
         help="Which adapter to read for Tool Rules. Default: claude.",
     )
@@ -1260,6 +1355,8 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
             parser.error("--mode is only valid with --action")
         if getattr(args, "emit", "full") != "full":
             parser.error("--emit is only valid with --action")
+        if getattr(args, "target", None) is not None:
+            parser.error("--target is only valid with --action")
         # Neither surviving section (architecture, module) consumes --phase;
         # accepting it would silently mislead the caller (FU-17).
         if args.phase is not None:

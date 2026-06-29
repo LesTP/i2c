@@ -570,19 +570,35 @@ precisely so we don't lay another duplicated brick.
   internal consumers — clankercourts (the sole predecessor) adopted the
   package via a one-off hand migration; the broader e2e → i2c fleet
   migration is scoped in `DESIGN_migration_v1.md`.
-- **Q-pkg-6:** authentication / permission model for public chat surfaces —
-  who may issue mutating commands (`run`, `clear_boundary`) vs read-only
-  ones (`status`, `audit`)? Per-surface (TG admin list) or in `i2c.control`?
-- **Q-pkg-7:** which transports and orchestrator references to ship first
-  (e.g., Telegram + PolicyOrchestrator), and how much of the
-  `AgentOrchestrator` to provide vs leave to operators.
+- **Q-pkg-6:** ~~authentication / permission model for public chat surfaces —
+  who may issue mutating commands vs read-only ones? Per-surface (TG admin
+  list) or in `i2c.control`?~~ — **resolved (shipped 2026-06):**
+  **surface-enforced.** The Telegram surface gates mutating commands (`/run`,
+  `/batch`, `/endphase`) to an `[telegram].admins` allowlist; read commands are
+  open; `i2c.control` stays identity-agnostic (per D-pkg-7). The same pattern
+  applies to future transports (D-pkg-10). See the archived
+  `archive/DESIGN_surface_backends_v1.md`.
+- **Q-pkg-7:** *(partially resolved)* which transports + orchestrator
+  references to ship first. **Shipped:** the **Telegram** surface first, plus
+  the first deterministic **Policy** driver (`/batch` — loops `run_iteration`
+  to a halt). **Remaining:** the **Discord** surface and the **Agent** driver
+  (`/ask`, LLM) + the formal orchestrator protocol / reference-driver set
+  (Human / Policy / Agent, per D-pkg-8).
 - **Q-pkg-8:** failure recovery — should `reconcile`/`diagnose`/`fix` be
   **bounded worker actions** (single system, LLM reasoning in the worker per
-  §7.4) rather than a separate orchestrator-diagnoser? A large share of past
-  recovery is *workflow/state reconciliation* (meta-view), not code fixes.
-  Concept + planning TODOs captured in
-  [`FUTURE_recovery.md`](FUTURE_recovery.md). Needs a design pass (start by
-  mining real escalation history, bucketed reconcile / code-fix / spec).
+  §7.4) rather than a separate orchestrator-diagnoser? **Resolved (reconcile-first
+  v1, built):** yes — recovery rides the existing loop as out-of-band worker
+  actions plus a deterministic core. The empirical sweep
+  ([`FUTURE_recovery.md`](FUTURE_recovery.md) §"Phase 0 findings") confirmed a
+  large share of recovery is *workflow/state reconciliation* (the one class
+  recovery can own; ~7–8% of iterations across e2e and i2c), so v1 ships a
+  deterministic drift audit (`i2c/recovery.py`), a `diagnose` entry point
+  (`i2c diagnose`, read-only, runs the audit first and classifies), human-gated
+  `reconcile` (`i2c reconcile [--apply]`, mutations via `state.py`), and
+  out-of-band dispatch (`i2c run --action diagnose|reconcile --target N`). See
+  [`DESIGN_recovery_v1.md`](DESIGN_recovery_v1.md). **Deferred:** the full `fix`
+  code-repair agent (code bugs are the majority of failures but orthogonal to
+  recovery — handled by the REVIEW regime).
 
 ## 12. Decisions
 

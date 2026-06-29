@@ -122,7 +122,11 @@ class TestEject(unittest.TestCase):
         with TempDir() as root:
             written = scaffold.eject_asset(root, "instructions")
             names = sorted(p.name for p in written)
-            self.assertEqual(names, ["close.md", "execute.md", "plan.md", "review.md"])
+            self.assertEqual(
+                names,
+                ["close.md", "diagnose.md", "execute.md", "plan.md",
+                 "reconcile.md", "review.md"],
+            )
 
     def test_eject_refuses_overwrite(self):
         with TempDir() as root:

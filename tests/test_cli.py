@@ -227,6 +227,72 @@ class TestLogsAndEscalationCli(unittest.TestCase):
             self.assertIn("Escalated: yes", out)
 
 
+class TestDiagnoseCli(unittest.TestCase):
+    def test_diagnose_clean_fixture_text(self):
+        # Out-of-repo temp copy: the in-repo fixture would show real git drift.
+        with TempProject():
+            rc, out, err = run_cli("diagnose")
+        self.assertEqual(rc, 0, msg=err)
+        self.assertIn("Classification: none", out)
+
+    def test_diagnose_json_workflow_drift(self):
+        with TempProject() as p:
+            steps = json.loads(
+                (p.root / ".state" / "steps.json").read_text(encoding="utf-8")
+            )
+            for s in steps:
+                if s["phase"] == 2:
+                    s["status"] = "complete"
+                    s.setdefault("commit", "abc1234")
+            (p.root / ".state" / "steps.json").write_text(
+                json.dumps(steps, indent=2) + "\n", encoding="utf-8"
+            )
+            rc, out, err = run_cli("diagnose", "--json")
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(out)
+            self.assertEqual(data["classification"], "workflow-drift")
+            self.assertTrue(data["reconcilable"])
+
+    def test_diagnose_outside_project_exits_2(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_cli_diag_noroot_") as tmp:
+            with ChdirFixture(Path(tmp)):
+                rc, out, err = run_cli("diagnose")
+        self.assertEqual(rc, 2)
+        self.assertIn("ERROR", err)
+
+
+class TestReconcileCli(unittest.TestCase):
+    @staticmethod
+    def _complete_phase2(p: TempProject) -> None:
+        steps = json.loads(
+            (p.root / ".state" / "steps.json").read_text(encoding="utf-8")
+        )
+        for s in steps:
+            if s["phase"] == 2:
+                s["status"] = "complete"
+                s.setdefault("commit", "abc1234")
+        (p.root / ".state" / "steps.json").write_text(
+            json.dumps(steps, indent=2) + "\n", encoding="utf-8"
+        )
+
+    def test_dry_run_does_not_write(self):
+        with TempProject() as p:
+            self._complete_phase2(p)
+            rc, out, err = run_cli("reconcile")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("DRY-RUN", out)
+            self.assertEqual(p.read_project()["state"], "execute")
+
+    def test_apply_writes(self):
+        with TempProject() as p:
+            self._complete_phase2(p)
+            rc, out, err = run_cli("reconcile", "--apply", "--json")
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(out)
+            self.assertTrue(data["applied"])
+            self.assertEqual(p.read_project()["state"], "review")
+
+
 class TestPortfolioCli(unittest.TestCase):
     def test_portfolio_json(self):
         with tempfile.TemporaryDirectory(prefix="i2c_pf_cli_") as tmp:
@@ -312,6 +378,26 @@ class TestRun(unittest.TestCase):
         finally:
             control.run_iteration = original
         self.assertEqual(rc, 2)
+
+    def test_run_recovery_action_target_forwarded(self):
+        captured: dict = {}
+
+        def fake(**kwargs):
+            captured.update(kwargs)
+            return 0
+
+        original = control.run_iteration
+        control.run_iteration = fake
+        try:
+            with TempProject():
+                rc, out, err = run_cli(
+                    "run", "--action", "reconcile", "--target", "5"
+                )
+        finally:
+            control.run_iteration = original
+        self.assertEqual(rc, 0, msg=err)
+        self.assertEqual(captured["action_override"], "reconcile")
+        self.assertEqual(captured["target"], 5)
 
     def _run_capture(self, *argv: str) -> dict:
         captured: dict = {}

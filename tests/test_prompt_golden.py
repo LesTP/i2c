@@ -122,5 +122,54 @@ class TestPromptGolden(unittest.TestCase):
         _assert_golden(self, "body_execute_claude_autonomous.md", volatile)
 
 
+class TestRecoveryPromptGolden(unittest.TestCase):
+    """Lock the recovery (diagnose/reconcile) prompt bytes.
+
+    The cache-stable prefix (WORKER CONTRACT + TOOL RULES) is fully
+    deterministic and always golden-asserted. The full prompt embeds the
+    failure-context Region-3 section, which runs the git/disk drift audit — only
+    deterministic when the temp project is not inside a git repo, so that golden
+    is skipped in the rare environment where the OS temp dir is itself a repo.
+    """
+
+    RECOVERY = ("diagnose", "reconcile")
+
+    @staticmethod
+    def _ns(action: str, emit: str) -> argparse.Namespace:
+        return argparse.Namespace(
+            action=action, section=None, phase=2, mode="autonomous",
+            module=None, backend="claude", target=None, step_budget=1, emit=emit,
+        )
+
+    def test_recovery_stable_prefix_golden(self):
+        for action in self.RECOVERY:
+            with self.subTest(action=action):
+                with _Project():
+                    prefix = ac.build_stable_prefix(
+                        ac.build_context(self._ns(action, "system"))
+                    )
+                _assert_golden(
+                    self, f"prefix_{action}_claude_autonomous.md", prefix
+                )
+
+    def test_recovery_full_prompt_golden(self):
+        from i2c import recovery
+
+        for action in self.RECOVERY:
+            with self.subTest(action=action):
+                with _Project() as root:
+                    if recovery.is_git_repo(root):
+                        self.skipTest(
+                            "temp project is inside a git repo; failure-context "
+                            "is not deterministic here"
+                        )
+                    prompt = ac.build_full_prompt(
+                        ac.build_context(self._ns(action, "full"))
+                    )
+                _assert_golden(
+                    self, f"prompt_{action}_claude_autonomous.md", prompt
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

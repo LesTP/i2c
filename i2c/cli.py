@@ -15,6 +15,8 @@ Subcommands::
     i2c decisions [--phase N]        # decision records (optionally filtered)
     i2c devlog [--phase N]           # devlog entries (optionally filtered)
     i2c escalation [--phase N]       # current escalation signal
+    i2c diagnose [--target N]        # diagnose a failed iteration (drift audit)
+    i2c reconcile [--apply]          # apply deterministic workflow-drift fixes
     i2c logs [--iter N] [--limit N]  # iteration index, or one transcript via --iter
     i2c portfolio [--root PATH]       # cross-project 'which needs me?' view
     i2c serve telegram [--root PATH]  # run the Telegram surface (needs i2c[telegram])
@@ -85,12 +87,14 @@ from i2c.render import (  # noqa: E402
     _render_boundary,
     _render_decisions,
     _render_devlog_list,
+    _render_diagnosis,
     _render_dispatch,
     _render_escalation,
     _render_log_transcript,
     _render_logs,
     _render_phase_summary,
     _render_portfolio,
+    _render_reconcile,
     _render_status,
 )
 
@@ -168,6 +172,24 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_diagnose(args: argparse.Namespace) -> int:
+    try:
+        result = control.diagnose(target=args.target)
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(result, as_json=args.json, renderer=_render_diagnosis)
+    return 0
+
+
+def cmd_reconcile(args: argparse.Namespace) -> int:
+    try:
+        result = control.reconcile(apply=args.apply)
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(result, as_json=args.json, renderer=_render_reconcile)
+    return 0
+
+
 def cmd_portfolio(args: argparse.Namespace) -> int:
     from pathlib import Path
 
@@ -193,6 +215,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Resolve run settings. Backend precedence: --backend flag (forces a single
     # backend) > [run.backends][action] (per-action map, resolved in the runner)
     # > [run].backend > built-in claude. Model/budget: flag > i2c.toml > default.
+    if args.target is not None and args.action is None:
+        return _fail(
+            ValueError("--target requires --action (diagnose/reconcile)")
+        )
     try:
         cfg = config.load_run_config()
     except config.ConfigError as e:
@@ -210,6 +236,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         default_backend=cfg.backend or "claude",
         model=model,
         max_budget_usd=max_budget_usd,
+        action_override=args.action,
+        target=args.target,
     )
 
 
@@ -447,6 +475,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_esc.set_defaults(func=cmd_escalation)
 
+    p_diag = sub.add_parser(
+        "diagnose",
+        parents=[json_parent],
+        help="Diagnose a failed/stuck iteration: run the drift audit and "
+        "classify (workflow-drift / unknown / none). Read-only.",
+    )
+    p_diag.add_argument(
+        "--target", type=int, default=None,
+        help="Iteration to diagnose (default: latest in summary.log).",
+    )
+    p_diag.set_defaults(func=cmd_diagnose)
+
+    p_rec = sub.add_parser(
+        "reconcile",
+        parents=[json_parent],
+        help="Apply deterministic reconcile fixes for workflow drift "
+        "(dry-run by default; --apply writes via i2c state).",
+    )
+    p_rec.add_argument(
+        "--apply", action="store_true",
+        help="Write the reconcile mutations (the human gate). Default: dry-run.",
+    )
+    p_rec.set_defaults(func=cmd_reconcile)
+
     p_logs = sub.add_parser(
         "logs",
         parents=[json_parent],
@@ -506,6 +558,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-budget-usd", type=float, default=None,
         help="Cost cap (claude). Precedence: this flag > i2c.toml "
         f"[run].max_budget_usd > {run_iteration.DEFAULT_MAX_BUDGET_USD:.2f}.",
+    )
+    p_run.add_argument(
+        "--action", choices=("diagnose", "reconcile"), default=None,
+        help="Out-of-band recovery action dispatched against --target, bypassing "
+        "the state machine. Omit for a normal state-machine-driven iteration.",
+    )
+    p_run.add_argument(
+        "--target", type=int, default=None,
+        help="Target iteration for the recovery --action (default: latest).",
     )
     p_run.set_defaults(func=cmd_run)
 

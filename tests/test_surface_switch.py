@@ -44,9 +44,13 @@ class TestSurfaceSwitch(unittest.TestCase):
         self.assertEqual(offenders, [], msg="\n".join(offenders))
 
     def test_instructions_use_i2c_state(self):
-        # Every action procedure writes state, so each must reference the new
-        # surface at least once.
+        # Action procedures that write state must reference the new surface at
+        # least once. Read-only procedures (diagnose) legitimately don't write
+        # state, so they're exempt.
+        read_only = {"diagnose.md"}
         for path in sorted(INSTRUCTIONS_DIR.glob("*.md")):
+            if path.name in read_only:
+                continue
             text = path.read_text(encoding="utf-8")
             self.assertIn(
                 "i2c state", text, msg=f"{path.name} lacks an `i2c state` reference"

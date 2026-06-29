@@ -26,6 +26,10 @@ This module covers the read surface + the ``clear_boundary`` boundary command.
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -139,6 +143,66 @@ class EscalationView:
     entry: DevlogView | None  # the triggering escalate/blocked devlog entry
     surrounding: list[DevlogView]  # up to 3 preceding in-phase entries, for context
     open_decisions: list[DecisionView]  # phase-tagged, status == open
+
+
+@dataclass
+class DriftView:
+    """One drift-audit finding, flattened for a surface (recovery.DriftFinding
+    projected to prose-free fields). ``proposal`` is the human-readable
+    description of the reconcile action (``None`` when not reconcilable)."""
+
+    signal: str
+    message: str
+    reconcilable: bool
+    proposal: str | None = None
+    phase: int | None = None
+    step: int | None = None
+
+
+@dataclass
+class Diagnosis:
+    """The deterministic-first failure diagnosis for one target iteration (§A).
+
+    ``diagnose`` runs the drift audit **first** (cheap, deterministic) and
+    classifies the failure: ``workflow-drift`` when the audit found drift (the
+    one class recovery owns), ``unknown`` when the target iteration failed but
+    the audit explains nothing (hand to the human / the LLM ``diagnose`` worker
+    to bucket as code/spec/env), or ``none`` when there's no drift and no failed
+    iteration. ``reconcilable`` is True when at least one finding carries a
+    deterministic reconcile proposal. Read-only — this view mutates nothing."""
+
+    target: int | None  # iteration number diagnosed (None when no loop log exists)
+    classification: str  # "workflow-drift" | "unknown" | "none"
+    reconcilable: bool
+    phase: int
+    state: str
+    exit_code: int | None  # the target iteration's runner exit code
+    reason: str | None  # the target iteration's summary-line reason
+    malformed_signal: bool  # target failed on a missing/malformed exit signal (#1 trigger)
+    findings: list[DriftView]
+    escalation: DevlogView | None  # triggering escalate/blocked devlog entry, if any
+
+
+@dataclass
+class ReconcileItem:
+    """One reconcilable drift finding and whether its fix was written."""
+
+    signal: str
+    message: str
+    proposal: str  # the ReconcileAction.description
+    applied: bool
+
+
+@dataclass
+class ReconcileReport:
+    """The result of ``reconcile`` (§C). ``applied`` is True only when the
+    operator passed the human gate (``apply=True``) and mutations were written
+    via ``state.py``. ``items`` are the reconcilable findings (proposed or
+    applied); ``skipped`` are judgment-class findings, surfaced never applied."""
+
+    applied: bool
+    items: list[ReconcileItem]
+    skipped: list[DriftView]
 
 
 @dataclass
@@ -480,7 +544,6 @@ def clear_boundary(root: Path | None = None, *, advance: bool = True) -> Boundar
 
     _state.atomic_write_json(_state_path(root, "project.json"), project)
     return BoundaryResult(outcome=outcome, phase=new_phase, state=project["state"])
-    raise NotFoundError(f"No iteration {iter} in {_runner.SUMMARY_LOG_NAME}")
 
 
 # ---------------------------------------------------------------------------
@@ -698,3 +761,169 @@ def logs_transcript(root: Path | None = None, *, iter: int) -> IterationLog:
             )
             return rec
     raise NotFoundError(f"No iteration {iter} in {_runner.SUMMARY_LOG_NAME}")
+
+
+# ---------------------------------------------------------------------------
+# Recovery: deterministic-first diagnosis (DESIGN_recovery_v1.md §A)
+# ---------------------------------------------------------------------------
+
+
+def _is_malformed_signal(log: IterationLog | None) -> bool:
+    """True iff the target iteration failed because its exit signal couldn't be
+    parsed/validated — the #1 real i2c reconcile trigger (the worker, esp. codex,
+    finished without a parseable 2-line block, so the loop can't tell what landed)."""
+    if log is None or log.exit_code == 0:
+        return False
+    r = (log.reason or "").lower()
+    return "exit signal" in r and (
+        "missing" in r or "malformed" in r or "schema validation" in r
+    )
+
+
+def diagnose(root: Path | None = None, *, target: int | None = None) -> Diagnosis:
+    """Diagnose a failed/stuck iteration: run the drift audit first, classify.
+
+    ``target`` selects which iteration's failure context to assemble (default:
+    the latest in ``logs/loop/summary.log``; ``None`` when no log exists yet).
+    Raises ``NotFoundError`` when an explicit ``target`` has no summary entry.
+    Pure read: the drift audit and every projection it composes are read-only.
+    """
+    # Lazy import breaks the recovery <-> control import cycle (recovery imports
+    # control at module load; control only needs recovery inside this function).
+    from i2c import recovery as _recovery
+
+    root = root or find_project_root()
+    st = load_state(root)
+    findings = _recovery.audit(root, st)
+
+    entries = _read_summary(root)
+    target_log: IterationLog | None = None
+    if target is not None:
+        target_log = next((e for e in entries if e.iter == target), None)
+        if target_log is None:
+            raise NotFoundError(
+                f"No iteration {target} in {_runner.SUMMARY_LOG_NAME}"
+            )
+    elif entries:
+        target_log = entries[-1]
+
+    drift_views = [
+        DriftView(
+            signal=f.signal,
+            message=f.message,
+            reconcilable=f.reconcilable,
+            proposal=(f.proposal.description if f.proposal else None),
+            phase=f.phase,
+            step=f.step,
+        )
+        for f in findings
+    ]
+    reconcilable = any(f.reconcilable for f in findings)
+
+    if findings:
+        classification = "workflow-drift"
+    elif target_log is not None and target_log.exit_code != 0:
+        classification = "unknown"
+    else:
+        classification = "none"
+
+    esc = escalation(root)
+    return Diagnosis(
+        target=(target_log.iter if target_log else None),
+        classification=classification,
+        reconcilable=reconcilable,
+        phase=int(st.project.get("phase", 0)),
+        state=st.project.get("state", ""),
+        exit_code=(target_log.exit_code if target_log else None),
+        reason=(target_log.reason if target_log else None),
+        malformed_signal=_is_malformed_signal(target_log),
+        findings=drift_views,
+        escalation=esc.entry,
+    )
+
+
+def _apply_proposal(root: Path, action: Any) -> None:
+    """Apply one ``recovery.ReconcileAction`` through the sanctioned ``state.py``
+    path (atomic + schema-validated). Recovery never writes ``.state/`` directly.
+
+    Routes the proposal to ``state.cmd_set`` / ``state.cmd_complete`` /
+    ``state.cmd_update_record`` with a constructed Namespace, suppressing their
+    stdout so the library stays prose-free. Raises ``ControlError`` on a
+    non-zero return (validation failure / no-match)."""
+    file_path = str(_state_path(root, action.file))
+    if action.op == "set":
+        ns = argparse.Namespace(
+            file=file_path,
+            pairs=[f"{k}={val}" for k, val in action.payload["keys"].items()],
+        )
+        fn = _state.cmd_set
+    elif action.op == "complete":
+        ns = argparse.Namespace(
+            file=file_path,
+            phase=action.payload["phase"],
+            step=action.payload.get("step"),
+            commit=action.payload.get("commit"),
+        )
+        fn = _state.cmd_complete
+    elif action.op == "update-record":
+        ns = argparse.Namespace(
+            file=file_path,
+            match=action.payload["match"],
+            updates=[f"{k}={val}" for k, val in action.payload["updates"].items()],
+            from_file=None,
+        )
+        fn = _state.cmd_update_record
+    else:  # pragma: no cover - defensive
+        raise ControlError(f"unknown reconcile op {action.op!r}")
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = fn(ns)
+    if rc != 0:
+        raise ControlError(
+            f"reconcile mutation failed (rc={rc}): {action.description}"
+        )
+
+
+def reconcile(root: Path | None = None, *, apply: bool = False) -> ReconcileReport:
+    """Reconcile deterministic workflow drift (DESIGN_recovery_v1.md §C).
+
+    Runs the drift audit and partitions findings: reconcilable ones carry a
+    deterministic proposal; judgment-class ones are surfaced, never applied.
+    **Dry-run by default** — the operator passing ``apply=True`` is the human
+    gate. Applied mutations go through ``state.py`` (atomic, schema-validated);
+    reconcile never marks an unfinished (code-blocked) step complete — it only
+    closes the state-vs-reality gap so the loop can re-attempt.
+    """
+    from i2c import recovery as _recovery
+
+    root = root or find_project_root()
+    st = load_state(root)
+    findings = _recovery.audit(root, st)
+    reconcilable = [f for f in findings if f.reconcilable and f.proposal is not None]
+    judgment = [f for f in findings if not (f.reconcilable and f.proposal is not None)]
+
+    items: list[ReconcileItem] = []
+    for f in reconcilable:
+        if apply:
+            _apply_proposal(root, f.proposal)
+        items.append(
+            ReconcileItem(
+                signal=f.signal,
+                message=f.message,
+                proposal=f.proposal.description,
+                applied=apply,
+            )
+        )
+    skipped = [
+        DriftView(
+            signal=f.signal,
+            message=f.message,
+            reconcilable=False,
+            proposal=None,
+            phase=f.phase,
+            step=f.step,
+        )
+        for f in judgment
+    ]
+    return ReconcileReport(applied=apply, items=items, skipped=skipped)

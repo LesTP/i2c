@@ -172,3 +172,55 @@ def _render_portfolio(r: control.PortfolioReport) -> str:
 
 def _render_boundary(r: control.BoundaryResult) -> str:
     return f"{r.outcome} — phase {r.phase}, state {r.state}"
+
+
+def _render_diagnosis(d: control.Diagnosis) -> str:
+    target = f"iter {d.target}" if d.target is not None else "(no loop log)"
+    lines = [
+        f"Target:         {target}",
+        f"Classification: {d.classification}",
+        f"Reconcilable:   {'yes' if d.reconcilable else 'no'}",
+        f"Phase/State:    {d.phase} / {d.state}",
+    ]
+    if d.exit_code is not None:
+        lines.append(f"Iteration exit: {d.exit_code}")
+        lines.append(f"Reason:         {d.reason or '—'}")
+    if d.malformed_signal:
+        lines.append(
+            "Note:           target failed on a missing/malformed exit signal"
+        )
+    lines += ["", "Drift findings:"]
+    if d.findings:
+        for f in d.findings:
+            mark = "fixable" if f.reconcilable else "judgment"
+            loc = ""
+            if f.phase is not None:
+                loc = f" [{f.phase}" + (f".{f.step}" if f.step is not None else "") + "]"
+            lines.append(f"  - ({mark}){loc} {f.message}")
+            if f.proposal:
+                lines.append(f"      -> {f.proposal}")
+    else:
+        lines.append("  (none)")
+    if d.escalation:
+        lines += ["", "Escalation context:", _fmt_devlog(d.escalation)]
+    return "\n".join(lines)
+
+
+def _render_reconcile(r: control.ReconcileReport) -> str:
+    head = "RECONCILED" if r.applied else "DRY-RUN (no .state writes)"
+    lines = [f"reconcile — {head}", "", "Reconcilable drift:"]
+    if r.items:
+        for it in r.items:
+            mark = "applied" if it.applied else "would apply"
+            lines.append(f"  - [{mark}] {it.message}")
+            lines.append(f"      -> {it.proposal}")
+    else:
+        lines.append("  (none)")
+    lines += ["", "Needs human judgment (not auto-applied):"]
+    if r.skipped:
+        lines += [f"  - {s.message}" for s in r.skipped]
+    else:
+        lines.append("  (none)")
+    if not r.applied and r.items:
+        lines += ["", "Re-run with --apply to write these via i2c state."]
+    return "\n".join(lines)

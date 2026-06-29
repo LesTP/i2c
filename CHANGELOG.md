@@ -13,6 +13,18 @@ The Phase-3 control-surface arc: a single structured command/projection layer
 
 ### Added
 
+- **Recovery (reconcile-first v1).** A deterministic workflow-drift audit
+  (`i2c/recovery.py`: state-vs-`.state` plus state-vs-git/disk signals, with
+  CRLF/whitespace false-positive guards) fronted by a `diagnose` entry point.
+  `i2c diagnose [--target N]` runs the audit first and classifies the failure
+  (`workflow-drift` / `unknown` / `none`), read-only. `i2c reconcile [--apply]`
+  applies the deterministic fixes (dry-run by default; mutations go through the
+  sanctioned `state.py` path) and surfaces judgment calls without touching them.
+  Out-of-band dispatch (`i2c run --action diagnose|reconcile --target N`)
+  bypasses the state machine; the runner also surfaces a non-fatal drift
+  advisory after each lifecycle action. Extends i2c's detect-and-halt
+  post-action invariants into detect-and-reconcile. See
+  `DESIGN_recovery_v1.md`. The full `fix` code-repair agent is deferred.
 - **Per-action backend selection.** An optional `[run.backends]` table in
   `i2c.toml` maps each worker action (plan/execute/review/close) to a backend,
   resolved once the dispatched action is known. Lets a run spread load across

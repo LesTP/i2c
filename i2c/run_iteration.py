@@ -116,7 +116,13 @@ def current_phase(project_root: Path) -> int:
 
 
 def assemble_prompt(
-    project_root: Path, action: str, phase: int, *, backend: str, emit: str = "full"
+    project_root: Path,
+    action: str,
+    phase: int,
+    *,
+    backend: str,
+    emit: str = "full",
+    target: int | None = None,
 ) -> str:
     """Invoke ``python -m i2c.assemble_context`` and return the prompt text.
 
@@ -128,21 +134,28 @@ def assemble_prompt(
     ``"full"`` (default) is the whole prompt; ``"system"`` is the
     cache-stable prefix (WORKER CONTRACT + TOOL RULES) routed through
     Claude Code's system prompt; ``"user"`` is the per-iteration body.
+
+    ``target`` is forwarded as ``--target`` for recovery actions
+    (diagnose/reconcile), selecting which iteration's failure context the
+    assembler renders. Ignored by the normal lifecycle actions.
     """
+    argv = [
+        sys.executable, "-m", "i2c.assemble_context",
+        "--action", action.lower(),
+        "--phase", str(phase),
+        "--mode", "autonomous",
+        "--backend", backend,
+        # v1 runner is always single-step. When the multi-iteration loop
+        # ships, this becomes a runner parameter; for now it's a constant
+        # so the multi_step_only marker mechanism keeps stripping the
+        # WORKER_SPEC multi-step subsections.
+        "--step-budget", "1",
+        "--emit", emit,
+    ]
+    if target is not None:
+        argv += ["--target", str(target)]
     proc = subprocess.run(
-        [
-            sys.executable, "-m", "i2c.assemble_context",
-            "--action", action.lower(),
-            "--phase", str(phase),
-            "--mode", "autonomous",
-            "--backend", backend,
-            # v1 runner is always single-step. When the multi-iteration loop
-            # ships, this becomes a runner parameter; for now it's a constant
-            # so the multi_step_only marker mechanism keeps stripping the
-            # WORKER_SPEC multi-step subsections.
-            "--step-budget", "1",
-            "--emit", emit,
-        ],
+        argv,
         cwd=str(project_root),
         capture_output=True,
         text=True,
@@ -476,6 +489,8 @@ def run_iteration(
     default_backend: str = "claude",
     model: str,
     max_budget_usd: float,
+    action_override: str | None = None,
+    target: int | None = None,
     claude_invoker=invoke_claude,
     codex_invoker=invoke_codex,
 ) -> int:
@@ -486,6 +501,13 @@ def run_iteration(
     per-action ``backend_map`` (from ``[run.backends]``) is consulted by the
     dispatched action, falling back to ``default_backend`` (``[run].backend``).
 
+    Out-of-band recovery dispatch (DESIGN_recovery_v1.md §D): when
+    ``action_override`` is set (``diagnose`` / ``reconcile``), the state machine
+    is bypassed entirely — the named action is dispatched directly against
+    ``target`` (the iteration whose failure context the assembler renders).
+    Normal runs (``action_override is None``) are unchanged: the state machine
+    decides the action.
+
     ``claude_invoker`` and ``codex_invoker`` are seams for tests; defaults
     delegate to the real subprocess wrappers. Each invoker's signature
     must match its real-implementation counterpart.
@@ -493,12 +515,16 @@ def run_iteration(
     root = ac.find_project_root()
     log_dir = root / LOG_DIR_NAME
 
-    # 1. State machine dispatch.
-    try:
-        action, next_state = run_state_machine(root)
-    except RunnerError as e:
-        sys.stderr.write(f"ERROR: {e}\n")
-        return 2
+    # 1. Decide the action: out-of-band override (recovery) or state machine.
+    if action_override is not None:
+        action = action_override.upper()
+        next_state = ""  # recovery actions don't drive linear progression
+    else:
+        try:
+            action, next_state = run_state_machine(root)
+        except RunnerError as e:
+            sys.stderr.write(f"ERROR: {e}\n")
+            return 2
 
     # 1b. Resolve the backend for this action. Explicit override wins; else the
     #     per-action map keyed by the dispatched action; else the default.
@@ -509,7 +535,7 @@ def run_iteration(
         sys.stderr.write(f"ERROR: unknown backend {backend!r}\n")
         return 2
 
-    # 2. ACTION: EXIT short-circuit.
+    # 2. ACTION: EXIT short-circuit (state-machine path only).
     if action == "EXIT":
         iteration = next_iteration_number(log_dir)
         line = write_summary_line(
@@ -538,12 +564,12 @@ def run_iteration(
     try:
         if backend == "claude":
             system_prompt = assemble_prompt(
-                root, action, phase, backend=backend, emit="system")
+                root, action, phase, backend=backend, emit="system", target=target)
             stdin_prompt = assemble_prompt(
-                root, action, phase, backend=backend, emit="user")
+                root, action, phase, backend=backend, emit="user", target=target)
         else:  # codex
             stdin_prompt = assemble_prompt(
-                root, action, phase, backend=backend, emit="full")
+                root, action, phase, backend=backend, emit="full", target=target)
     except RunnerError as e:
         sys.stderr.write(f"ERROR: {e}\n")
         return 2
@@ -627,6 +653,27 @@ def run_iteration(
             sys.stderr.write(f"ERROR: {invariant_reason}\n")
             return 2
 
+    # 8b. Drift advisory (detect-and-surface; DESIGN_recovery_v1.md §C). After a
+    #     lifecycle action, run the cheap pure-.state drift audit alongside the
+    #     CLOSE invariants and surface any *reconcilable* drift so the operator
+    #     can `i2c diagnose` / `i2c reconcile`. Non-fatal: this never changes the
+    #     exit code (human-gated reconcile is the remedy, not an auto-halt).
+    #     Recovery actions are exempt (their whole job is to inspect/fix drift).
+    if action_override is None:
+        from i2c import control as _control
+        from i2c import recovery as _recovery
+        try:
+            drift = _recovery.audit_state(_control.load_state(root))
+        except _control.ControlError:
+            drift = []
+        reconcilable = [f for f in drift if f.reconcilable]
+        if reconcilable:
+            sys.stderr.write(
+                f"NOTE: workflow drift detected after {action} "
+                f"({', '.join(f.signal for f in reconcilable)}); "
+                "run `i2c diagnose` then `i2c reconcile`.\n"
+            )
+
     # 9. Normal summary + return worker's exit code.
     line = write_summary_line(
         log_dir,
@@ -669,6 +716,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MAX_BUDGET_USD,
         help=f"Cost cap for claude -p. Default: {DEFAULT_MAX_BUDGET_USD:.2f}.",
     )
+    parser.add_argument(
+        "--action",
+        choices=("diagnose", "reconcile"),
+        default=None,
+        help="Out-of-band recovery action to dispatch against --target, bypassing "
+             "the state machine. Omit for a normal state-machine-driven iteration.",
+    )
+    parser.add_argument(
+        "--target",
+        type=int,
+        default=None,
+        help="Target iteration for the recovery --action (default: latest).",
+    )
     return parser
 
 
@@ -684,6 +744,8 @@ def main(argv: list[str] | None = None) -> int:
         backend=args.backend,
         model=args.model,
         max_budget_usd=args.max_budget_usd,
+        action_override=args.action,
+        target=args.target,
     )
 
 

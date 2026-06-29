@@ -458,5 +458,177 @@ class TestErrors(unittest.TestCase):
                 c.find_project_root(Path(tmp))
 
 
+# ---------------------------------------------------------------------------
+# diagnose() — deterministic-first recovery diagnosis
+# ---------------------------------------------------------------------------
+
+
+def _write_steps(p: "TempProject", steps: list) -> None:
+    (p.root / ".state" / "steps.json").write_text(
+        json.dumps(steps, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _seed_summary(p: "TempProject", line: str) -> None:
+    log_dir = p.root / "logs" / "loop"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "summary.log").write_text(line + "\n", encoding="utf-8")
+
+
+class TestDiagnose(unittest.TestCase):
+    def test_clean_fixture_is_none(self):
+        # Use an out-of-repo temp copy: the committed fixture lives inside the
+        # i2c git repo, where audit_git would (correctly) report real drift.
+        with TempProject() as p:
+            d = c.diagnose(p.root)
+            self.assertEqual(d.classification, "none")
+            self.assertFalse(d.reconcilable)
+            self.assertEqual(d.findings, [])
+            self.assertIsNone(d.target)
+
+    def test_workflow_drift_when_state_not_advanced(self):
+        with TempProject() as p:
+            steps = json.loads(
+                (p.root / ".state" / "steps.json").read_text(encoding="utf-8")
+            )
+            for s in steps:
+                if s["phase"] == 2:
+                    s["status"] = "complete"
+                    s.setdefault("commit", "abc1234")
+            _write_steps(p, steps)
+            d = c.diagnose(p.root)
+            self.assertEqual(d.classification, "workflow-drift")
+            self.assertTrue(d.reconcilable)
+            self.assertTrue(
+                any(f.signal == "execute_state_not_advanced" for f in d.findings)
+            )
+            self.assertTrue(any(f.proposal for f in d.findings))
+
+    def test_malformed_signal_detected_from_log(self):
+        with TempProject() as p:
+            _seed_summary(
+                p,
+                '2026-06-29T00:00:00+00:00 | iter=7 | backend=codex | '
+                'action=EXECUTE | exit=2 | reason="exit signal missing or '
+                'malformed (2-line block not found in worker output)"',
+            )
+            d = c.diagnose(p.root)
+            self.assertEqual(d.target, 7)
+            self.assertTrue(d.malformed_signal)
+            self.assertEqual(d.exit_code, 2)
+            # No drift in .state → not attributable to drift → unknown.
+            self.assertEqual(d.classification, "unknown")
+
+    def test_explicit_missing_target_raises(self):
+        with TempProject() as p:
+            _seed_summary(
+                p,
+                '2026-06-29T00:00:00+00:00 | iter=1 | backend=claude | '
+                'action=EXECUTE | exit=0 | reason="ok"',
+            )
+            with self.assertRaises(c.NotFoundError):
+                c.diagnose(p.root, target=99)
+
+    def test_drift_wins_over_failed_target(self):
+        # Drift present AND the target iteration failed: classification must be
+        # workflow-drift (drift is the class recovery owns), not unknown.
+        with TempProject() as p:
+            _complete_phase_steps(p, 2)  # execute_state_not_advanced drift
+            _seed_summary(
+                p,
+                '2026-06-29T00:00:00+00:00 | iter=3 | backend=codex | '
+                'action=EXECUTE | exit=2 | reason="boom"',
+            )
+            d = c.diagnose(p.root)
+            self.assertEqual(d.classification, "workflow-drift")
+            self.assertEqual(d.target, 3)
+            self.assertEqual(d.exit_code, 2)
+
+    def test_diagnose_writes_nothing(self):
+        with TempProject() as p:
+            before = (p.root / ".state" / "project.json").read_text(encoding="utf-8")
+            c.diagnose(p.root)
+            after = (p.root / ".state" / "project.json").read_text(encoding="utf-8")
+            self.assertEqual(before, after)
+
+
+# ---------------------------------------------------------------------------
+# reconcile() — human-gated remediation
+# ---------------------------------------------------------------------------
+
+
+def _complete_phase_steps(p: "TempProject", phase: int) -> None:
+    steps = json.loads(
+        (p.root / ".state" / "steps.json").read_text(encoding="utf-8")
+    )
+    for s in steps:
+        if s["phase"] == phase:
+            s["status"] = "complete"
+            s.setdefault("commit", "abc1234")
+    _write_steps(p, steps)
+
+
+def _drop_commit(p: "TempProject", phase: int, step: int) -> None:
+    steps = json.loads(
+        (p.root / ".state" / "steps.json").read_text(encoding="utf-8")
+    )
+    for s in steps:
+        if s["phase"] == phase and s["step"] == step:
+            s.pop("commit", None)
+    _write_steps(p, steps)
+
+
+class TestReconcile(unittest.TestCase):
+    def test_dry_run_proposes_without_writing(self):
+        with TempProject() as p:
+            _complete_phase_steps(p, 2)
+            report = c.reconcile(p.root)  # apply defaults False
+            self.assertFalse(report.applied)
+            self.assertEqual(len(report.items), 1)
+            self.assertEqual(report.items[0].signal, "execute_state_not_advanced")
+            self.assertFalse(report.items[0].applied)
+            # State unchanged.
+            self.assertEqual(p.read_project()["state"], "execute")
+
+    def test_apply_writes_via_state_path(self):
+        with TempProject() as p:
+            _complete_phase_steps(p, 2)
+            report = c.reconcile(p.root, apply=True)
+            self.assertTrue(report.applied)
+            self.assertTrue(report.items[0].applied)
+            self.assertEqual(p.read_project()["state"], "review")
+            # The written file is schema-valid (went through state.py).
+            v.validate_state_file(p.root / ".state" / "project.json")
+
+    def test_judgment_findings_are_skipped_not_applied(self):
+        with TempProject() as p:
+            _drop_commit(p, 2, 1)  # complete step missing commit = judgment-class
+            report = c.reconcile(p.root, apply=True)
+            self.assertEqual(report.items, [])
+            self.assertTrue(
+                any(s.signal == "step_complete_without_commit" for s in report.skipped)
+            )
+
+    def test_conflicting_combo_applies_single_boundary(self):
+        # state=execute + all steps complete + phase record complete: only the
+        # close-gate fix should apply (set audit_boundary), not also state=review.
+        with TempProject() as p:
+            _complete_phase_steps(p, 2)
+            phases = json.loads(
+                (p.root / ".state" / "phases.json").read_text(encoding="utf-8")
+            )
+            for ph in phases:
+                if ph["id"] == 2:
+                    ph["status"] = "complete"
+            (p.root / ".state" / "phases.json").write_text(
+                json.dumps(phases, indent=2) + "\n", encoding="utf-8"
+            )
+            report = c.reconcile(p.root, apply=True)
+            self.assertEqual(
+                [i.signal for i in report.items], ["close_gate_not_set"]
+            )
+            self.assertEqual(p.read_project()["state"], "audit_boundary")
+
+
 if __name__ == "__main__":
     unittest.main()
