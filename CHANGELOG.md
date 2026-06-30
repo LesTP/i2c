@@ -22,7 +22,9 @@ The Phase-3 control-surface arc: a single structured command/projection layer
   sanctioned `state.py` path) and surfaces judgment calls without touching them.
   Out-of-band dispatch (`i2c run --action diagnose|reconcile --target N`)
   bypasses the state machine; the runner also surfaces a non-fatal drift
-  advisory after each lifecycle action. Extends i2c's detect-and-halt
+  advisory after each lifecycle action. The Telegram surface exposes the same
+  pair as `/diagnose [N]` (read-only) and `/reconcile [apply]` (admin-gated,
+  dry-run unless `apply`). Extends i2c's detect-and-halt
   post-action invariants into detect-and-reconcile. See
   `DESIGN_recovery_v1.md`. The full `fix` code-repair agent is deferred.
 - **Per-action backend selection.** An optional `[run.backends]` table in

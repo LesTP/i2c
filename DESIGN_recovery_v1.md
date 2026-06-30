@@ -40,7 +40,7 @@ self-healing auto-rerun chains; a persisted `.state/diagnoses.json` record.
 | git/disk helper | `i2c/recovery.py` | The **one** place i2c shells git (rev-parse/log/status/diff). Degrades to `[]` off a repo / off PATH. |
 | Diagnosis (classify) | `control.diagnose` | Read-only projection; runs the audit first, returns a `Diagnosis`. |
 | Reconcile (remediate) | `control.reconcile` | Dry-run by default; `apply=True` is the human gate; mutates via `state.py`. |
-| Surfaces | `i2c diagnose`, `i2c reconcile [--apply]` | + JSON via `--json`. Renderers in `render.py`. |
+| Surfaces | `i2c diagnose`, `i2c reconcile [--apply]`; Telegram `/diagnose [N]`, `/reconcile [apply]` | + JSON via `--json`. Renderers in `render.py`; bot dispatch in `surfaces/telegram_core.py`. |
 | Out-of-band dispatch | `run_iteration` + `i2c run --action … --target N` | Bypasses `state_machine.decide`. |
 | Worker prompts | `i2c/data/instructions/diagnose.md`, `reconcile.md` | For the residual LLM judgment. |
 | Runner advisory | `run_iteration` (§8b) | Non-fatal: surfaces reconcilable drift after each lifecycle action. |
@@ -142,5 +142,7 @@ procedures). `[run.backends]` may map a backend per recovery action
 Unit-tested in `tests/test_recovery.py` (each drift signal incl. the CRLF-only
 and non-repo false-positive guards), `tests/test_control.py`
 (`diagnose`/`reconcile`, non-mutation of `diagnose`), `tests/test_cli.py`
-(`i2c diagnose` / `i2c reconcile`, `i2c run --action … --target` dispatch), and
+(`i2c diagnose` / `i2c reconcile`, `i2c run --action … --target` dispatch),
+`tests/test_telegram_core.py` (the `/diagnose` read-only + `/reconcile`
+dry-run/apply bot commands and admin gating), and
 `tests/test_prompt_golden.py` (recovery prompt byte-stability).

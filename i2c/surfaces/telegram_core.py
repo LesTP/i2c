@@ -15,12 +15,16 @@ Command surface (DESIGN_surface_backends_v1.md §4):
 - ``/audit [proj] [facet]`` — the read hub; ``facet`` ∈ {∅→summary, ``phase N``,
   ``decisions [N]``, ``devlog [N]``, ``escalation``, ``logs [N]`` /
   ``logs iter N``}.
+- ``/diagnose [proj] [N]`` — read-only recovery diagnosis of iteration N
+  (default: latest): runs the drift audit and classifies the failure.
 - ``/portfolio`` — cross-project view.
 - ``/setdir <proj>`` — set the chat's current project.
 - ``/commands`` (``/start``) — this listing.
 - ``/run [proj] [N] [backend]`` — up to N iterations (default 1) on a **single**
   backend (arg, else the project default), stopping at a halt or non-zero exit.
 - ``/batch [proj]`` — loop to a halt using the **per-action** backend map.
+- ``/reconcile [proj] [apply]`` — apply deterministic workflow-drift fixes; dry-run
+  by default, ``apply`` writes them (via ``state.py``). Admin-gated.
 - ``/endphase [proj] [last]`` — clear an ``audit_boundary`` (``last`` = terminate).
 """
 
@@ -32,8 +36,8 @@ from typing import Callable
 
 from i2c import control, render
 
-READ_COMMANDS = frozenset({"audit", "portfolio", "setdir", "commands", "start"})
-MUTATING_COMMANDS = frozenset({"run", "batch", "endphase"})
+READ_COMMANDS = frozenset({"audit", "diagnose", "portfolio", "setdir", "commands", "start"})
+MUTATING_COMMANDS = frozenset({"run", "batch", "reconcile", "endphase"})
 ALL_COMMANDS = READ_COMMANDS | MUTATING_COMMANDS
 
 # Runaway guard for /batch (which has no explicit count). A phase always
@@ -48,9 +52,11 @@ _BACKENDS = ("claude", "codex")
 # stays in sync with the code. Names must be Telegram-legal (lowercase, <=32).
 COMMAND_MENU: list[tuple[str, str]] = [
     ("audit", "Audit a project: summary | phase N | decisions | devlog | escalation | logs"),
+    ("diagnose", "Diagnose a failed iteration: drift audit + classification (read-only)"),
     ("portfolio", "Cross-project view — which project needs attention"),
     ("run", "Admin: run N iterations on one backend (default 1)"),
     ("batch", "Admin: run a full phase to a halt (backend per action)"),
+    ("reconcile", "Admin: apply workflow-drift fixes (dry-run; 'apply' to write)"),
     ("endphase", "Admin: clear the audit_boundary (advance; 'last' to terminate)"),
     ("setdir", "Show or set the current project"),
     ("commands", "Show all commands"),
@@ -62,12 +68,15 @@ _HELP = (
     "Read:\n"
     " /audit [proj] [facet] — Project audit. facet: (none)=summary | phase N "
     "| decisions [N] | devlog [N] | escalation | logs [N] | logs iter N\n"
+    " /diagnose [proj] [N] — Diagnose iteration N (default latest): drift audit "
+    "+ classification (read-only)\n"
     " /portfolio — Cross-project view (which project needs me?)\n"
     " /setdir <proj> — Show or set the current project\n"
     "\n"
     "Admin:\n"
     " /run [proj] [N] [backend] — Run N iterations (default 1) on one backend\n"
     " /batch [proj] — Run a full phase to a halt; backend chosen per action\n"
+    " /reconcile [proj] [apply] — Apply workflow-drift fixes; dry-run unless 'apply'\n"
     " /endphase [proj] [last] — Clear the audit_boundary (advance; last = terminate)\n"
     "\n"
     "/start and /commands show this list. Most commands take an optional project "
@@ -215,6 +224,15 @@ def _dispatch_project(
 ) -> Reply:
     if command == "audit":
         return _audit(rest, proj)
+
+    if command == "diagnose":
+        target = _int_arg(rest)
+        return Reply(render._render_diagnosis(control.diagnose(proj, target=target)))
+
+    if command == "reconcile":
+        apply = any(a.lower() == "apply" for a in rest)
+        report = control.reconcile(proj, apply=apply)
+        return Reply(render._render_reconcile(report))
 
     if command == "endphase":
         terminate = "last" in rest

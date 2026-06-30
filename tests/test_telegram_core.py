@@ -37,6 +37,18 @@ def _set_state(proj: Path, state: str) -> None:
     pj.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _complete_phase2(proj: Path) -> None:
+    """Mark every phase-2 step complete (leaving state=execute) to induce the
+    execute_state_not_advanced workflow-drift signal."""
+    sp = proj / ".state" / "steps.json"
+    steps = json.loads(sp.read_text(encoding="utf-8"))
+    for s in steps:
+        if s["phase"] == 2:
+            s["status"] = "complete"
+            s.setdefault("commit", "abc1234")
+    sp.write_text(json.dumps(steps, indent=2) + "\n", encoding="utf-8")
+
+
 class _Counter:
     """Fake run_iteration_fn(proj, backend) -> rc; records the backends seen."""
 
@@ -190,10 +202,60 @@ class TestAuth(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _make(root, {"only": {}})
-            for cmd in ("run", "batch", "endphase"):
+            for cmd in ("run", "batch", "reconcile", "endphase"):
                 r = tc.dispatch(cmd, [], is_admin=False, root=root)
                 self.assertFalse(r.ok)
                 self.assertIn("requires admin", r.text)
+
+
+class TestDiagnose(unittest.TestCase):
+    def test_diagnose_read_only_for_non_admin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            r = tc.dispatch("diagnose", [], is_admin=False, root=root)
+            self.assertTrue(r.ok)
+            self.assertIn("Classification: none", r.text)
+
+    def test_diagnose_reports_workflow_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            _complete_phase2(root / "only")
+            r = tc.dispatch("diagnose", [], is_admin=False, root=root)
+            self.assertIn("Classification: workflow-drift", r.text)
+
+    def test_diagnose_missing_target_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            r = tc.dispatch("diagnose", ["99"], is_admin=False, root=root)
+            self.assertFalse(r.ok)
+            self.assertIn("Error", r.text)
+
+
+class TestReconcile(unittest.TestCase):
+    def test_reconcile_dry_run_does_not_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            _complete_phase2(root / "only")
+            r = tc.dispatch("reconcile", [], is_admin=True, root=root)
+            self.assertTrue(r.ok)
+            self.assertIn("DRY-RUN", r.text)
+            self.assertEqual(
+                tc.control.status(root / "only").state, "execute"  # unchanged
+            )
+
+    def test_reconcile_apply_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            _complete_phase2(root / "only")
+            r = tc.dispatch("reconcile", ["apply"], is_admin=True, root=root)
+            self.assertTrue(r.ok)
+            self.assertIn("RECONCILED", r.text)
+            self.assertEqual(tc.control.status(root / "only").state, "review")
 
 
 class TestRun(unittest.TestCase):
