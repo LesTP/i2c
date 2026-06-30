@@ -50,7 +50,7 @@ EMDASH = "—"  # U+2014
 PLACEHOLDER_EMPTY = "<!-- empty -->"
 
 ACTIONS = ("plan", "execute", "review", "close", "diagnose", "reconcile")
-# Out-of-band recovery actions (DESIGN_recovery_v1.md): dispatched by
+# Out-of-band recovery actions (archive/DESIGN_recovery_v1.md): dispatched by
 # `i2c run --action <a> --target N`, not by the state machine. They share the
 # assembly machinery (ACTIONS / EJECTABLE pick them up) but use a failure-context
 # Region-3 recipe and emit no Next State (they don't drive linear progression).

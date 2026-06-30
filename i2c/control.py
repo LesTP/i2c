@@ -764,7 +764,7 @@ def logs_transcript(root: Path | None = None, *, iter: int) -> IterationLog:
 
 
 # ---------------------------------------------------------------------------
-# Recovery: deterministic-first diagnosis (DESIGN_recovery_v1.md §A)
+# Recovery: deterministic-first diagnosis (archive/DESIGN_recovery_v1.md §A)
 # ---------------------------------------------------------------------------
 
 
@@ -886,7 +886,7 @@ def _apply_proposal(root: Path, action: Any) -> None:
 
 
 def reconcile(root: Path | None = None, *, apply: bool = False) -> ReconcileReport:
-    """Reconcile deterministic workflow drift (DESIGN_recovery_v1.md §C).
+    """Reconcile deterministic workflow drift (archive/DESIGN_recovery_v1.md §C).
 
     Runs the drift audit and partitions findings: reconcilable ones carry a
     deterministic proposal; judgment-class ones are surfaced, never applied.

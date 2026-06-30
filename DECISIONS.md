@@ -89,6 +89,19 @@ for the framework). Implementation commits reference the decision IDs.
 | D-pkg-14 | `control` is the single projection/command layer; assembler operator `--section` modes deprecated | Active (Phase 3a shipped 2026-06-25 — operator sections removed) |
 | D-pkg-15 | Worker-prompt assembly stays isolated; de-dup must not alter prompt bytes | Active |
 
+### Recovery — `archive/DESIGN_recovery_v1.md` (D-recovery-1..6)
+
+> Reconcile-first recovery v1 (shipped 2026-06-29).
+
+| ID | Decision (short) | Status |
+|----|------------------|--------|
+| D-recovery-1 | Recovery owns **workflow-state drift only**; code/spec/env are orthogonal (REVIEW regime) | Active |
+| D-recovery-2 | `diagnose` is the single deterministic-first entry point: drift audit runs first, then classify | Active |
+| D-recovery-3 | Drift audit is deterministic, reusing `invariants._check_close` + `state_machine` + `control.load_state`; extends detect-and-halt into detect-and-reconcile | Active |
+| D-recovery-4 | `reconcile` is human-gated (dry-run default) and mutates only via the `state.py` path; never marks a code-blocked step complete | Active |
+| D-recovery-5 | Recovery actions dispatch out-of-band (`i2c run --action … --target N`), bypassing the state machine and emitting no Next State | Active |
+| D-recovery-6 | Full `fix` code-repair agent deferred | Roadmap (see `FUTURE_recovery.md`) |
+
 ---
 
 ## Component-local decisions (kept with their contract)

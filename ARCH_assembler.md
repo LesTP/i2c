@@ -73,7 +73,7 @@ passthrough); the runner invokes `assemble_context.py` directly.
 | `--emit` | optional with `--action` | `full`, `system`, `user` | `full` |
 
 `diagnose` / `reconcile` are the out-of-band **recovery** actions
-(DESIGN_recovery_v1.md): they render a `## Failure Context` Region-3 section
+(archive/DESIGN_recovery_v1.md): they render a `## Failure Context` Region-3 section
 (the deterministic drift audit for `--target`, via a lazy `control.diagnose`
 call — the one place assembly invokes the read-only `git` drift audit) and emit
 no Next State. `--target` selects which iteration's failure context to render.

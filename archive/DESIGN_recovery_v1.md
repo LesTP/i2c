@@ -1,15 +1,18 @@
 # DESIGN — Recovery v1 (reconcile-first)
 
-> **Status: built (v1).** Graduated from
-> [`FUTURE_recovery.md`](FUTURE_recovery.md) (concept + the 2026-06-29 empirical
-> sweep). This document is the design *as implemented*. The full `fix`
-> code-repair agent remains FUTURE — see §8.
+> **Status: built (v1), archived.** This is the recovery v1 design *as
+> implemented* (graduated from [`FUTURE_recovery.md`](../FUTURE_recovery.md)).
+> The Phase-0 empirical sweep that grounds it is in the Appendix below. The
+> current "what" lives in [`../README.md`](../README.md) (Recovery section) +
+> [`../DECISIONS.md`](../DECISIONS.md) (D-recovery-*); the deferred `fix`
+> code-repair agent (§8) is tracked in
+> [`../FUTURE_recovery.md`](../FUTURE_recovery.md).
 
 ## 1. Problem & scope
 
 i2c needs a **recovery** capability for failed/stuck iterations. The empirical
-escalation + loop-log sweep (captured in `FUTURE_recovery.md` §"Phase 0
-findings") established the shape of the problem:
+escalation + loop-log sweep (full detail in the Appendix below) established the
+shape of the problem:
 
 - **~7–8% of loop iterations exit non-clean** across diplomat (e2e),
   clankercourts and toolkit (i2c) — real and recurring, in i2c as well as e2e.
@@ -61,10 +64,12 @@ exists) or judgment-class (surfaced, never auto-applied).
 | `step_complete_dirty_tree` | [D] | no | judgment (real work vs instrumentation) |
 
 **False-positive guards (mandatory, from the logs).** The git/disk audit
-normalizes line endings (`--ignore-cr-at-eol`) and ignores whitespace-only
-diffs (`--ignore-all-space`) so CRLF-only churn on NTFS doesn't cry wolf
-(diplomat #30/#31), and tolerates a missing git binary / non-repo dir by
-returning no findings. A reconcile that cries wolf will be ignored.
+normalizes line endings (`--ignore-cr-at-eol`) and ignores trailing-whitespace
+diffs (`--ignore-space-at-eol`) so CRLF-only / EOL-whitespace churn on NTFS
+doesn't cry wolf (diplomat #30/#31) — but it does **not** ignore all whitespace,
+since leading indentation is semantic in Python (a real re-indentation must
+still register as dirty). It also tolerates a missing git binary / non-repo dir
+by returning no findings. A reconcile that cries wolf will be ignored.
 
 ## 4. `diagnose` — deterministic-first entry point
 
@@ -146,3 +151,77 @@ and non-repo false-positive guards), `tests/test_control.py`
 `tests/test_telegram_core.py` (the `/diagnose` read-only + `/reconcile`
 dry-run/apply bot commands and admin gating), and
 `tests/test_prompt_golden.py` (recovery prompt byte-stability).
+
+## Appendix: Phase 0 — empirical sweep (2026-06-29)
+
+The evidentiary basis for the reconcile-first scope, mined before the design.
+Mined the failure history of **diplomat** (e2e, ~49 phases + 21 self-play runs →
+33 incidents), **clankercourts** (i2c, 124 devlog entries), and **toolkit** (i2c,
+phases 5–6). Each incident bucketed reconcile / code / spec / env, and judged for
+i2c-relevance (prevent / detectable / orthogonal).
+
+**Distribution (diplomat, the volume source):** code 16 · env 7 · reconcile 6 ·
+spec 3. **clankercourts:** 1 escalation (contract↔code drift, judgment-class),
+~0 classic reconcile drift in the committed record (i2c discipline prevented it),
+plus code/non-determinism caught at REVIEW. **toolkit:** the canonical reconcile
+case — step 5.3 committed (`5b1fb2b`) but left `pending` because `i2c state
+complete` hit a PATH bug; fixed by **reconciliation, not code**.
+
+**Conclusions:**
+1. **Reconcile is the only class a recovery feature can actually own.** ~26 of
+   diplomat's 33 incidents (all code + env + spec) are **orthogonal** — real
+   bugs / platform limits / design ambiguity that no state format prevents or
+   detects; caught by REVIEW + human judgment, not recovery. Recovery ≠ "fix
+   failures broadly"; recovery = **workflow-state drift**.
+2. **The reconcile cases are real, recurring, deterministically tractable.**
+   Dominant cause: the autonomous loop (esp. the **codex** backend) dies/cuts off
+   **mid-iteration before bookkeeping** → commit-without-checkbox, uncommitted
+   work, `steps_remaining` drift (diplomat #2/#3, toolkit 5.3). A structured
+   `.state`-vs-git/disk audit catches these mechanically. **This is the v1.**
+3. **i2c already prevents one e2e drift class** (diplomat #1: the bash
+   checkbox-parsing state machine stalling a transition) — so i2c *reduces* but
+   doesn't eliminate reconcile need (loop-death is orthogonal to state format).
+4. **diagnose-first confirmed:** reconcile cases were only identifiable by
+   inspecting state-vs-reality — i.e. a diagnosis. The deterministic drift-audit
+   *is* the diagnosis for the reconcile class.
+
+**Hard design caveats (from the logs):**
+- **False positives:** CRLF-only diffs on NTFS + `python`/`i2c` PATH differences
+  (diplomat #30/#31) will make a naive git-vs-disk audit cry wolf. Reconcile
+  must normalize line-endings / ignore cosmetic-only diffs or operators won't
+  trust it.
+- **Multi-source context:** the devlog has a **post-success bias** (entries are
+  written after a step succeeds) — a failure-context assembler must read
+  `.state` + git/disk + the `phases.json` gate + gotchas + loop logs, not the
+  devlog alone.
+- **Human-gated:** "real fix vs temp instrumentation" in a dirty tree
+  (diplomat #4) is a judgment call — reconcile *surfaces* drift, never
+  auto-commits.
+
+**Loop-log sweep.** Parsed the per-iteration `logs/loop/summary.log` of all three
+projects (one structured line per iteration: signal/exit/backend/action/reason).
+Non-clean exits: **diplomat 17/220 (8%)**, **clankercourts 7/97 (7%)**,
+**toolkit 1/44 (2%)** — plus diplomat had 9 `ERROR`-signal iterations (codex
+turn-health circuit-breaker forced-exits). This **contradicts the devlog's
+near-zero reading** and confirms its post-success bias. Findings that matter:
+- **The #1 i2c failure trigger is an ambiguous/malformed exit signal** — the
+  worker (esp. **codex**) finished without emitting a parseable 2-line exit
+  signal (clankercourts: 5 of 7 non-clean exits). The loop then can't tell what
+  state the work is in → the operator must reconcile. The most common real i2c
+  case.
+- **i2c ALREADY has a deterministic state-drift detector.** clankercourts hit a
+  post-CLOSE invariant failure (exit 2) — i2c runs post-action invariant checks
+  and halts on violation. Reconcile is **not greenfield**: it extends existing
+  detect-and-halt into detect-and-**reconcile**.
+- **toolkit's one non-clean exit is the canonical 5.3 case at loop level:**
+  `state CLI unavailable (i2c not found), so .state/ step completion could not be
+  recorded` (env cause → reconcile remedy).
+- **diplomat's codex turn-health forced-exits (7)** are reconcile-adjacent: work
+  completed + committed but the iteration was cut at the turn guard, leaving
+  bookkeeping uncertain.
+
+Net: the reconcile/recovery trigger runs ~**7–8%** of iterations in *both* e2e
+and i2c — real and recurring, just hidden from the success-biased devlog. This
+grounded the **narrow reconcile-first v1** built above, with the full `fix` /
+code-diagnosis agent deferred (code bugs are the majority of failures but are
+orthogonal to recovery).

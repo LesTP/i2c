@@ -46,10 +46,10 @@ in-place `.state/` upgrades (see
 
 On top of the state model sits a **single structured command layer**
 (`i2c.control`) with an operator CLI — `i2c status` / `portfolio` /
-`phase-summary` / `decisions` / `devlog` / `escalation` / `logs` (all with a
-`--json` mode) plus the `clear-boundary` action — and an optional **Telegram
-surface** (see [Chat surface](#chat-surface-telegram)). Both are thin,
-deterministic adapters over the same command API.
+`phase-summary` / `decisions` / `devlog` / `escalation` / `logs` / `diagnose`
+(all with a `--json` mode) plus the `clear-boundary` and `reconcile` actions —
+and an optional **Telegram surface** (see [Chat surface](#chat-surface-telegram)).
+Both are thin, deterministic adapters over the same command API.
 
 Active development: pluggable backends beyond Claude and Codex (e.g. Gemini /
 OpenRouter), a Discord surface and an optional conversational agent layer, and a
@@ -241,6 +241,36 @@ version, so existing unversioned projects keep working; drift is surfaced only b
 `--dry-run` previews the change first. See [`CHANGELOG.md`](CHANGELOG.md) for the
 per-version migration notes.
 
+### Recovery (diagnose / reconcile)
+
+When an iteration dies or is cut off mid-step, `.state/` can drift out of sync
+with reality — a commit landed but its step stayed `pending`, all steps
+completed but `project.state` never advanced, a phase was marked complete but
+the close gate was never set. i2c detects and repairs this **workflow drift**
+(the one failure class recovery owns; code/spec/env bugs are left to REVIEW +
+human judgment).
+
+- **Drift audit** (`i2c/recovery.py`) — a deterministic check of `.state/`
+  against itself and against git/disk (commit-without-step, state-not-advanced,
+  dirty tree, …), with CRLF/whitespace false-positive guards and a clean no-op
+  off a git repo.
+- **`i2c diagnose [--target N]`** — read-only. Runs the audit first and
+  classifies the failure (`workflow-drift` / `unknown` / `none`), flagging the
+  #1 trigger: a missing/malformed 2-line exit signal.
+- **`i2c reconcile [--apply]`** — dry-run by default; `--apply` is the human
+  gate. Applies the deterministic fixes **only through `i2c state`** (never
+  writing `.state/` directly) and surfaces judgment calls untouched; it never
+  marks a code-blocked step complete.
+- **Out-of-band dispatch** — `i2c run --action diagnose|reconcile --target N`
+  runs the action as a worker against a specific iteration, bypassing the state
+  machine. The runner also prints a non-fatal drift advisory after each
+  lifecycle action.
+
+This extends i2c's detect-and-halt post-action invariants into
+*detect-and-reconcile*. Full design:
+[`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md). The deferred
+`fix` code-repair agent is tracked in [`FUTURE_recovery.md`](FUTURE_recovery.md).
+
 ---
 
 ## Two execution modes
@@ -332,13 +362,15 @@ Commands:
 
 - **Read (open):** `/audit [proj] [facet]` — the read hub; `facet` is
   `(none)` → summary, or `phase N` / `decisions [N]` / `devlog [N]` /
-  `escalation` / `logs [N]` / `logs iter N`. Plus `/portfolio` (cross-project),
+  `escalation` / `logs [N]` / `logs iter N`. Plus `/diagnose [proj] [N]`
+  (recovery drift audit + classification), `/portfolio` (cross-project),
   `/setdir <proj>` (set the current project), `/commands`.
 - **Admin (gated to the `admins` in the `[telegram]` table of `i2c.toml`):**
   `/run [proj] [N] [backend]` — N iterations (default 1) on a single backend;
   `/batch [proj]` — run a whole phase to a halt, choosing the backend
-  per-action from `[run.backends]`; `/endphase [proj] [last]` — clear the
-  `audit_boundary` (advance, or `last` to terminate).
+  per-action from `[run.backends]`; `/reconcile [proj] [apply]` — apply
+  workflow-drift fixes (dry-run unless `apply`); `/endphase [proj] [last]` —
+  clear the `audit_boundary` (advance, or `last` to terminate).
 
 ---
 

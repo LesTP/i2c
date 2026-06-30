@@ -596,7 +596,7 @@ precisely so we don't lay another duplicated brick.
   (`i2c diagnose`, read-only, runs the audit first and classifies), human-gated
   `reconcile` (`i2c reconcile [--apply]`, mutations via `state.py`), and
   out-of-band dispatch (`i2c run --action diagnose|reconcile --target N`). See
-  [`DESIGN_recovery_v1.md`](DESIGN_recovery_v1.md). **Deferred:** the full `fix`
+  [`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md). **Deferred:** the full `fix`
   code-repair agent (code bugs are the majority of failures but orthogonal to
   recovery — handled by the REVIEW regime).
 

@@ -26,7 +26,7 @@ The Phase-3 control-surface arc: a single structured command/projection layer
   pair as `/diagnose [N]` (read-only) and `/reconcile [apply]` (admin-gated,
   dry-run unless `apply`). Extends i2c's detect-and-halt
   post-action invariants into detect-and-reconcile. See
-  `DESIGN_recovery_v1.md`. The full `fix` code-repair agent is deferred.
+  `archive/DESIGN_recovery_v1.md`. The full `fix` code-repair agent is deferred.
 - **Per-action backend selection.** An optional `[run.backends]` table in
   `i2c.toml` maps each worker action (plan/execute/review/close) to a backend,
   resolved once the dispatched action is known. Lets a run spread load across

@@ -501,7 +501,7 @@ def run_iteration(
     per-action ``backend_map`` (from ``[run.backends]``) is consulted by the
     dispatched action, falling back to ``default_backend`` (``[run].backend``).
 
-    Out-of-band recovery dispatch (DESIGN_recovery_v1.md §D): when
+    Out-of-band recovery dispatch (archive/DESIGN_recovery_v1.md §D): when
     ``action_override`` is set (``diagnose`` / ``reconcile``), the state machine
     is bypassed entirely — the named action is dispatched directly against
     ``target`` (the iteration whose failure context the assembler renders).
@@ -653,7 +653,7 @@ def run_iteration(
             sys.stderr.write(f"ERROR: {invariant_reason}\n")
             return 2
 
-    # 8b. Drift advisory (detect-and-surface; DESIGN_recovery_v1.md §C). After a
+    # 8b. Drift advisory (detect-and-surface; archive/DESIGN_recovery_v1.md §C). After a
     #     lifecycle action, run the cheap pure-.state drift audit alongside the
     #     CLOSE invariants and surface any *reconcilable* drift so the operator
     #     can `i2c diagnose` / `i2c reconcile`. Non-fatal: this never changes the

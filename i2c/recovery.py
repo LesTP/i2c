@@ -1,10 +1,10 @@
-"""i2c recovery — deterministic drift audit + reconcile proposals (DESIGN_recovery_v1.md).
+"""i2c recovery — deterministic drift audit + reconcile proposals (archive/DESIGN_recovery_v1.md).
 
 Recovery is the one failure class i2c can *own*: **workflow-state drift** — the
 ``.state/`` bookkeeping disagreeing with reality (the loop died mid-iteration
 before finishing its writes; a commit landed but its step stayed ``pending``;
 all steps completed but ``project.state`` never advanced). The empirical sweep
-(``FUTURE_recovery.md`` §"Phase 0 findings") established this is real and
+(``archive/DESIGN_recovery_v1.md`` Appendix "Phase 0") established this is real and
 recurring (~7-8% of iterations across e2e and i2c), while code / spec / env
 failures are orthogonal — handled by REVIEW + human judgment, not by any state
 format.
