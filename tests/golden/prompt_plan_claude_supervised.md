@@ -327,6 +327,15 @@ Break the phase into the smallest testable steps. Each step:
 - Has at least one test specification (you don't have to write the tests
   yet, but you should know what they verify).
 
+**Plan for interactions, not just units.** If the phase introduces a *set* of
+rules, detectors, handlers, or cases — especially any that feed a
+state-mutating action — make their **disjointness or precedence** explicit in
+the step notes, and add at least one step/test for the **cross-product** (what
+happens when several apply at once), not only one test per case. When a step
+needs a guard ("ignore cosmetic input", "skip empty rows"), specify the
+**narrowest** rule that covers the named risk — a broad catch-all trades one
+failure class for another.
+
 Write one record per step, in order:
 
 ```bash
