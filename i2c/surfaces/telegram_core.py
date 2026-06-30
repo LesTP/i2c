@@ -51,15 +51,15 @@ _BACKENDS = ("claude", "codex")
 # on startup via set_my_commands (see surfaces/telegram._set_command_menu), so it
 # stays in sync with the code. Names must be Telegram-legal (lowercase, <=32).
 COMMAND_MENU: list[tuple[str, str]] = [
-    ("audit", "Audit a project: summary | phase N | decisions | devlog | escalation | logs"),
-    ("diagnose", "Diagnose a failed iteration: drift audit + classification (read-only)"),
+    ("commands", "Show all commands"),
     ("portfolio", "Cross-project view — which project needs attention"),
+    ("setdir", "Show or set the current project"),
+    ("audit", "Audit a project: summary | phase N | decisions | devlog | escalation | logs"),
     ("run", "Admin: run N iterations on one backend (default 1)"),
     ("batch", "Admin: run a full phase to a halt (backend per action)"),
+    ("diagnose", "Diagnose a failed iteration: drift audit + classification (read-only)"),
     ("reconcile", "Admin: apply workflow-drift fixes (dry-run; 'apply' to write)"),
     ("endphase", "Admin: clear the audit_boundary (advance; 'last' to terminate)"),
-    ("setdir", "Show or set the current project"),
-    ("commands", "Show all commands"),
 ]
 
 _HELP = (
