@@ -305,15 +305,14 @@ where snapshot-don't-port de-risks done projects.
 5. Next: run it against **diplomat** (the 48-phase stress test for the phase/
    collision parser), and decide **Q-mig-7** (alphanumeric phases) before
    **phosphene**.
-6. Take toolkit fully onto the package via the staged cut-over (§5.3): Stage 1
-   cut-over → spin up the Telegram bot → run the queued phase(s) → finalize.
+6. *(done)* toolkit taken fully onto the package via the staged cut-over (§5.3) — Stage 1 cut-over → Telegram bot → queued phase(s) → finalize. toolkit now runs on installed i2c, driven by the i2c bot.
 
-## 9. Decisions (proposed — not yet ratified)
+## 9. Decisions (ratified)
 
 | # | Decision | Status |
 |---|---|---|
-| D-mig-2 | `i2c import` requires an e2e prose-state project (a `DEVPLAN.md`); it refuses anything else (nothing to import) and won't clobber an existing `.state/`. Single path, no variant matrix. | proposed |
-| D-mig-3 | Done-project history is snapshot-not-ported by default (`--port-history` to opt in). | proposed |
-| D-mig-5 | Narrative docs (PROJECT/ARCHITECTURE/ARCH_*/API) are pass-through; the converter never rewrites them. | proposed |
-| D-mig-6 | Migration is staged: serialize (`i2c import`) → cut-over (manual, §5.3) → trial → finalize. The runtime switch (adapters + neutralize shadowing markdown + i2c.toml + install) precedes any i2c trial; a project never runs both loops at once. | proposed |
-| D-mig-7 | Migration tooling is fleet-internal and one-time: excluded from the public i2c surface at release (public adoption is greenfield-only); the cut-over stays manual rather than a tool feature. | proposed |
+| D-mig-2 | `i2c import` requires an e2e prose-state project (a `DEVPLAN.md`); it refuses anything else (nothing to import) and won't clobber an existing `.state/`. Single path, no variant matrix. | ratified |
+| D-mig-3 | Done-project history is snapshot-not-ported by default (`--port-history` to opt in). | ratified |
+| D-mig-5 | Narrative docs (PROJECT/ARCHITECTURE/ARCH_*/API) are pass-through; the converter never rewrites them. | ratified |
+| D-mig-6 | Migration is staged: serialize (`i2c import`) → cut-over (manual, §5.3) → trial → finalize. The runtime switch (adapters + neutralize shadowing markdown + i2c.toml + install) precedes any i2c trial; a project never runs both loops at once. | ratified |
+| D-mig-7 | Migration tooling is fleet-internal and one-time: excluded from the public i2c surface at release (public adoption is greenfield-only); the cut-over stays manual rather than a tool feature. | ratified |
