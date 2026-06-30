@@ -63,6 +63,7 @@ packages = ["i2c", "i2c.surfaces"]
 # adapters/ + templates/ are the `i2c init` scaffold sources (§5.4).
 i2c = [
     "data/schemas/*.json",
+    "data/pricing.json",
     "data/WORKER_SPEC.md",
     "data/instructions/*.md",
     "data/adapters/*.md",

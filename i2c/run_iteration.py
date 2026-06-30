@@ -46,6 +46,7 @@ from typing import Any
 
 # Sibling package modules.
 from i2c import assemble_context as ac
+from i2c import config as cfg
 from i2c import invariants
 from i2c import telemetry as tel
 from i2c import validate as v
@@ -479,6 +480,28 @@ def write_summary_line(
     return line
 
 
+def _run_project_tests(root: Path, cmd: str) -> bool | None:
+    """Run the opt-in tests-oracle command in ``root`` (telemetry only).
+
+    Returns True/False on pass/fail (exit 0 = pass), or None if the command
+    couldn't be run at all. Best-effort: never raises, never affects the
+    iteration's control flow. Runs *after* the worker's wall-clock is captured
+    so the oracle's runtime isn't attributed to the worker.
+    """
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(root),
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+    except Exception:  # noqa: BLE001 - oracle must never break a run
+        return None
+    return proc.returncode == 0
+
+
 # ---------------------------------------------------------------------------
 # Top-level runner
 # ---------------------------------------------------------------------------
@@ -651,6 +674,20 @@ def run_iteration(
     # model is config-driven and not known to the runner (left null in v1).
     model_used = model if backend == "claude" else None
 
+    # Telemetry config: pricing table (bundled + [telemetry.pricing] overrides)
+    # for cost/tier, and the opt-in tests oracle. All best-effort; a malformed
+    # i2c.toml degrades telemetry rather than breaking the run.
+    try:
+        tele_cfg = cfg.load_telemetry_config(root)
+    except cfg.ConfigError:
+        tele_cfg = cfg.TelemetryConfig()
+    try:
+        pricing = tel.load_pricing(overrides=tele_cfg.pricing)
+    except Exception:  # noqa: BLE001 - pricing is best-effort
+        pricing = None
+    tests_cmd = tele_cfg.test_cmd
+    tests_pass = _run_project_tests(root, tests_cmd) if tests_cmd else None
+
     def _emit_telemetry(final_exit: int) -> None:
         try:
             tel.record_iteration(
@@ -668,6 +705,9 @@ def run_iteration(
                 prompt_text=prompt_for_hash,
                 prev_devlog_count=prev_devlog,
                 drift_flag=drift_flag,
+                pricing=pricing,
+                tests_pass=tests_pass,
+                tests_cmd=tests_cmd,
             )
         except Exception as e:  # noqa: BLE001 - telemetry must never break a run
             sys.stderr.write(f"NOTE: telemetry skipped ({e}).\n")

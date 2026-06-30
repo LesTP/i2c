@@ -1,7 +1,11 @@
 # DESIGN — Telemetry (`.state/telemetry.jsonl`) v1
 
-> **Status:** Draft / proposed (spec only; no code). Realizes the §8 schema of
-> `DESIGN_benchmark_v1.md`. Decisions tagged D-tel-*.
+> **Status:** Implemented (increments 1 + 2). The sidecar, schema, runner
+> capture, scaffolding, cost/tier derivation (bundled pricing + `[telemetry.pricing]`
+> overrides), and the opt-in `tests_pass` oracle are shipped and tested. Still
+> deferred (schema already nullable, no schema change needed): structured
+> `review_findings`, exact cache-aware cost, `tool_calls`. Realizes the §8 schema
+> of `DESIGN_benchmark_v1.md`. Decisions tagged D-tel-*.
 >
 > **One-line goal:** persist a schema-validated, git-tracked, per-action
 > *execution envelope* (model, cost, tokens, timing, git deltas, oracle signals)

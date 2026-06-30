@@ -18,3 +18,17 @@
 # execute = "codex"
 # review = "claude"
 # close = "claude"
+
+# Optional: telemetry sidecar (.state/telemetry.jsonl) enrichment.
+# test_cmd is the opt-in tests oracle — a shell command run in the project root
+# after each worker invocation; its exit code is recorded as tests_pass. Leave
+# it unset to keep the oracle off. [telemetry.pricing] adds or overrides per-
+# model rates (USD per 1M tokens) layered over the bundled pricing table, used
+# to derive cost_usd / tier.
+# [telemetry]
+# test_cmd = "python -m pytest -q"
+# [telemetry.pricing.my-model]
+# tier = "T1"
+# in = 3.00
+# cached = 0.30
+# out = 15.00

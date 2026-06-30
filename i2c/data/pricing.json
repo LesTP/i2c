@@ -1,0 +1,9 @@
+{
+  "version": "2026-06",
+  "note": "USD per 1,000,000 tokens. Approximate and fleet-local; rates go stale (the version stamp distinguishes them via cost_source). In v1, cache-creation tokens are folded into the input rate rather than billed separately (see DESIGN_telemetry_v1.md \u00a75). Projects override or extend per-model rates via [telemetry.pricing] in i2c.toml.",
+  "models": {
+    "haiku":  { "tier": "T0", "in": 0.80,  "cached": 0.08, "out": 4.00 },
+    "sonnet": { "tier": "T1", "in": 3.00,  "cached": 0.30, "out": 15.00 },
+    "opus":   { "tier": "T2", "in": 15.00, "cached": 1.50, "out": 75.00 }
+  }
+}

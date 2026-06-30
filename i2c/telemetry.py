@@ -26,6 +26,7 @@ import datetime
 import hashlib
 import json
 import subprocess
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ from i2c import state
 from i2c import validate as v
 
 TELEMETRY_FILENAME = "telemetry.jsonl"
+PRICING_FILENAME = "pricing.json"
 SCHEMA_VERSION = 1
 
 
@@ -165,6 +167,71 @@ def devlog_tail_since(
 
 
 # ---------------------------------------------------------------------------
+# Pricing / cost (best-effort; deferred-but-now-implemented per increment 2)
+# ---------------------------------------------------------------------------
+
+
+def load_pricing(*, overrides: dict | None = None) -> dict:
+    """Load the bundled pricing table, layering ``overrides`` on top.
+
+    The bundled ``i2c/data/pricing.json`` maps model name → ``{tier, in, cached,
+    out}`` (USD per 1M tokens). ``overrides`` (from ``[telemetry.pricing]``)
+    merges into ``models`` so a project can add full model names or other
+    providers without editing the package. Returns ``{"version": ..., "models":
+    {...}}``; degrades to an empty table if the bundled file is missing/unreadable.
+    """
+    try:
+        path = Path(resources.files("i2c") / "data" / PRICING_FILENAME)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {"version": None, "models": {}}
+    except (OSError, ValueError):
+        data = {"version": None, "models": {}}
+    models = data.get("models")
+    if not isinstance(models, dict):
+        models = {}
+    if overrides:
+        models = {**models, **overrides}
+    return {"version": data.get("version"), "models": models}
+
+
+def cost_and_tier(
+    usage: dict[str, Any] | None, model: str | None, pricing: dict
+) -> tuple[float | None, str | None, str | None]:
+    """Derive (cost_usd, cost_source, tier) from usage + the pricing table.
+
+    ``tier`` is returned whenever the model is known, even if cost can't be
+    computed (no usage, or missing rates). ``cost_source`` is the pricing
+    version when a cost is produced, ``"unpriced"`` when usage exists for an
+    unknown/under-specified model, else ``None``. Cost is approximate:
+    cache-creation tokens are billed at the input rate (see DESIGN_telemetry_v1
+    §5).
+    """
+    models = pricing.get("models", {}) if isinstance(pricing, dict) else {}
+    entry = models.get(model) if model else None
+    tier = entry.get("tier") if isinstance(entry, dict) else None
+
+    if not isinstance(entry, dict) or not usage:
+        cost_source = "unpriced" if (usage and model and not entry) else None
+        return (None, cost_source, tier)
+
+    price_in = entry.get("in")
+    price_out = entry.get("out")
+    price_cached = entry.get("cached", 0)
+    if price_in is None or price_out is None:
+        return (None, "unpriced", tier)
+
+    gross_in = int(usage.get("input", 0) or 0)
+    cached = int(usage.get("cached", 0) or 0)
+    out = int(usage.get("output", 0) or 0)
+    fresh = max(gross_in - cached, 0)
+    cost = (fresh * price_in + cached * price_cached + out * price_out) / 1_000_000
+    version = pricing.get("version")
+    cost_source = f"pricing:{version}" if version else "pricing"
+    return (round(cost, 6), cost_source, tier)
+
+
+# ---------------------------------------------------------------------------
 # Row construction (pure) + write
 # ---------------------------------------------------------------------------
 
@@ -255,6 +322,9 @@ def record_iteration(
     prompt_text: str | None,
     prev_devlog_count: int,
     drift_flag: bool | None,
+    pricing: dict | None = None,
+    tests_pass: bool | None = None,
+    tests_cmd: str | None = None,
     mode: str = "autonomous",
 ) -> dict[str, Any]:
     """Derive the remaining fields, build the row, validate, and append it.
@@ -277,6 +347,10 @@ def record_iteration(
         tokens_out = int(usage.get("output", 0) or 0)
         tokens_cached = int(usage.get("cached", 0) or 0)
 
+    cost_usd = cost_source = tier = None
+    if pricing is not None:
+        cost_usd, cost_source, tier = cost_and_tier(usage, model, pricing)
+
     row = build_row(
         iteration=iteration,
         phase=phase,
@@ -285,12 +359,15 @@ def record_iteration(
         timestamp=_utcnow(),
         mode=mode,
         model=model,
+        tier=tier,
         step=step,
         outcome=outcome,
         exit_code=exit_code,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
         tokens_cached=tokens_cached,
+        cost_usd=cost_usd,
+        cost_source=cost_source,
         wall_clock_s=round(wall_clock_s, 3) if wall_clock_s is not None else None,
         start_commit=start_commit,
         end_commit=end_commit,
@@ -300,6 +377,8 @@ def record_iteration(
         loc_removed=loc_removed,
         regime=regime,
         leaf=leaf,
+        tests_pass=tests_pass,
+        tests_cmd=tests_cmd,
         drift_flag=drift_flag,
     )
 

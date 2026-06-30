@@ -15,6 +15,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from i2c import run_iteration as ri
+from i2c import config as cfg
 from i2c import state
 from i2c import telemetry as tel
 from i2c import validate as v
@@ -235,6 +236,12 @@ class TestRunnerWritesTelemetry(unittest.TestCase):
             # Prompt hash present.
             self.assertTrue(row["prompt_hash"].startswith("sha256:"))
             self.assertIsNotNone(row["wall_clock_s"])
+            # Increment 2: sonnet is priced in the bundled table.
+            self.assertEqual(row["tier"], "T1")
+            self.assertAlmostEqual(row["cost_usd"], 0.00189, places=6)
+            self.assertTrue(row["cost_source"].startswith("pricing:"))
+            # Oracle off by default → tests_pass null.
+            self.assertIsNone(row["tests_pass"])
 
     def test_codex_model_left_null(self):
         with TempProject() as p:
@@ -281,6 +288,114 @@ class TestRunnerWritesTelemetry(unittest.TestCase):
             self.assertEqual(rc, 0, msg=err)
             # EXIT short-circuits before any worker invocation → no telemetry.
             self.assertEqual(self._telemetry_rows(p.root), [])
+
+
+# ---------------------------------------------------------------------------
+# Increment 2: pricing / cost / tier
+# ---------------------------------------------------------------------------
+
+
+class TestPricing(unittest.TestCase):
+    PRICING = {
+        "version": "x",
+        "models": {"sonnet": {"tier": "T1", "in": 3.0, "cached": 0.3, "out": 15.0}},
+    }
+
+    def test_cost_and_tier_priced(self):
+        usage = {"input": 1100, "output": 50, "cached": 800}
+        cost, source, tier = tel.cost_and_tier(usage, "sonnet", self.PRICING)
+        # fresh = 1100 - 800 = 300; (300*3 + 800*0.3 + 50*15)/1e6 = 0.00189
+        self.assertAlmostEqual(cost, 0.00189, places=6)
+        self.assertEqual(source, "pricing:x")
+        self.assertEqual(tier, "T1")
+
+    def test_unpriced_model_keeps_cost_none(self):
+        usage = {"input": 100, "output": 10, "cached": 0}
+        cost, source, tier = tel.cost_and_tier(usage, "ghost", self.PRICING)
+        self.assertIsNone(cost)
+        self.assertEqual(source, "unpriced")
+        self.assertIsNone(tier)
+
+    def test_no_usage_still_reports_tier(self):
+        cost, source, tier = tel.cost_and_tier(None, "sonnet", self.PRICING)
+        self.assertIsNone(cost)
+        self.assertIsNone(source)
+        self.assertEqual(tier, "T1")
+
+    def test_load_pricing_bundled_and_override(self):
+        p = tel.load_pricing()
+        self.assertIn("sonnet", p["models"])
+        self.assertEqual(p["models"]["sonnet"]["tier"], "T1")
+        p2 = tel.load_pricing(
+            overrides={"mymodel": {"tier": "T9", "in": 1.0, "cached": 0.0, "out": 2.0}}
+        )
+        self.assertIn("mymodel", p2["models"])
+        self.assertIn("sonnet", p2["models"])  # bundled retained
+
+
+# ---------------------------------------------------------------------------
+# Increment 2: [telemetry] config
+# ---------------------------------------------------------------------------
+
+
+class TestTelemetryConfig(unittest.TestCase):
+    def test_loads_test_cmd_and_pricing(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "i2c.toml").write_text(
+                '[telemetry]\n'
+                'test_cmd = "pytest -q"\n'
+                '[telemetry.pricing.foo]\n'
+                'tier = "T9"\nin = 1.0\ncached = 0.0\nout = 2.0\n',
+                encoding="utf-8",
+            )
+            tc = cfg.load_telemetry_config(Path(d))
+            self.assertEqual(tc.test_cmd, "pytest -q")
+            self.assertEqual(tc.pricing["foo"]["tier"], "T9")
+
+    def test_absent_is_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            tc = cfg.load_telemetry_config(Path(d))
+            self.assertIsNone(tc.test_cmd)
+            self.assertEqual(tc.pricing, {})
+
+    def test_bad_test_cmd_type_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "i2c.toml").write_text(
+                "[telemetry]\ntest_cmd = 123\n", encoding="utf-8")
+            with self.assertRaises(cfg.ConfigError):
+                cfg.load_telemetry_config(Path(d))
+
+
+# ---------------------------------------------------------------------------
+# Increment 2: tests oracle (opt-in) wired through the runner
+# ---------------------------------------------------------------------------
+
+
+class TestTestsOracle(unittest.TestCase):
+    def _rows(self, root: Path):
+        path = root / ".state" / "telemetry.jsonl"
+        return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+    def test_oracle_records_pass(self):
+        with TempProject() as p:
+            (p.root / "ok.py").write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+            (p.root / "i2c.toml").write_text(
+                '[telemetry]\ntest_cmd = "python ok.py"\n', encoding="utf-8")
+            rc, _, err = run_iter(invoker=make_fake_invoker(signal_block()))
+            self.assertEqual(rc, 0, msg=err)
+            row = self._rows(p.root)[0]
+            self.assertTrue(row["tests_pass"])
+            self.assertEqual(row["tests_cmd"], "python ok.py")
+
+    def test_oracle_records_fail(self):
+        with TempProject() as p:
+            (p.root / "bad.py").write_text("import sys; sys.exit(1)\n", encoding="utf-8")
+            (p.root / "i2c.toml").write_text(
+                '[telemetry]\ntest_cmd = "python bad.py"\n', encoding="utf-8")
+            rc, _, err = run_iter(invoker=make_fake_invoker(signal_block()))
+            # Worker succeeded; the oracle failing does NOT change the run's exit.
+            self.assertEqual(rc, 0, msg=err)
+            self.assertFalse(self._rows(p.root)[0]["tests_pass"])
 
 
 if __name__ == "__main__":

@@ -55,6 +55,20 @@ class TelegramConfig:
     root: str | None = None
 
 
+@dataclass
+class TelemetryConfig:
+    """Settings for the telemetry sidecar, read from ``[telemetry]``.
+
+    ``test_cmd`` is the opt-in tests oracle: a shell command the runner executes
+    in the project root after each worker invocation to record ``tests_pass``;
+    unset means the oracle is off. ``pricing`` holds optional per-model rate
+    overrides from ``[telemetry.pricing]`` that layer over the bundled pricing
+    table used to derive ``cost_usd`` / ``tier``."""
+
+    test_cmd: str | None = None
+    pricing: dict = field(default_factory=dict)
+
+
 def _find_config(start: Path) -> Path | None:
     """Walk up from ``start`` for ``i2c.toml``. Independent of ``.state`` so
     config discovery doesn't depend on project-root detection."""
@@ -154,3 +168,41 @@ def load_telegram_config(start: Path | None = None) -> TelegramConfig:
         raise ConfigError(f"{path}: [telegram].root must be a string")
 
     return TelegramConfig(admins=tuple(admins_raw), root=root)
+
+
+def load_telemetry_config(start: Path | None = None) -> TelemetryConfig:
+    """Load the ``[telemetry]`` settings from the nearest ``i2c.toml`` (or empty).
+
+    Raises ``ConfigError`` on a parse failure or an invalid value. Callers that
+    must never fail (the runner) catch ``ConfigError`` and fall back to an empty
+    config so a malformed file degrades telemetry rather than breaking a run.
+    """
+    path = _find_config(start or Path.cwd())
+    if path is None:
+        return TelemetryConfig()
+
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError) as e:
+        raise ConfigError(f"{path}: could not parse: {e}") from e
+
+    tele = data.get("telemetry", {})
+    if not isinstance(tele, dict):
+        raise ConfigError(f"{path}: [telemetry] must be a table")
+
+    test_cmd = tele.get("test_cmd")
+    if test_cmd is not None and not isinstance(test_cmd, str):
+        raise ConfigError(f"{path}: [telemetry].test_cmd must be a string")
+
+    pricing_raw = tele.get("pricing", {})
+    if not isinstance(pricing_raw, dict):
+        raise ConfigError(f"{path}: [telemetry.pricing] must be a table")
+    pricing: dict = {}
+    for model, entry in pricing_raw.items():
+        if not isinstance(entry, dict):
+            raise ConfigError(
+                f"{path}: [telemetry.pricing].{model} must be a table of rate fields"
+            )
+        pricing[model] = entry
+
+    return TelemetryConfig(test_cmd=test_cmd, pricing=pricing)
