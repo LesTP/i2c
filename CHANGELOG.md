@@ -8,6 +8,8 @@ This is the public counterpart to `FOLLOWUPS.md` (internal tracking).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-30
+
 The Phase-3 control-surface arc: a single structured command/projection layer
 (`i2c.control`) with an operator CLI and a Telegram surface over it.
 
