@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/telemetry_entry.schema.json",
+  "title": "Telemetry Entry",
+  "description": "One row per autonomous worker invocation in .state/telemetry.jsonl. Runner-authored observational sidecar; NEVER control state (the state machine, invariants, recovery, and migration must not read it). Join to devlog on end_commit == devlog.commit (committing actions) or (phase, action, iteration). Most fields are best-effort: a missing value is null, never a failed write. See DESIGN_telemetry_v1.md.",
+  "type": "object",
+  "required": ["schema_version", "iteration", "phase", "action", "mode", "backend", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "iteration": { "type": "integer", "minimum": 1 },
+    "phase": { "type": "integer", "minimum": 0 },
+    "step": { "type": ["integer", "null"], "minimum": 1 },
+    "action": {
+      "type": "string",
+      "enum": ["plan", "execute", "review", "close", "probe", "integration_check", "diagnose", "reconcile"]
+    },
+    "outcome": {
+      "type": ["string", "null"],
+      "enum": ["complete", "partial", "blocked", "escalate", "failed", null]
+    },
+    "exit_code": { "type": ["integer", "null"], "enum": [0, 2, null] },
+    "mode": { "type": "string", "enum": ["autonomous", "supervised"] },
+    "backend": { "type": "string", "enum": ["claude", "codex"] },
+    "model": { "type": ["string", "null"] },
+    "tier": { "type": ["string", "null"] },
+    "timestamp": { "type": "string", "format": "date-time" },
+
+    "tokens_in": { "type": ["integer", "null"], "minimum": 0 },
+    "tokens_out": { "type": ["integer", "null"], "minimum": 0 },
+    "tokens_cached": { "type": ["integer", "null"], "minimum": 0 },
+    "cost_usd": { "type": ["number", "null"], "minimum": 0 },
+    "cost_source": { "type": ["string", "null"] },
+    "wall_clock_s": { "type": ["number", "null"], "minimum": 0 },
+    "tool_calls": { "type": ["integer", "null"], "minimum": 0 },
+
+    "start_commit": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{4,40}$" },
+    "end_commit": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{4,40}$" },
+    "prompt_hash": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+    "files_touched": { "type": ["integer", "null"], "minimum": 0 },
+    "loc_added": { "type": ["integer", "null"], "minimum": 0 },
+    "loc_removed": { "type": ["integer", "null"], "minimum": 0 },
+
+    "regime": { "type": ["string", "null"], "enum": ["build", "refine", "explore", null] },
+    "leaf": { "type": ["boolean", "null"] },
+
+    "tests_pass": { "type": ["boolean", "null"] },
+    "tests_cmd": { "type": ["string", "null"] },
+    "drift_flag": { "type": ["boolean", "null"] },
+
+    "review_findings": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "must": { "type": "integer", "minimum": 0 },
+        "should": { "type": "integer", "minimum": 0 },
+        "optional": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

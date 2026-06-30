@@ -38,6 +38,11 @@ class TestInit(unittest.TestCase):
             for arr in ("phases.json", "steps.json", "decisions.json"):
                 self.assertEqual(v.validate_state_file(root / ".state" / arr), [])
             v.validate_devlog_jsonl(root / ".state" / "devlog.jsonl")
+            # Telemetry sidecar seeded (empty, schema-valid, git-tracked).
+            telemetry = root / ".state" / "telemetry.jsonl"
+            self.assertTrue(telemetry.is_file(), "telemetry.jsonl missing")
+            self.assertEqual(
+                v.validate_jsonl(telemetry, v.TELEMETRY_ENTRY_SCHEMA), [])
             # Docs + both adapters.
             for f in ("PROJECT.md", "ARCHITECTURE.md", "CLAUDE.md", "CODEX.md"):
                 self.assertTrue((root / f).is_file(), f"{f} missing")

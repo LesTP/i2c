@@ -30,7 +30,16 @@ SCHEMA_BY_FILENAME: dict[str, str] = {
 }
 
 DEVLOG_ENTRY_SCHEMA = "devlog_entry.schema.json"
+TELEMETRY_ENTRY_SCHEMA = "telemetry_entry.schema.json"
 EXIT_SIGNAL_SCHEMA = "exit_signal.schema.json"
+
+# Map of JSONL state filename → per-line schema filename. Each line of the
+# file is one JSON object validated against this schema. Distinct from
+# SCHEMA_BY_FILENAME (whole-file JSON object/array schemas).
+JSONL_SCHEMA_BY_FILENAME: dict[str, str] = {
+    "devlog.jsonl": DEVLOG_ENTRY_SCHEMA,
+    "telemetry.jsonl": TELEMETRY_ENTRY_SCHEMA,
+}
 
 
 def schemas_dir() -> Path:
@@ -104,20 +113,25 @@ def validate_state_file(
     return data
 
 
-def validate_devlog_jsonl(
+def validate_jsonl(
     path: str | Path,
+    schema_name: str,
     *,
     schemas_root: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Validate every line of a devlog.jsonl file. Returns parsed entries."""
+    """Validate every line of a .jsonl file against ``schema_name``.
+
+    Blank lines are skipped. Returns the parsed entries. Raises ValueError on
+    a missing file, a malformed line, or a schema violation.
+    """
     p = Path(path)
-    schema = load_schema(DEVLOG_ENTRY_SCHEMA, schemas_root=schemas_root)
+    schema = load_schema(schema_name, schemas_root=schemas_root)
 
     entries: list[dict[str, Any]] = []
     try:
         text = p.read_text(encoding="utf-8")
     except FileNotFoundError as error:
-        raise ValueError(f"Devlog not found: {p}") from error
+        raise ValueError(f"JSONL file not found: {p}") from error
 
     for lineno, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
@@ -129,6 +143,15 @@ def validate_devlog_jsonl(
         validate_json_schema(entry, schema, label=f"{p}:{lineno}")
         entries.append(entry)
     return entries
+
+
+def validate_devlog_jsonl(
+    path: str | Path,
+    *,
+    schemas_root: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Validate every line of a devlog.jsonl file. Returns parsed entries."""
+    return validate_jsonl(path, DEVLOG_ENTRY_SCHEMA, schemas_root=schemas_root)
 
 
 def _format_validation_error(error: ValidationError) -> str:

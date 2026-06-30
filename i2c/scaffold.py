@@ -132,12 +132,16 @@ def init_project(
     devlog = state_dir / "devlog.jsonl"
     devlog.write_text("", encoding="utf-8")
     report.append(f"created {_rel(root, devlog)}")
+    telemetry = state_dir / "telemetry.jsonl"
+    telemetry.write_text("", encoding="utf-8")
+    report.append(f"created {_rel(root, telemetry)}")
 
     # Self-check: seeded state must validate against the registered schemas.
     try:
         for name_ in ("project.json", "phases.json", "steps.json", "decisions.json"):
             v.validate_state_file(state_dir / name_)
         v.validate_devlog_jsonl(devlog)
+        v.validate_jsonl(telemetry, v.TELEMETRY_ENTRY_SCHEMA)
     except ValueError as e:  # pragma: no cover - seeds are known-good
         raise ScaffoldError(f"seeded .state failed validation: {e}") from e
 

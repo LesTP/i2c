@@ -40,12 +40,14 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 # Sibling package modules.
 from i2c import assemble_context as ac
 from i2c import invariants
+from i2c import telemetry as tel
 from i2c import validate as v
 
 
@@ -579,6 +581,15 @@ def run_iteration(
     if backend == "claude":
         system_path.write_text(system_prompt, encoding="utf-8")
 
+    # Telemetry pre-invoke snapshot (best-effort; see i2c/telemetry.py). The
+    # prompt hash covers the full prompt actually sent to the backend.
+    prompt_for_hash = (
+        system_prompt + "\n" + stdin_prompt if backend == "claude" else stdin_prompt
+    )
+    start_commit = tel.head_commit(root)
+    prev_devlog = tel.count_devlog_lines(root)
+    wall_start = time.monotonic()
+
     # 6. Invoke the chosen backend.
     try:
         if backend == "claude":
@@ -603,6 +614,11 @@ def run_iteration(
         )
         return 2
     output_path.write_text(captured, encoding="utf-8")
+
+    # Telemetry post-invoke snapshot (best-effort).
+    wall_clock_s = time.monotonic() - wall_start
+    end_commit = tel.head_commit(root)
+    drift_flag: bool | None = None
 
     # 6b. Extract per-iter usage telemetry (FU-33). Both backends emit
     # token counts in their JSON output; usage stays None for plain-text
@@ -630,6 +646,32 @@ def run_iteration(
             worker_exit = int(signal["exit_code"])
             reason = signal.get("reason", "(worker emitted no reason)")
 
+    # Telemetry emit (best-effort, never fatal). The runner authors the
+    # execution-envelope sidecar; the worker still owns devlog.jsonl. codex's
+    # model is config-driven and not known to the runner (left null in v1).
+    model_used = model if backend == "claude" else None
+
+    def _emit_telemetry(final_exit: int) -> None:
+        try:
+            tel.record_iteration(
+                root,
+                iteration=iteration,
+                phase=phase,
+                action=action.lower(),
+                backend=backend,
+                model=model_used,
+                usage=usage,
+                exit_code=final_exit,
+                wall_clock_s=wall_clock_s,
+                start_commit=start_commit,
+                end_commit=end_commit,
+                prompt_text=prompt_for_hash,
+                prev_devlog_count=prev_devlog,
+                drift_flag=drift_flag,
+            )
+        except Exception as e:  # noqa: BLE001 - telemetry must never break a run
+            sys.stderr.write(f"NOTE: telemetry skipped ({e}).\n")
+
     # 8. CLOSE invariants.
     if action == "CLOSE":
         failures = invariants.check_post_action(root, "close")
@@ -651,6 +693,7 @@ def run_iteration(
             )
             sys.stdout.write(line + "\n")
             sys.stderr.write(f"ERROR: {invariant_reason}\n")
+            _emit_telemetry(2)
             return 2
 
     # 8b. Drift advisory (detect-and-surface; archive/DESIGN_recovery_v1.md §C). After a
@@ -667,6 +710,7 @@ def run_iteration(
         except _control.ControlError:
             drift = []
         reconcilable = [f for f in drift if f.reconcilable]
+        drift_flag = bool(reconcilable)
         if reconcilable:
             sys.stderr.write(
                 f"NOTE: workflow drift detected after {action} "
@@ -685,6 +729,7 @@ def run_iteration(
         tokens=usage,
     )
     sys.stdout.write(line + "\n")
+    _emit_telemetry(worker_exit)
     return worker_exit
 
 

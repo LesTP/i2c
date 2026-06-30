@@ -106,7 +106,7 @@ def resolve_state_path(arg: str) -> Path:
     if len(p.parts) != 1:
         return p
     basename = p.name
-    known = basename in v.SCHEMA_BY_FILENAME or basename == "devlog.jsonl"
+    known = basename in v.SCHEMA_BY_FILENAME or basename in v.JSONL_SCHEMA_BY_FILENAME
     if not known:
         return p
     state_dir = Path(".state")
@@ -173,6 +173,21 @@ def atomic_append_jsonl(path: Path, record: dict[str, Any]) -> None:
     line = json.dumps(record, ensure_ascii=False)
     with open(path, "a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def append_validated_jsonl(
+    path: Path, record: dict[str, Any], *, schema_name: str
+) -> None:
+    """Validate ``record`` against ``schema_name`` then append it as one JSONL line.
+
+    Shared by the ``append`` CLI subcommand and in-process writers (e.g. the
+    runner's telemetry sidecar) so every .jsonl write goes through one
+    schema-checked path. Raises ValueError on a schema violation (nothing is
+    written in that case).
+    """
+    schema = v.load_schema(schema_name)
+    v.validate_json_schema(record, schema, label=f"{path} (new entry)")
+    atomic_append_jsonl(path, record)
 
 
 # ---------------------------------------------------------------------------
@@ -331,21 +346,21 @@ def cmd_append(args: argparse.Namespace) -> int:
         sys.stderr.write("ERROR: record must be a JSON object.\n")
         return 2
 
-    # Choose schema by filename. Currently only devlog.jsonl is registered.
-    if path.name == "devlog.jsonl":
-        schema = v.load_schema(v.DEVLOG_ENTRY_SCHEMA)
-        try:
-            v.validate_json_schema(record, schema, label=f"{path} (new entry)")
-        except ValueError as e:
-            sys.stderr.write(f"VALIDATION FAILED: {e}\n")
-            return 1
-    else:
+    # Choose schema by filename via the JSONL registry (devlog.jsonl,
+    # telemetry.jsonl, ...).
+    schema_name = v.JSONL_SCHEMA_BY_FILENAME.get(path.name)
+    if schema_name is None:
         sys.stderr.write(
-            f"ERROR: no per-line schema registered for {path.name}.\n"
+            f"ERROR: no per-line schema registered for {path.name}. Known: "
+            f"{sorted(v.JSONL_SCHEMA_BY_FILENAME)}\n"
         )
         return 2
+    try:
+        append_validated_jsonl(path, record, schema_name=schema_name)
+    except ValueError as e:
+        sys.stderr.write(f"VALIDATION FAILED: {e}\n")
+        return 1
 
-    atomic_append_jsonl(path, record)
     print(f"OK: appended to {path}")
     return 0
 
