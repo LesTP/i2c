@@ -12,6 +12,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -626,6 +627,93 @@ class TestBackendResolution(unittest.TestCase):
             )
             self.assertEqual(rc, 0, msg=err)
             self.assertEqual((len(cc), len(xc)), (0, 1))
+
+
+class TestCommitState(unittest.TestCase):
+    """commit_state / dirty_tracked_outside_state against a real temp git repo."""
+
+    @staticmethod
+    def _git(args, cwd):
+        return subprocess.run(
+            ["git", *args], cwd=str(cwd), capture_output=True, text=True)
+
+    def _init_repo(self, root):
+        self._git(["init", "-q"], root)
+        self._git(["config", "user.email", "t@t.t"], root)
+        self._git(["config", "user.name", "t"], root)
+        (root / ".state").mkdir()
+        (root / ".state" / "project.json").write_text('{"phase":1}\n', encoding="utf-8")
+        (root / "README.md").write_text("x\n", encoding="utf-8")
+        self._git(["add", "-A"], root)
+        self._git(["commit", "-qm", "init"], root)
+
+    def test_commits_state_only_and_flags_dangling(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._init_repo(root)
+            (root / ".state" / "project.json").write_text('{"phase":2}\n', encoding="utf-8")
+            (root / "README.md").write_text("changed\n", encoding="utf-8")  # tracked, dirty
+            committed, note = ri.commit_state(root, phase=2)
+            self.assertTrue(committed, note)
+            names = self._git(["log", "-1", "--name-only", "--format="], root).stdout
+            self.assertIn(".state/project.json", names)
+            self.assertNotIn("README.md", names)  # scoped to .state/
+            # README.md still dirty -> surfaced as a boundary-cleanliness warning.
+            self.assertIn("README.md", ri.dirty_tracked_outside_state(root))
+
+    def test_skips_clean_state(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._init_repo(root)
+            committed, note = ri.commit_state(root, phase=1)
+            self.assertFalse(committed)
+            self.assertIn("nothing to commit", note)
+
+    def test_non_git_dir_is_safe(self):
+        with tempfile.TemporaryDirectory() as d:
+            committed, _ = ri.commit_state(Path(d), phase=1)
+            self.assertFalse(committed)
+
+
+class TestCloseStateCommit(unittest.TestCase):
+    """The runner invokes state_committer only after a *successful* CLOSE."""
+
+    def test_committer_called_on_successful_close(self):
+        with TempProject() as p:
+            # state=close -> CLOSE dispatched; invariants patched to pass so we
+            # reach the post-close commit (a fake worker can't set
+            # audit_boundary itself).
+            p.patch_project(state="close")
+            calls = []
+            orig = ri.invariants.check_post_action
+            ri.invariants.check_post_action = lambda root, action: []
+            try:
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = ri.run_iteration(
+                        backend="claude", model="sonnet", max_budget_usd=5.0,
+                        claude_invoker=make_fake_invoker(signal_block()),
+                        state_committer=lambda root, *, phase: (
+                            calls.append(phase) or (True, "ok")),
+                    )
+            finally:
+                ri.invariants.check_post_action = orig
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertEqual(calls, [2])  # fixture is phase 2
+
+    def test_committer_not_called_on_execute(self):
+        with TempProject():
+            calls = []
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block()),
+                    state_committer=lambda root, *, phase: (
+                        calls.append(phase) or (True, "ok")),
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertEqual(calls, [])  # execute -> no state commit
 
 
 if __name__ == "__main__":

@@ -502,6 +502,65 @@ def _run_project_tests(root: Path, cmd: str) -> bool | None:
     return proc.returncode == 0
 
 
+def commit_state(root: Path, *, phase: int) -> tuple[bool, str]:
+    """Deterministically commit .state/ (incl. telemetry.jsonl) after a CLOSE.
+
+    Runner-owned, NOT the agentic worker: only a post-worker committer can
+    capture the full close tail — the close devlog entry, the audit_boundary
+    write, and the runner-authored telemetry row all land *after* the worker's
+    own close commit, so the worker can never commit a complete .state/.
+    Scoped to .state/ so worker code/doc commits and operator working-tree
+    changes are untouched. Best-effort: returns (committed, note); never raises.
+    """
+    try:
+        st = subprocess.run(
+            ["git", "status", "--porcelain", "--", ".state"],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        if st.returncode != 0:
+            return False, "not a git repo / git error"
+        if not st.stdout.strip():
+            return False, "nothing to commit"
+        msg = f"{phase}: close - persist .state/ + telemetry"
+        cm = subprocess.run(
+            ["git", "commit", "-m", msg, "--", ".state"],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        if cm.returncode != 0:
+            detail = (cm.stderr or cm.stdout).strip().replace("\n", " ")[:200]
+            return False, f"commit failed: {detail}"
+        return True, msg
+    except Exception as e:  # noqa: BLE001 - state commit must never break a run
+        return False, f"error: {e}"
+
+
+def dirty_tracked_outside_state(root: Path) -> list[str]:
+    """Tracked files left uncommitted outside .state/ (best-effort).
+
+    A boundary-cleanliness signal: at close, code/doc changes are the worker's
+    to commit; anything tracked still dirty here (e.g. an un-committed
+    ARCHITECTURE.md doc-update) would otherwise be silently orphaned. Untracked
+    files (operator WIP) are ignored.
+    """
+    try:
+        st = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        if st.returncode != 0:
+            return []
+        paths: list[str] = []
+        for line in st.stdout.splitlines():
+            path = line[3:].strip() if len(line) > 3 else ""
+            if " -> " in path:  # rename: keep the destination
+                path = path.split(" -> ", 1)[1]
+            if path and not path.startswith(".state"):
+                paths.append(path)
+        return paths
+    except Exception:  # noqa: BLE001
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Top-level runner
 # ---------------------------------------------------------------------------
@@ -518,6 +577,7 @@ def run_iteration(
     target: int | None = None,
     claude_invoker=invoke_claude,
     codex_invoker=invoke_codex,
+    state_committer=commit_state,
 ) -> int:
     """Execute one iteration end-to-end and return the runner exit code.
 
@@ -770,6 +830,25 @@ def run_iteration(
     )
     sys.stdout.write(line + "\n")
     _emit_telemetry(worker_exit)
+
+    # 9b. Runner-owned state commit after a successful CLOSE. The worker cannot
+    #     capture the full close tail (close devlog + audit_boundary + the
+    #     runner-authored telemetry row all land after its own commit), so the
+    #     deterministic runner commits .state/ here — closing the
+    #     uncommitted-at-audit_boundary gap. Scoped to .state/; never fatal.
+    if action == "CLOSE" and worker_exit == 0:
+        committed, note = state_committer(root, phase=phase)
+        if committed:
+            sys.stdout.write(f"committed .state/ after close: {note}\n")
+        else:
+            sys.stderr.write(f"NOTE: .state/ not committed after close ({note}).\n")
+        dangling = dirty_tracked_outside_state(root)
+        if dangling:
+            sys.stderr.write(
+                "NOTE: tracked changes outside .state/ left uncommitted at close ("
+                + ", ".join(dangling[:10])
+                + "); code/docs are the worker's to commit.\n"
+            )
     return worker_exit
 
 
