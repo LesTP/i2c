@@ -432,3 +432,85 @@ Namespaces (the `control._apply_proposal` pattern).
   post-migration starts at FU-41, never reused. *(Lean: yes.)*
 - **Q-A3 — migration is a session job** (status enum normalization = judgment).
 - **Q-A4 — `fu close` in A = status only;** refinelog is B. *(Lean: yes.)*
+
+---
+
+## 12. Sketch (B) — the `i2c refine` loop internals
+
+Proposal B, sketched (fuller than a mention, lighter than the §11 scope). Depends
+entirely on A (`followups.json` + `control.followups()`). Core idea: **`i2c refine
+<fu-id>` is a single-shot, sub-phase dispatch** — it reuses the assembler +
+backend-invoke + telemetry + commit machinery but **skips the state machine**
+(there's no lifecycle to advance; the action is fixed as "refine this FU").
+
+### 12.1 Flow
+
+```
+i2c refine FU-41 [--backend …]
+  1. Resolve FU-41 from .state/followups.json (control.followups) — error if missing/closed.
+  2. Assemble a refine prompt (assemble --action refine --fu FU-41):
+       WORKER_SPEC (refine framing) + adapter Tool Rules
+       + instructions/refine.md (+ per-kind guidance, Proposal C)
+       + the FU record (title/kind/context/trigger) + the declared `files`
+       + Output Contract (EXIT: 0|2 / REASON)     — NO phase/steps/decisions context
+       (reuses the --emit system/user cache split, FU-35)
+  3. Invoke backend (claude -p / codex exec) — backend from [run.backends].refine.
+  4. Worker acts: edits files → appends refinelog.jsonl → does NOT touch
+     phases.json / steps.json / project.json.
+  5. Runner post-processing (runner-owned, per FU-40):
+       parse EXIT; on EXIT:0 → i2c fu close FU-41 --resolution "<REASON>"
+       commit `refine(<kind>): FU-41 <summary>` (code + .state, scoped)
+       append telemetry.jsonl row (action_type=refine, fu, kind, model, tokens, cost, git-delta, outcome)
+       run refine invariant → halt-and-surface on failure
+```
+
+One invocation — no `plan→execute→review→close`, no `audit_boundary`. That is what
+"sub-phase" means.
+
+### 12.2 Components & insertion points
+
+| Piece | What | Reuses / new |
+|---|---|---|
+| `run_refine.py` (or a `refine` path in `run_iteration.py`) | single-shot driver | **reuses** `invoke_claude`/`invoke_codex`, `assemble_prompt(emit=…)`, telemetry capture, the FU-40 commit helper |
+| assembler `--action refine` | new recipe: WORKER_SPEC + adapter + `instructions/refine.md` + FU-record provider (reads `followups.json` for the id) + `files` | **new** recipe + one context provider; reuses section machinery |
+| `instructions/refine.md` | refine worker procedure (read FU → minimal change → run tests if present → append refinelog → don't touch phase state → EXIT) | **new**, thin |
+| `refinelog_entry.schema.json` + register | append-only outcome log (`{ts, fu, kind, summary, commit, files_touched}`) | **new** (mirrors devlog/telemetry JSONL registration) |
+| `config._RUN_ACTIONS += "refine"` | enables `[run.backends].refine` routing | **one-line** (list already carries diagnose/reconcile) |
+| telemetry `action_type=refine` | refine rows feed the benchmark bucket (Q-refine-3) | **additive**; schema already nullable |
+| `invariants` refine check | assert FU closed + refinelog row appended + **phase files unchanged** | **new** small check (mirrors post-CLOSE invariant, FU-22) |
+| bot `/refine <fu-id>` | admin-gated; shells `i2c refine` in project cwd on a worker thread | **new** entry in `telegram_core.MUTATING_COMMANDS` + dispatch (mirrors `/run`) |
+
+### 12.3 Design choices (Q-B*)
+
+- **Q-B1 — who closes the FU?** *Lean: the runner, on `EXIT:0`*, using `REASON` as
+  the resolution (deterministic; `i2c fu reopen` if wrong). Worker-self-close is
+  self-grading — which the benchmark thread distrusts.
+- **Q-B2 — sub-phase enforcement.** The refine invariant hard-asserts
+  `phases.json`/`steps.json`/`project.json` are unchanged after a run — this is
+  what structurally keeps refine off the lifecycle, not just convention.
+- **Q-B3 — single vs batch.** v1 = one FU per call (no state machine needed). A
+  `--batch --kind prose` sweep is a later Policy-driver extension.
+- **Q-B4 — is there an oracle?** Refine has no frozen acceptance suite (that's the
+  Build-only `tests` action). Success = `EXIT:0` + optional `[telemetry].test_cmd`
+  pass. So refine telemetry is a weaker benchmark signal than Build-with-tests —
+  noted, not blocking.
+- **Q-B5 — commit ownership.** Runner-owned `refine(<kind>): FU-N …` (extends the
+  FU-40 direction), scoped so operator WIP is untouched.
+
+### 12.4 Build loop vs refine loop
+
+| | Build iteration | Refine dispatch |
+|---|---|---|
+| Driver | `run_iteration` + **state machine** picks the action | `run_refine` — **no state machine**; action fixed |
+| Unit | one action of a phase | one FU |
+| State written | `phases`/`steps`/`project`/`devlog`/`decisions` | **only** `followups.json` + `refinelog.jsonl` |
+| Lifecycle | advances `project.state` → `audit_boundary` | none — one shot |
+| Gate | human at phase close | none (reopen if wrong) |
+| Backend | `[run.backends].<action>` | `[run.backends].refine` |
+
+### 12.5 Net
+
+Mostly wiring: reuses the assembler, the backend-invoke + `--emit` cache split,
+telemetry, and the FU-40 commit helper. Genuinely new surface is small — a refine
+recipe + `instructions/refine.md`, the refinelog schema, a single-shot driver, a
+refine invariant, and the `/refine` bot command. B is gated on A.
