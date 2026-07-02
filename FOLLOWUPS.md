@@ -4,6 +4,11 @@ Running list of items deferred or noted during build sessions. Lower-priority
 than the rollout plan phases; revisited when triggers surface (real friction,
 Phase 2 pilot feedback, or downstream work that needs the gap closed).
 
+As of 2026-07-02 this file is also the **single ongoing tracker**: the **Active
+Roadmap** section (below the cold-start) carries strategic tracks, cross-project
+priorities, and the current recommendation (merged from the former Desktop
+`i2c TODO.md`); the FU tables remain the fine-grained backlog.
+
 Distinct from `FUTURE_waymark.md` (a roadmap for one specific deferred
 initiative) — this is the catch-all log of "noticed during the build, doesn't
 block the current deliverable, worth tracking."
@@ -15,7 +20,7 @@ to a phase) / `partially closed` / `closed` / `wontfix`.
 
 ## Cold-start summary (next session entry point)
 
-**Where we are (2026-06-26).** Foundation (data + prose + autonomous-loop),
+**Where we are (2026-07-02).** Foundation (data + prose + autonomous-loop),
 **state lifecycle v1** (7-state enum: `plan`, `execute`, `review`, `close`,
 `audit_boundary`, `audit_escalation`, `done`), and **packaging Phase 1–2**
 (installable package, `i2c` console, `i2c init`/`eject`, `i2c.toml`,
@@ -32,6 +37,20 @@ a single decisions index (`DECISIONS.md`), historical design memos moved to
 2–14** autonomously across both backends (claude + codex) earlier in the project.
 See **Recently shipped** below for per-item detail and **Active priorities** for
 what's next.
+
+**Since 2026-06-26 (added 2026-07-02).** Four things landed after the summary
+above was written: **recovery v1** (`i2c diagnose` / `reconcile` — deterministic
+workflow-drift detect-and-repair; README §Recovery, `archive/DESIGN_recovery_v1.md`);
+the **telemetry sidecar** (`.state/telemetry.jsonl`, a runner-authored,
+schema-validated per-iteration execution envelope — Increments 1–2, commits
+`707aec8` / `636a192`; observational only, never control state); **FU-40** began
+centralizing commits in the runner (CLOSE increment `9d39390`, 2026-07-01); and
+**diplomat migrated to i2c** (2026-07-01) — now live at **phase 51**, driven by
+the i2c bot with a per-action `[run.backends]` split (plan=claude, execute=codex,
+review=claude, close=codex). The new dominant strategic thread is a
+**model-benchmark initiative** (telemetry → a phase-level `tests` action as a
+real oracle → benchmark + routing); it is tracked in the **Active Roadmap §7**
+below, with full detail in `DESIGN_{telemetry,tests_action,benchmark}_v1.md`.
 
 `FOLLOWUPS.md` is the rolling backlog + live spec for the remaining
 FU-32 Δ5 work (deferred until template proves out further).
@@ -79,6 +98,8 @@ console surface (`i2c/cli.py`); `i2c init` / `i2c eject` scaffolding;
 `i2c.toml` run config; and **§8 `schema_version` + `i2c migrate`**
 (versioned in-place `.state/` migrations). This eliminates the consumer
 copy-and-sync model — consumers now `pip install` and carry only their own
+`.state/` + docs.
+
 **Phase 3 — control surface (shipped 2026-06-25/26).** The whole control-surface
 track landed final-form on the single projection layer: FU-39 (3a, `control` is
 the one structured view; the assembler's operator `--section` modes removed),
@@ -89,10 +110,7 @@ protocol (FU-38 — Gemini / OpenRouter, §6) runs as an independent parallel tr
 then the public distribution name + first release/tag (Q-pkg-1, at which point
 CHANGELOG's `Unreleased` is cut to a release).
 
-**Active priorities (smallest → largest scope):**
-1. **FU-32 Δ5** — PLAN precondition check that escalates if ARCH lacks Required sections. Deferred until template stabilizes (≥1 more CC ARCH authored under the Pattern A/B v2 template). ~15 lines of doc once we know what works.
-2. **Phase 3.C** — multi-iteration loop. **Re-evaluate after measuring FU-35 cache hits** (the prompt-cache split shipped 2026-06-21; caching likely captures most of the token-savings motivation, so 3.C's remaining justification is cross-step reasoning continuity + fewer spin-ups, weighed against the e2e-vintage multi-iteration reliability cost). Wrap `run_iteration.py` once we have real data on what single-iteration shape misses. The `multi_step_only` marker mechanism is forward-compatible; runner just needs to start passing `--step-budget > 1`.
-3. **Packaging Phase 3 control surface** — **3a (FU-39), 3b (FU-34), 3c (portfolio), and 3d-Telegram all shipped.** `i2c.control` is the single structured layer; the `i2c` CLI and a Telegram bot (`pip install i2c[telegram]`, `i2c serve telegram`) are thin surfaces over it. **Remaining in §7:** a Discord extra and the optional `/ask` Agent layer + orchestrator protocol references. Backend abstraction (§6, FU-38) runs as an independent parallel track.
+**Active priorities & tracks:** see the **Active Roadmap** section below (merged from the former Desktop `i2c TODO.md`) for current tracks, priorities, and the updated recommendation.
 
 **Recently shipped (2026-06-26):**
 - **3d — Telegram surface (`DESIGN_packaging_v1.md` §7.1, D-pkg-10).** A clean,
@@ -100,9 +118,9 @@ CHANGELOG's `Unreleased` is cut to a release).
   serving e2e (its `LogReader` path is untouched). Structure: a pure
   `i2c/surfaces/telegram_core.py` `dispatch()` (over `i2c.control`, no telegram
   import, fully unit-tested) + a thin `i2c/surfaces/telegram.py` PTB wiring shell
-  (lazy-imported). Commands: read (`/status /portfolio /next /phasesummary
-  /decisions /devlog /escalation /logs /projects /use`) + admin-gated mutating
-  (`/run /batch /clearboundary`). Auth is surface-enforced via an `[telegram].admins`
+  (lazy-imported). Commands (canonical list in README "Chat surface"): read = the `/audit` hub
+  (summary | `phase N` | `decisions [N]` | `devlog [N]` | `escalation` | `logs [N]` | `logs iter N`) plus `/diagnose /portfolio /setdir /commands`; admin-gated mutating
+  = `/run /batch /reconcile /endphase`. *(An earlier draft listed a flatter set — `/status /next /phasesummary /projects /use … /clearboundary` — the pre-implementation plan; the shipped bot uses the `/audit` hub and `/endphase`, the surface over control action `clear_boundary`.)* Auth is surface-enforced via an `[telegram].admins`
   allowlist (Q-pkg-6 answered: surface, not `control`); token from
   `I2C_TELEGRAM_TOKEN` (env only). Ships as `pip install i2c[telegram]`,
   run via `i2c serve telegram`. Reads run in-process; `/run`/`/batch` shell
@@ -180,6 +198,54 @@ i2c run --backend claude --max-budget-usd 2.00
 
 ---
 
+## Active Roadmap (tracks + priorities)
+
+> Merged from the former Desktop `i2c TODO.md` (2026-07-02). This file is now the
+> single ongoing tracker: strategic tracks + priorities live here, the detailed
+> per-item backlog in the FU tables below.
+
+### 1. Near-term, small
+- **External launch decision (Q-pkg-1 / D-pkg-1)** — pick the public name, decide PyPI + public-git. This is "v1, externally facing," gated on the open core tracks below — not mechanical. (The internal 0.2.0 cut is already done.)
+
+### 2. Parallel medium tracks
+- **Backend abstraction (FU-38)** — *see `DESIGN_backend_v1.md`.* **(a) Gemini** agentic-CLI backend — **spec'd, shelved** (run Gemini/Gemma as OpenRouter **model-ids** for the benchmark; native CLI only later as a free/subscription **prod** cost-opt). **(b) OpenRouter** — **Option C (reuse codex) is BLOCKED on codex 0.124** (live smoke 2026-06-30): codex dropped `wire_api="chat"`, now requires `"responses"` (OpenAI Responses API); OpenRouter is Chat-Completions-native and hung on the responses wire. **Re-ranked:** **B** = a chat-completions agent CLI (aider/opencode/OpenHands/…) → OpenRouter, used as a §1.1 CLI backend (now preferred); **A** = in-house harness over toolkit's `OpenRouterProvider` (diplomat-proven, but bigger + toolkit dep / `i2c[openrouter]`). Salvage C only via OpenRouter adding a Responses endpoint, a Responses↔Chat proxy (LiteLLM), or an older codex (conflicts with the 0.124 bot).
+- **Multi-iteration loop (Phase 3.C / FU-32 #2)** — wrap `run_iteration` with `--step-budget > 1`. *Also the first real Policy orchestrator driver* (see §4). Gated on first measuring FU-35 cache hits (caching may already cover the token-savings motive).
+
+### 3. Fleet migration
+- **toolkit** — done (migrated).
+- **diplomat** — **migrated & live (2026-07-01)**: fully on i2c at **phase 51 / plan**, driven autonomously via the i2c bot with a `[run.backends]` split (plan=claude, execute=codex, review=claude, close=codex); Stage 0+1 import committed `1c5014c` (49 phases + snapshot history serialized into `.state/`). Residual: normalize the 13 flagged decision statuses; converter FU — handle `Closed (…)` / `Superseded by` / `| Priority:` status suffixes.
+- **phosphene** — blocked on **Q-mig-7 / D-mig-4** (integer phase-id schema vs `MVP.4d`); needs a schema/renumber decision.
+- **codexbot + others** — audit not yet done.
+- **Ratify D-mig-2..7** — paper-only (toolkit + diplomat are the evidence).
+
+### 4. Orchestrator + remaining surfaces (§7) — collapsed
+- **Human** driver = exists (CLI/Telegram). **Policy** driver = `/batch` shipped; the **multi-iteration loop is the next Policy** (so this overlaps §2, not a separate track). **Agent** driver = already exists as operator + assistant; "needs no protocol."
+- Genuinely-optional remainders: a `/ask` in-product LLM agent surface, and a **Discord** extra.
+
+### 5. Larger net-new initiatives (deferred, well-specified)
+- **Recovery `fix` agent (`FUTURE_recovery.md`)** — code-class sibling to reconcile: `diagnose`(code) → `.state/diagnoses.json` + `fix.md` worker → human-gated repair; later self-healing. Held until recovery v1 is exercised in anger.
+- **Waymark VS Code extension (`FUTURE_waymark.md`)** — **deferred indefinitely** (2026-07-01): the read-only web dashboard (below) subsumes its Scope A; a VS Code plugin re-enters only as the future *control* surface (Scope B), if ever.
+- **Portfolio dashboard — SPEC'D (`DESIGN_dashboard_v1.md`, committed `21b339c`).** Read-only, browser-viewable view over `i2c.control` + `.state/` + telemetry + `doctor`; panels: portfolio / project drill / telemetry / health / topology (the "what runs where" conceptual aid). **Read = web (portable); control = local/trusted** (CLI/Telegram now, VS Code plugin later). Stages: **v0 static HTML generator** (no server/auth) → v1 local read-only server (`i2c[web]`) → v2 remote (WireGuard/tunnel + auth) → v3 control (separate). Future-proofed now: no-secrets allowlist + single auth choke point.
+- **Explicit brownfield path** — Reverse Architecture → CODEBASE.md → scoped discovery, plus the brownfield-archaeology skill. i2c's README is greenfield-focused.
+
+### 6. Rolling backlog (small FUs, opportunistic)
+FU-16 (naive Available-Modules fallback) · **FU-40** (centralize commits in the runner; resolves FU-8's unenforced `phase.step:` format — load-bearing for recovery's `commit_exists_step_pending`; **CLOSE increment shipped `9d39390`**, EXECUTE/REVIEW migration pending) · FU-29 (adapter Output Contract → `templates/` layer) · FU-20 (Devmate project-level commands) · FU-18 (slow tests on share) · FU-9 (Refine devlog iteration field) · FU-10 (refresh WORKER_SPEC anecdotes) · FU-36 (reason-first prose) · FU-37 (rolling dead-surface audit) · FU-15 / FU-4 / FU-3 / FU-14 (low-pri ergonomics). Full rows in the FU tables below.
+- ~~FU-32 Δ5~~ → **deprioritized.** No occurrence; current soft-handling beats the spec; only worth it for externally/migration-authored ARCHes, and then scoped to `## Phasing` only.
+
+### 7. Model-benchmark initiative (telemetry · test isolation · benchmark)
+Strategic thread: **find the cheapest model that still succeeds per kind of step, and route to it.** Three sub-tracks, in dependency order.
+
+- **Telemetry sidecar — SHIPPED.** `.state/telemetry.jsonl`: runner-authored, schema-validated, git-tracked execution envelope (model, tokens, cost, timing, git deltas, prompt hash, phase meta, drift, outcome) per autonomous iteration. Observational only; never control state; never fatal. *Increment 1* (data plane: schema, `telemetry.py`, runner capture, scaffold seed, tests) committed `707aec8`; *Increment 2* (cost/tier from bundled `pricing.json` + `[telemetry.pricing]`; opt-in `tests_pass` oracle via `[telemetry].test_cmd`) committed `636a192` (548 green). *Deferred* (schema already nullable, additive later): structured `review_findings`, exact cache-aware cost, `tool_calls`, codex model capture. Spec: `DESIGN_telemetry_v1.md`.
+- **Test isolation — SPEC'D (`DESIGN_tests_action_v1.md`).** New regime-conditional, phase-level `tests` action (`plan → tests → execute → review → close`, Build only): freezes a contract-derived acceptance suite **before** EXECUTE so the implementation is graded against tests it didn't author — turning `tests_pass` from self-graded into a **real oracle** (the linchpin the whole benchmark rests on). Surface enumerated + code-verified in §8 of the doc (state enum, `state_machine` `VALID_STATES`+`decide`, `instructions/tests.md`, assembler `ACTIONS`+recipe, `config._RUN_ACTIONS`, WORKER_SPEC, goldens, no-op version bump; `run_iteration` needs no change). Open: **D-tests-1** ordering (recommended `plan→tests`, not literal `tests→plan` — PLAN creates the phase record/regime), suite identification (path convention); EXECUTE must not edit the frozen suite (integrity rule).
+- **Benchmark + routing — SPEC'D (`DESIGN_benchmark_v1.md`).** Measure success vs model tier per `(action × regime × size)` bucket; find the saturation knee. **Substrates:** clankercourts = proven hermetic replay substrate (689/692 offline; 62 commit-linked EXECUTE steps); diplomat = forward data firehose post-migration; phosphene/diplomat prose = labeling only (not replay). **Next:** replay harness on clankercourts (run on **pirozhok** — cross-mount path bug on the laptop), e2e prose normalizer (labeling), **routing v0** (top tier for PLAN/REVIEW/TESTS by blast radius; cheap-first-with-escalation for EXECUTE/CLOSE). **Deps:** model panel rides FU-38 (OpenRouter Option C blocked, see §2). Oracle building blocks = toolkit `prompt_regression` + `edit_classifier`. **Clean-room rule:** for benchmark-generator projects the operator runs the loops; the assistant authors only spec/arch (`DESIGN_benchmark` §7.3).
+
+### Recommendation (updated 2026-07-02)
+1. **Benchmark thread (§7)** — now the highest-leverage line (diplomat migration, previously #1, is done). Land **test isolation** (the `tests` action) next — the oracle linchpin — then the replay harness on clankercourts and routing v0. Diplomat is now the forward telemetry firehose; the model panel rides FU-38.
+2. Otherwise pick one big track by what's hurting: **backends** (FU-38; also unblocks the benchmark panel) if rate limits bite, or the **multi-iteration loop** (after a cache-hit check; doubles as the first Policy orchestrator).
+3. Hold `fix`, Waymark, Discord/`/ask`, and the external launch until a migration or two has shaken out recovery v1 and the core tracks.
+
+---
+
 ## Tooling — state.py CLI gaps
 
 | ID | Title | Status | Context | Trigger to address |
@@ -212,7 +278,6 @@ i2c run --backend claude --max-budget-usd 2.00
 | FU-33 | Runner doesn't surface token/quota counts in `summary.log` | **closed** (2026-06-10) | See resolution note below. Both backends emit token telemetry in their JSON output; runner now extracts and appends `tokens_in=N tokens_out=M tokens_cached=K` to each summary line. |
 | FU-35 | Prompt-cache support for the stable prompt prefix | **closed** (2026-06-21) | See resolution note below. The original `cache_control`-marker framing was unreachable — the runner pipes plaintext to the `claude -p` / `codex exec` CLIs, and markers are a raw-API construct. Shipped instead as a system/user prompt split. |
 | FU-32 | PLAN action not yet autonomous-capable; needs five framework deltas + ARCH-file discipline | **partially closed** (in progress; see progress log below) | After CC Phase 4 EXECUTE shipped supervised (commit `97e9ea4`), the meta-question surfaced: i2c's autonomous loop runs EXECUTE/REVIEW/CLOSE cleanly, but PLAN's step-breakdown step still requires human authoring because ARCH files aren't constrained enough to drive mechanical step decomposition. e2e solves this via a two-step workflow (pre-arch design separately, autonomous batch implementation); i2c lacks the ARCH-authoring discipline and the safety-net escalation triggers that make autonomous PLAN safe. Five deltas identified — see the progress log below for current state and the Δ5 spec. | Continue with CC Phase 5+ ARCH authoring against the new template; Δ5 follows once the template is validated. |
-build (the harness path). |
 | FU-40 | Centralize commits in the deterministic runner (worker stops running git) | open (started — CLOSE increment shipped 2026-07-01, `9d39390`) | Commits are model-owned today: EXECUTE commits code (`phase.step:`), CLOSE (`close.md` step 10) commits docs + `.state/`; the runner and `state_machine.py` never committed (`state_machine` is read-only by design, so the committer is the runner). **Increment 1 shipped:** the runner commits `.state/`+telemetry after a successful CLOSE — only a post-worker committer can capture the close tail (close devlog / audit_boundary / the runner-authored telemetry row all land *after* the worker's own commit). **Direction:** move *all* commits to the runner — the worker edits files + writes `.state/` via `i2c state`; the runner commits (code as `N.M:` using the devlog `summary` as the body; `.state/`+telemetry at the boundary). This **resolves FU-8** (the runner enforces the `phase.step:` format that recovery's `commit_exists_step_pending` depends on) and removes worker-git hazards (interactive-hang, wrong scope, forgotten commits). Commits are scoped (`git commit -- .state`) so operator WIP is untouched. | Migrate EXECUTE/REVIEW deliberately after the CLOSE increment proves out; requires rewriting `execute.md`/`close.md` to drop worker git + a golden regen. |
 
 ### FU-32 progress log
@@ -283,7 +348,6 @@ This gives a clean version split:
   every time you sync `instructions/*.md`. There is no "may lag" mode that
   is actually safe; pre-FU-19 state.py fails every worker write because
   the procedure examples write bare filenames.
-  lacks.
 - **Procedure prose** (`instructions/*.md`) → consumer-local. The assembler
   reads whatever the consumer has on disk and embeds it in the prompt.
 - **Project state + contracts** (`.state/`, `PROJECT.md`, `ARCH_*.md`) →
@@ -410,3 +474,4 @@ Items resolved, with a one-line resolution note. Historical context is cheap.
 - Reference these IDs from instructions/, plans, or commit messages when relevant.
 - This file does not gate any phase. It is a backlog, not a blocker list.
 - When picking up after a break, read the **Cold-start summary** above first — it captures where things were left and what to do next.
+- Strategic tracks, cross-project priorities, and the current recommendation live in **Active Roadmap** (above the FU tables); the tables are the fine-grained backlog. This is the single ongoing tracker — the standalone Desktop `i2c TODO.md` was merged in on 2026-07-02.

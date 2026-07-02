@@ -34,7 +34,9 @@ Modes:             autonomous (loop runner) or supervised (human + assistant)
 i2c is functionally complete for **supervised use** and **single-iteration
 autonomous runs**. It has driven a real multi-phase software project
 end-to-end — fourteen phases, autonomously, across both the Claude and Codex
-backends.
+backends. A second project (diplomat) has since been migrated onto i2c and
+driven autonomously past fifty phases, using a per-action backend split (the
+`[run.backends]` table — see Configuration).
 
 It ships as an **installable package**: `pip install` puts the `i2c` console
 command on your `PATH` and bundles the framework assets (JSON Schemas,
@@ -447,12 +449,24 @@ settings for `i2c run`, so you don't re-type flags:
 backend = "claude"      # claude | codex
 model = "sonnet"
 max_budget_usd = 5.00
+
+[run.backends]          # optional: route each action to a backend
+plan = "claude"
+execute = "codex"
+review = "claude"
+close = "codex"
 ```
 
 Precedence is **CLI flag > `i2c.toml` > built-in default** — e.g. `i2c run
---backend codex` overrides the file for one invocation. Only the `[run]` table
-is read today; unknown keys are ignored. **Secrets / API keys do not belong in
+--backend codex` overrides the file for one invocation. `i2c run` reads the
+`[run]` table (including the optional `[run.backends]` sub-table); unknown
+keys are ignored. **Secrets / API keys do not belong in
 `i2c.toml`** — configure those via environment variables.
+
+The optional `[run.backends]` table routes individual worker actions to different
+backends (valid keys: `plan`, `execute`, `review`, `close`, plus the recovery
+actions `diagnose` / `reconcile`); `i2c run` and the Telegram `/batch` command
+select the backend per action from it, falling back to `[run].backend`.
 
 > A consumer project installs the framework (`pip install`) and carries only
 > its own `.state/`, project docs, `i2c.toml`, and filled-in adapters — no

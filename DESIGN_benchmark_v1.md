@@ -321,7 +321,7 @@ clean roles:
 
 ---
 
-## 11. Dependencies on existing i2c work (`i2c TODO.md`)
+## 11. Dependencies on existing i2c work (`FOLLOWUPS.md` → Active Roadmap)
 
 This initiative is mostly *enabled by* already-queued work rather than net-new:
 
@@ -413,7 +413,7 @@ cost `cost_cheap + p_fail·(cost_detect + cost_retry_high)`; with tests as oracl
 
 - Corpus audit raw numbers: §6 (this doc), generated 2026-06-30.
 - i2c state/devlog model: `README.md` §"State model", `i2c/run_iteration.py`.
-- Backend abstraction: `i2c TODO.md` §2 (FU-38).
+- Backend abstraction: `FOLLOWUPS.md` Active Roadmap §2 (FU-38).
 - Oracle building blocks: toolkit `ARCH_prompt_regression.md`,
   `ARCH_edit_classifier.md`.
 - Deployment / where replay runs: `rules/deployment.md` (pirozhok).

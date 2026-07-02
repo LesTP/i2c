@@ -318,5 +318,5 @@ for the guard.
   backend is wanted (§2).
 - **Routing** plugs into the increment-2 pricing/telemetry and the FU-38 backend
   set without new mechanism.
-- Noted in `i2c TODO.md` ("Move tests into a separate step?").
+- Noted in `FOLLOWUPS.md` Active Roadmap §7 ("Move tests into a separate step?").
 ```

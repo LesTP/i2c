@@ -27,10 +27,10 @@ graph TB
         LOG["logs/loop/<br/>summary.log<br/>iteration_NNN.*"]
     end
 
-    H -- "chat commands<br/>/run /batch /status /close" --> CB
+    H -- "chat commands<br/>/run /batch /audit /endphase" --> CB
     H -- "Direct session<br/>(supervised mode)" --> CO
     CB -- "Deterministic dispatch<br/>/run → subprocess" --> LR
-    CB -- "Reads .state/ for<br/>/status /audit /decisions" --> ST
+    CB -- "Reads .state/ for<br/>/audit /portfolio /diagnose" --> ST
     CO -- "i2c run" --> LR
     CO -- "Reads logs for<br/>post-run analysis" --> LOG
     LR -- "1. determine action" --> SM
@@ -71,7 +71,7 @@ graph LR
     end
 ```
 
-**Path A (deterministic driver):** A chat-ops bot (e.g. a Telegram or Discord bot) receives a command, directly shells out to `run_iteration.py`, reads results from files, and formats a report. No LLM judgment in the dispatch path — the bot is a plain program, not an AI session. It also handles `/status`, `/audit`, `/close` by reading `.state/` directly.
+**Path A (deterministic driver):** A chat-ops bot (e.g. a Telegram or Discord bot) receives a command, directly shells out to `run_iteration.py`, reads results from files, and formats a report. No LLM judgment in the dispatch path — the bot is a plain program, not an AI session. It also handles the read/gate commands (`/audit`, `/portfolio`, `/diagnose`, `/endphase`) by reading `.state/` directly.
 
 **Path B (Orchestrator):** AI-mediated. An orchestrator session (Claude or Codex) receives freeform instructions, decides what to do, shells out to `run_iteration.py`, then reads logs and reports back. The orchestrator makes judgment calls: "should I dispatch another iter?", "is this error worth escalating?", "what do I tell the human?"
 
