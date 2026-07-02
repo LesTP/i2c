@@ -324,6 +324,15 @@ from Build steps to refine work too.
   action_type to the existing envelope; no new mechanism.
 - **FU-40** — B's runner-owned refine commit is the same committer-centralization
   direction, extended to the refine tier.
+- **Recovery (`reconcile` / `fix`)** — the refine loop (§12) is the same
+  *out-of-band, targeted, single-shot dispatch* family as `i2c run --action
+  reconcile --target N`; the loop should **reuse that dispatch**, not reinvent it.
+  `reconcile` stays separate — its executor is *deterministic* state-repair (no
+  worker). But the deferred **`fix` code-repair agent (`FUTURE_recovery.md`) is the
+  same executor as refine** — a single-shot LLM worker on a targeted item, i.e. the
+  automated **`bugfix`** kind: `diagnose(code)` captures a `followups.json` item,
+  the refine loop repairs it (human-gated). So `fix` can ride the refine substrate
+  rather than a parallel `diagnoses.json` / `fix.md` / dispatch stack.
 - **DECISIONS.md** — D-refine-* land there on ratification; this memo is the
   authoritative rationale until then.
 

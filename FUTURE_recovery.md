@@ -37,6 +37,27 @@ human. The `fix` extension would build on that:
   failed step complete — it clears the blocker so the loop re-attempts it.
 - **resume** — the normal loop re-runs the failed action.
 
+## Consolidation option: `fix` as `bugfix` on the refine loop
+
+**Added 2026-07-02.** `fix` and the refine loop (`DESIGN_refine_v1.md` §12) are the
+**same executor** — a single-shot LLM worker dispatched on one targeted item,
+outside the phase lifecycle, that edits code and logs an outcome. In taxonomy
+terms `fix` *is* the automated **`bugfix`** kind. So rather than its own parallel
+stack, `fix` could ride the refine substrate:
+
+- **`diagnose(code)`** captures a `followups.json` item of `kind: bugfix` (the
+  diagnosis record as its `context` / `refs`) — replacing a standalone
+  `.state/diagnoses.json`.
+- **`i2c refine <fu-id>`** (the refine loop) implements the repair, human-gated —
+  replacing a standalone `fix.md` worker + dispatch.
+- Recovery keeps only the *code-class capture* (the `diagnose` extension) and the
+  stronger gate/scope policy; the *executor* is refine's.
+
+Upshot: much of the machinery in **Open items** below (a `diagnoses.json` schema,
+a `fix.md` file, a separate dispatch) is largely **subsumed by refine** if it lands
+first — which the roadmap sequences it to. `reconcile` is unaffected: its executor
+is *deterministic* state-repair, a different thing. See `DESIGN_refine_v1.md` §9.
+
 ## Open items
 
 - **`.state/diagnoses.json` + schema** — the persisted diagnosis record is the
