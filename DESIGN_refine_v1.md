@@ -355,3 +355,80 @@ thin and pointer-based so they neither overlap nor drift into one another.
 > DESIGN/FUTURE doc or an FU → implement in whole or parts*) is included in the
 > new `i2c.md` rule as framing context; the refine protocol is its concrete,
 > tooling-backed slice.
+
+---
+
+## 11. Implementation scope (A) — schema + `i2c fu` CLI
+
+Buildable unit for Proposal A. Scope = the **schema + the `i2c fu` backlog
+surface** (the loop `i2c refine`, `refinelog.jsonl`, telemetry, and bot commands
+are Proposal B, deferred). Grounded against the current codebase; the key lever:
+**registering `followups.json` in `SCHEMA_BY_FILENAME` unlocks generic `i2c state`
+writes + bare-name resolution for free**, so write verbs are thin wrappers and
+only the read/render side is new code.
+
+### 11.1 `followups.schema.json` (array file; mirrors `decisions.schema.json`)
+
+Envelope: draft-2020-12, `type: array`, `items.additionalProperties: false`.
+
+| field | type | notes |
+|---|---|---|
+| `id` | string | `^FU-\d+$`, **required** |
+| `title` | string | **required** |
+| `kind` | enum | `prose · dead-surface · doc-reconciliation · cli-ergonomics · test-hardening · structural-refactor · other`, **required** |
+| `status` | enum | `open · accepted · partially-closed · closed · wontfix`, **required** |
+| `context`, `trigger`, `resolution` | string | optional |
+| `refs`, `files` | array[string] | optional |
+| `opened`, `closed` | string (date) | set by `fu add` / `fu close` |
+
+Register one line in `validate.py` `SCHEMA_BY_FILENAME`.
+
+### 11.2 `i2c fu` surface
+
+| verb | behavior | mechanism |
+|---|---|---|
+| `fu add --kind --title [--context --trigger --files --refs]` | next `FU-N`, `status=open`, `opened=today`, validate, append | wrapper → `state.cmd_append_record` |
+| `fu close FU-N [--resolution …] [--status closed\|wontfix]` | status + resolution + `closed=today` | wrapper → `state.cmd_update_record --match id=FU-N` |
+| `fu reopen FU-N` | status→open, clear `closed` | wrapper → `cmd_update_record` |
+| `fu show FU-N [--json]` | one record | `control.followups()` filtered |
+| `fu list [--status] [--kind] [--json]` | filtered list | `control.followups()` |
+| `fu render` | regenerate FU markdown tables (drift-killer, D-refine-2) | `render._render_followups_tables` |
+
+Only `list/show/render` add new code (`control.followups()` + `FollowupView` +
+render); `add/close/reopen` reuse the atomic/validate machinery via constructed
+Namespaces (the `control._apply_proposal` pattern).
+
+### 11.3 Steps (commit-sized, dependency order)
+
+1. **Schema + register** — `followups.schema.json` + `validate.py` entry. Tests:
+   schema loads; generic `state append-record followups.json` round-trip +
+   schema-rejection + bare-name resolution.
+2. **`control.followups()`** — `FollowupView` + `_read_followups` (optional-file,
+   independent of `load_state`'s required-5, per D-refine-3) + filtering. Tests:
+   `TestFollowups` (filter by status/kind; empty when absent).
+3. **Render** — `_fmt_followup`, `_render_followups` (list),
+   `_render_followups_tables` (grouped markdown). Tests: render shape.
+4. **`fu` CLI group** — nested subparser; write-wrappers (id auto-increment +
+   defaults) + read verbs. Tests: `TestFuCli` (`list --json`, `add`/`close`
+   round-trip, `render`).
+5. **Migrate `FOLLOWUPS.md` → `.state/followups.json`** — import all FUs (open
+   **and** closed/decided; normalize free-form statuses → the enum). Creates i2c's
+   first `.state/` file (git-tracked; independent of the phase machine). Wire
+   `fu render` into a delimited region. *(Session job — the status normalization
+   is judgment, not a loop.)*
+6. **Flip `i2c.md` rule** — `i2c fu` verbs `planned → live` (`/refine` stays
+   planned — Proposal B).
+
+### 11.4 Deferred to Proposal B
+
+`refinelog.jsonl` + `fu close`→refinelog; the `refine` telemetry action_type; the
+`i2c refine <fu-id>` loop; bot `/refine` + `/fu` facets.
+
+### 11.5 Scoping decisions
+
+- **Q-A1 — `fu render` target.** stdout in steps 3–4; inject into a
+  `<!-- fu:begin/end -->` region of `FOLLOWUPS.md` in step 5. *(Lean: yes.)*
+- **Q-A2 — ID source.** `fu add` next-id = max numeric id in `followups.json`;
+  post-migration starts at FU-41, never reused. *(Lean: yes.)*
+- **Q-A3 — migration is a session job** (status enum normalization = judgment).
+- **Q-A4 — `fu close` in A = status only;** refinelog is B. *(Lean: yes.)*
