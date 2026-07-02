@@ -45,6 +45,23 @@ def _fmt_decision(d: control.DecisionView) -> str:
     return body
 
 
+_OPEN_STATUSES = ("open", "accepted", "partially-closed")
+
+
+def _md_cell(text: str | None) -> str:
+    """Sanitize a value for a one-line markdown table cell."""
+    if not text:
+        return ""
+    return text.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _fmt_followup(f: control.FollowupView) -> str:
+    body = f"  - {f.id} [{f.status} · {f.kind}] {f.title}"
+    if f.trigger:
+        body += f" — trigger: {f.trigger}"
+    return body
+
+
 def _render_status(r: control.StatusReport) -> str:
     lines = [
         f"Phase:        {r.phase}",
@@ -99,6 +116,47 @@ def _render_devlog_list(entries: list[control.DevlogView]) -> str:
     if not entries:
         return "(no devlog entries)"
     return "\n".join(_fmt_devlog(e).lstrip() for e in entries)
+
+
+def _render_followups(followups: list[control.FollowupView]) -> str:
+    if not followups:
+        return "(no follow-ups)"
+    return "\n".join(_fmt_followup(f).lstrip() for f in followups)
+
+
+def _render_followups_tables(followups: list[control.FollowupView]) -> str:
+    """Regenerate the FOLLOWUPS markdown tables from state (the `fu render`
+    drift-killer, D-refine-2): an open backlog table + a closed/decided table."""
+    open_items = [f for f in followups if f.status in _OPEN_STATUSES]
+    closed_items = [f for f in followups if f.status not in _OPEN_STATUSES]
+
+    lines: list[str] = ["## Follow-ups (open)", ""]
+    if open_items:
+        lines += [
+            "| ID | Kind | Status | Title | Trigger |",
+            "|----|------|--------|-------|---------|",
+        ]
+        lines += [
+            f"| {f.id} | {f.kind} | {f.status} | {_md_cell(f.title)} | "
+            f"{_md_cell(f.trigger)} |"
+            for f in open_items
+        ]
+    else:
+        lines.append("_(none)_")
+
+    lines += ["", "## Closed / decided", ""]
+    if closed_items:
+        lines += [
+            "| ID | Kind | Resolution |",
+            "|----|------|------------|",
+        ]
+        lines += [
+            f"| {f.id} | {f.kind} | {_md_cell(f.resolution)} |"
+            for f in closed_items
+        ]
+    else:
+        lines.append("_(none)_")
+    return "\n".join(lines)
 
 
 def _render_escalation(e: control.EscalationView) -> str:
