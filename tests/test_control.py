@@ -630,5 +630,74 @@ class TestReconcile(unittest.TestCase):
             self.assertEqual(p.read_project()["state"], "audit_boundary")
 
 
+class TestFollowups(unittest.TestCase):
+    """followups() — the refine backlog projection (Proposal A step 2)."""
+
+    _FUS = [
+        {"id": "FU-1", "title": "prose pass", "kind": "prose", "status": "open"},
+        {"id": "FU-2", "title": "dead code", "kind": "dead-surface",
+         "status": "closed", "resolution": "removed", "refs": ["D-1"],
+         "files": ["a.py"]},
+        {"id": "FU-3", "title": "run 21 finding", "kind": "experiment-log",
+         "status": "open"},
+    ]
+
+    def _write(self, root: Path, records) -> None:
+        (root / ".state" / "followups.json").write_text(
+            json.dumps(records), encoding="utf-8"
+        )
+
+    def test_empty_when_absent(self):
+        with TempProject() as t:
+            self.assertEqual(c.followups(t.root), [])
+
+    def test_returns_all_as_views(self):
+        with TempProject() as t:
+            self._write(t.root, self._FUS)
+            result = c.followups(t.root)
+            self.assertEqual([f.id for f in result], ["FU-1", "FU-2", "FU-3"])
+            self.assertIsInstance(result[0], c.FollowupView)
+
+    def test_filter_by_status(self):
+        with TempProject() as t:
+            self._write(t.root, self._FUS)
+            result = c.followups(t.root, status="open")
+            self.assertEqual([f.id for f in result], ["FU-1", "FU-3"])
+
+    def test_filter_by_kind(self):
+        with TempProject() as t:
+            self._write(t.root, self._FUS)
+            result = c.followups(t.root, kind="experiment-log")
+            self.assertEqual([f.id for f in result], ["FU-3"])
+
+    def test_full_fields_mapped(self):
+        with TempProject() as t:
+            self._write(t.root, self._FUS)
+            fu2 = next(f for f in c.followups(t.root) if f.id == "FU-2")
+            self.assertEqual(fu2.resolution, "removed")
+            self.assertEqual(fu2.refs, ["D-1"])
+            self.assertEqual(fu2.files, ["a.py"])
+
+    def test_invalid_backlog_raises(self):
+        with TempProject() as t:
+            self._write(
+                t.root,
+                [{"id": "FU-1", "title": "x", "kind": "bogus", "status": "open"}],
+            )
+            with self.assertRaises(c.ControlError):
+                c.followups(t.root)
+
+    def test_works_without_full_project(self):
+        # D-refine-3: a repo can carry a backlog without the phase-lifecycle files.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".state").mkdir()
+            (root / ".state" / "followups.json").write_text(
+                json.dumps(self._FUS), encoding="utf-8"
+            )
+            result = c.followups(root)
+            self.assertEqual(len(result), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

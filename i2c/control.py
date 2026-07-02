@@ -31,7 +31,7 @@ import contextlib
 import io
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +83,21 @@ class DecisionView:
     priority: str | None = None
     decision: str | None = None
     rationale: str | None = None
+
+
+@dataclass
+class FollowupView:
+    id: str
+    title: str
+    kind: str
+    status: str
+    context: str | None = None
+    trigger: str | None = None
+    resolution: str | None = None
+    refs: list[str] = field(default_factory=list)
+    files: list[str] = field(default_factory=list)
+    opened: str | None = None
+    closed: str | None = None
 
 
 @dataclass
@@ -262,6 +277,23 @@ def find_project_root(start: Path | None = None) -> Path:
     )
 
 
+def _find_followups_root(start: Path | None = None) -> Path:
+    """Walk up for a ``.state/`` holding ``followups.json`` **or** ``project.json``.
+
+    The refine backlog is independent of the phase lifecycle (D-refine-3): a repo
+    can carry ``followups.json`` without being a full i2c project, and a project
+    can be valid before its backlog file exists. So accept either marker.
+    """
+    cwd = (start or Path.cwd()).absolute()
+    for candidate in [cwd, *cwd.parents]:
+        state = candidate / ".state"
+        if (state / "followups.json").is_file() or (state / "project.json").is_file():
+            return candidate
+    raise NotFoundError(
+        f"No .state/followups.json or project.json found in {cwd} or any parent."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Bundled state read
 # ---------------------------------------------------------------------------
@@ -328,6 +360,20 @@ def load_state(root: Path) -> ProjectState:
     )
 
 
+def _read_followups(root: Path) -> list[dict[str, Any]]:
+    """Read + validate ``.state/followups.json`` (Proposal A). Independent of the
+    five ``load_state`` files: a repo can carry a refine backlog without being a
+    full phase-driven i2c project (D-refine-3). Absent file -> ``[]``.
+    """
+    path = _state_path(root, "followups.json")
+    if not path.is_file():
+        return []
+    try:
+        return v.validate_state_file(path)
+    except ValueError as e:
+        raise ControlError(str(e)) from e
+
+
 # ---------------------------------------------------------------------------
 # View builders
 # ---------------------------------------------------------------------------
@@ -364,6 +410,22 @@ def _devlog_view(record: dict[str, Any]) -> DevlogView:
         summary=record.get("summary", ""),
         commit=record.get("commit"),
         timestamp=record.get("timestamp"),
+    )
+
+
+def _followup_view(record: dict[str, Any]) -> FollowupView:
+    return FollowupView(
+        id=record.get("id", ""),
+        title=record.get("title", ""),
+        kind=record.get("kind", ""),
+        status=record.get("status", ""),
+        context=record.get("context"),
+        trigger=record.get("trigger"),
+        resolution=record.get("resolution"),
+        refs=list(record.get("refs") or []),
+        files=list(record.get("files") or []),
+        opened=record.get("opened"),
+        closed=record.get("closed"),
     )
 
 
@@ -499,6 +561,22 @@ def devlog(
     if limit is not None:
         entries = entries[-limit:]
     return [_devlog_view(e) for e in entries]
+
+
+def followups(
+    root: Path | None = None, *, status: str | None = None, kind: str | None = None
+) -> list[FollowupView]:
+    """The refine backlog (Proposal A), optionally filtered by ``status`` and/or
+    ``kind``. Reads ``.state/followups.json`` independently of the phase-lifecycle
+    state, so it works in any repo that has adopted the refine tier (D-refine-3).
+    Empty list when the backlog file is absent."""
+    root = root or _find_followups_root()
+    records = _read_followups(root)
+    if status is not None:
+        records = [r for r in records if r.get("status") == status]
+    if kind is not None:
+        records = [r for r in records if r.get("kind") == kind]
+    return [_followup_view(r) for r in records]
 
 
 # ---------------------------------------------------------------------------
