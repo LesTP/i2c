@@ -90,6 +90,8 @@ from i2c.render import (  # noqa: E402
     _render_diagnosis,
     _render_dispatch,
     _render_escalation,
+    _render_followups,
+    _render_followups_tables,
     _render_log_transcript,
     _render_logs,
     _render_phase_summary,
@@ -405,6 +407,157 @@ def cmd_import(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# `fu` — refine backlog (Proposal A)
+# ---------------------------------------------------------------------------
+
+
+_FU_KINDS = (
+    "prose", "dead-surface", "doc-reconciliation", "cli-ergonomics",
+    "test-hardening", "structural-refactor", "experiment-log", "other",
+)
+
+
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [x.strip() for x in value.split(",") if x.strip()]
+
+
+def cmd_fu_list(args: argparse.Namespace) -> int:
+    try:
+        result = control.followups(status=args.status, kind=args.kind)
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(result, as_json=args.json, renderer=_render_followups)
+    return 0
+
+
+def cmd_fu_show(args: argparse.Namespace) -> int:
+    try:
+        items = control.followups()
+    except control.ControlError as e:
+        return _fail(e)
+    match = next((f for f in items if f.id == args.id), None)
+    if match is None:
+        return _fail(control.NotFoundError(f"no follow-up {args.id!r}"))
+    _emit(match, as_json=args.json, renderer=lambda f: _render_followups([f]))
+    return 0
+
+
+def cmd_fu_render(args: argparse.Namespace) -> int:
+    try:
+        result = control.followups()
+    except control.ControlError as e:
+        return _fail(e)
+    sys.stdout.write(_render_followups_tables(result) + "\n")
+    return 0
+
+
+def _fu_backlog_path():
+    """Resolve the backlog file, creating an empty one if the project has a
+    ``.state/`` but no ``followups.json`` yet. Raises ``control.NotFoundError``.
+    """
+    from pathlib import Path
+
+    root = control._find_followups_root()
+    path = Path(root) / ".state" / "followups.json"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("[]\n", encoding="utf-8")
+    return path
+
+
+def _run_state_cmd(fn, ns: argparse.Namespace) -> int:
+    """Call a ``state.cmd_*`` handler, suppressing its stdout 'OK:' line so the
+    fu surface prints its own confirmation. Errors still reach stderr."""
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        return fn(ns)
+
+
+def cmd_fu_add(args: argparse.Namespace) -> int:
+    import datetime
+
+    try:
+        path = _fu_backlog_path()
+        existing = control.followups(path.parent.parent)
+    except control.ControlError as e:
+        return _fail(e)
+    nums = [
+        int(f.id[3:]) for f in existing
+        if f.id.startswith("FU-") and f.id[3:].isdigit()
+    ]
+    new_id = f"FU-{(max(nums) + 1) if nums else 1}"
+    record: dict[str, Any] = {
+        "id": new_id,
+        "title": args.title,
+        "kind": args.kind,
+        "status": "open",
+        "opened": datetime.date.today().isoformat(),
+    }
+    if args.context:
+        record["context"] = args.context
+    if args.trigger:
+        record["trigger"] = args.trigger
+    files = _split_csv(args.files)
+    refs = _split_csv(args.refs)
+    if files:
+        record["files"] = files
+    if refs:
+        record["refs"] = refs
+    ns = argparse.Namespace(
+        file=str(path), record=json.dumps(record), from_file=None
+    )
+    rc = _run_state_cmd(state.cmd_append_record, ns)
+    if rc != 0:
+        return rc
+    sys.stdout.write(f"added {new_id}\n")
+    return 0
+
+
+def cmd_fu_close(args: argparse.Namespace) -> int:
+    import datetime
+
+    try:
+        path = _fu_backlog_path()
+    except control.ControlError as e:
+        return _fail(e)
+    updates = [
+        f"status={args.status}",
+        f"closed={datetime.date.today().isoformat()}",
+    ]
+    if args.resolution:
+        updates.append(f"resolution={args.resolution}")
+    ns = argparse.Namespace(
+        file=str(path), match=f"id={args.id}", updates=updates, from_file=None
+    )
+    rc = _run_state_cmd(state.cmd_update_record, ns)
+    if rc != 0:
+        return rc
+    sys.stdout.write(f"closed {args.id} ({args.status})\n")
+    return 0
+
+
+def cmd_fu_reopen(args: argparse.Namespace) -> int:
+    try:
+        path = _fu_backlog_path()
+    except control.ControlError as e:
+        return _fail(e)
+    ns = argparse.Namespace(
+        file=str(path), match=f"id={args.id}", updates=["status=open"],
+        from_file=None,
+    )
+    rc = _run_state_cmd(state.cmd_update_record, ns)
+    if rc != 0:
+        return rc
+    sys.stdout.write(f"reopened {args.id}\n")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
 
@@ -670,7 +823,63 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_import.set_defaults(func=cmd_import)
 
-    # Passthrough subcommands. Dispatch is handled by a short-circuit in main()
+    p_fu = sub.add_parser(
+        "fu", help="Refine backlog (followups.json) — Proposal A.",
+    )
+    fu_sub = p_fu.add_subparsers(dest="fu_cmd", required=True)
+
+    p_fu_list = fu_sub.add_parser(
+        "list", parents=[json_parent], help="List backlog items.",
+    )
+    p_fu_list.add_argument("--status", default=None, help="Filter by status.")
+    p_fu_list.add_argument("--kind", default=None, help="Filter by kind.")
+    p_fu_list.set_defaults(func=cmd_fu_list)
+
+    p_fu_show = fu_sub.add_parser(
+        "show", parents=[json_parent], help="Show one item by id.",
+    )
+    p_fu_show.add_argument("id", help="Follow-up id, e.g. FU-41.")
+    p_fu_show.set_defaults(func=cmd_fu_show)
+
+    p_fu_render = fu_sub.add_parser(
+        "render",
+        help="Regenerate the FOLLOWUPS markdown tables from state (drift-killer).",
+    )
+    p_fu_render.set_defaults(func=cmd_fu_render)
+
+    p_fu_add = fu_sub.add_parser(
+        "add", help="Add a backlog item (auto-assigns the next FU-N).",
+    )
+    p_fu_add.add_argument("--kind", required=True, choices=_FU_KINDS)
+    p_fu_add.add_argument("--title", required=True, help="One-line title.")
+    p_fu_add.add_argument("--context", default=None)
+    p_fu_add.add_argument("--trigger", default=None)
+    p_fu_add.add_argument(
+        "--files", default=None, help="Comma-separated file hints.",
+    )
+    p_fu_add.add_argument(
+        "--refs", default=None,
+        help="Comma-separated refs (decisions / commits / other ids).",
+    )
+    p_fu_add.set_defaults(func=cmd_fu_add)
+
+    p_fu_close = fu_sub.add_parser(
+        "close", help="Close an item (sets status, resolution, closed date).",
+    )
+    p_fu_close.add_argument("id")
+    p_fu_close.add_argument("--resolution", default=None)
+    p_fu_close.add_argument(
+        "--status", choices=("closed", "wontfix"), default="closed",
+    )
+    p_fu_close.set_defaults(func=cmd_fu_close)
+
+    p_fu_reopen = fu_sub.add_parser(
+        "reopen", help="Reopen an item (status=open).",
+    )
+    p_fu_reopen.add_argument("id")
+    p_fu_reopen.set_defaults(func=cmd_fu_reopen)
+
+    # Passthrough subcommands.
     # (forwarding raw argv to the tool's own argparse) — registered here only so
     # they appear in `i2c --help`. add_help=False so `i2c state -h` / `i2c
     # assemble -h` forward to the underlying tool's help, not argparse's.

@@ -656,5 +656,133 @@ class TestMigrateCli(unittest.TestCase):
             self.assertEqual(rc, 2)
 
 
+class TestFuCli(unittest.TestCase):
+    """`i2c fu` — refine backlog CLI group (Proposal A step 4)."""
+
+    def _backlog(self, root: Path):
+        return json.loads(
+            (root / ".state" / "followups.json").read_text(encoding="utf-8")
+        )
+
+    def test_add_creates_backlog_and_assigns_id(self):
+        with TempProject() as t:
+            rc, out, err = run_cli(
+                "fu", "add", "--kind", "prose", "--title", "prose pass",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("added FU-1", out)
+            data = self._backlog(t.root)
+            self.assertEqual(len(data), 1)
+            self.assertEqual(data[0]["id"], "FU-1")
+            self.assertEqual(data[0]["kind"], "prose")
+            self.assertEqual(data[0]["status"], "open")
+            self.assertIn("opened", data[0])
+
+    def test_add_auto_increments(self):
+        with TempProject() as t:
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            rc, out, err = run_cli("fu", "add", "--kind", "other", "--title", "two")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("added FU-2", out)
+            self.assertEqual([r["id"] for r in self._backlog(t.root)],
+                             ["FU-1", "FU-2"])
+
+    def test_add_optional_fields(self):
+        with TempProject() as t:
+            rc, out, err = run_cli(
+                "fu", "add", "--kind", "cli-ergonomics", "--title", "flag",
+                "--context", "c", "--trigger", "tg",
+                "--files", "a.py, b.py", "--refs", "D-1,9d39390",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            rec = self._backlog(t.root)[0]
+            self.assertEqual(rec["files"], ["a.py", "b.py"])
+            self.assertEqual(rec["refs"], ["D-1", "9d39390"])
+            self.assertEqual(rec["context"], "c")
+
+    def test_add_invalid_kind_rejected(self):
+        with TempProject():
+            rc, out, err = run_cli(
+                "fu", "add", "--kind", "bugfix", "--title", "x",
+            )
+            self.assertEqual(rc, 2)  # argparse choices rejection
+
+    def test_list_json(self):
+        with TempProject():
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            rc, out, err = run_cli("fu", "list", "--json")
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(out)
+            self.assertEqual(data[0]["id"], "FU-1")
+
+    def test_list_filter_by_status(self):
+        with TempProject():
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            run_cli("fu", "add", "--kind", "other", "--title", "two")
+            run_cli("fu", "close", "FU-1")
+            rc, out, err = run_cli("fu", "list", "--status", "open", "--json")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual([r["id"] for r in json.loads(out)], ["FU-2"])
+
+    def test_close_sets_status_resolution_date(self):
+        with TempProject() as t:
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            rc, out, err = run_cli(
+                "fu", "close", "FU-1", "--resolution", "done in-session",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("closed FU-1", out)
+            rec = self._backlog(t.root)[0]
+            self.assertEqual(rec["status"], "closed")
+            self.assertEqual(rec["resolution"], "done in-session")
+            self.assertIn("closed", rec)
+
+    def test_close_wontfix(self):
+        with TempProject() as t:
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            rc, out, err = run_cli("fu", "close", "FU-1", "--status", "wontfix")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(self._backlog(t.root)[0]["status"], "wontfix")
+
+    def test_reopen(self):
+        with TempProject() as t:
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            run_cli("fu", "close", "FU-1")
+            rc, out, err = run_cli("fu", "reopen", "FU-1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(self._backlog(t.root)[0]["status"], "open")
+
+    def test_close_unknown_id_fails(self):
+        with TempProject():
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            rc, out, err = run_cli("fu", "close", "FU-99")
+            self.assertEqual(rc, 1)  # update-record no-match
+
+    def test_show(self):
+        with TempProject():
+            run_cli("fu", "add", "--kind", "prose", "--title", "prose pass")
+            rc, out, err = run_cli("fu", "show", "FU-1")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("FU-1", out)
+
+    def test_show_missing_fails(self):
+        with TempProject():
+            rc, out, err = run_cli("fu", "show", "FU-99")
+            self.assertEqual(rc, 2)
+            self.assertIn("no follow-up", err)
+
+    def test_render(self):
+        with TempProject():
+            run_cli("fu", "add", "--kind", "prose", "--title", "prose pass")
+            run_cli("fu", "add", "--kind", "other", "--title", "two")
+            run_cli("fu", "close", "FU-2", "--resolution", "nope")
+            rc, out, err = run_cli("fu", "render")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Follow-ups (open)", out)
+            self.assertIn("| FU-1 |", out)
+            self.assertIn("## Closed / decided", out)
+            self.assertIn("| FU-2 |", out)
+
+
 if __name__ == "__main__":
     unittest.main()
