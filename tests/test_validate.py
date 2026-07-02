@@ -300,5 +300,71 @@ class TestDevlogActionEnumExtensions(unittest.TestCase):
             )
 
 
+class TestFollowupsSchema(unittest.TestCase):
+    """Proposal A: followups.schema.json — the refine backlog."""
+
+    def setUp(self) -> None:
+        self.schema = v.load_schema("followups.schema.json")
+
+    def _fu(self, **overrides):
+        base = {
+            "id": "FU-41",
+            "title": "integrate D-refine-7/8",
+            "kind": "doc-reconciliation",
+            "status": "open",
+        }
+        base.update(overrides)
+        return [base]
+
+    def test_minimal_valid(self):
+        v.validate_json_schema(self._fu(), self.schema)
+
+    def test_full_record_valid(self):
+        v.validate_json_schema(
+            self._fu(
+                context="c", trigger="t", resolution="r",
+                refs=["D-refine-8", "9d39390"], files=["a.py"],
+                opened="2026-07-02", closed="2026-07-02",
+            ),
+            self.schema,
+        )
+
+    def test_experiment_log_kind_accepted(self):
+        # The kind added from the diplomat validation must validate.
+        v.validate_json_schema(self._fu(kind="experiment-log"), self.schema)
+
+    def test_all_kinds_accepted(self):
+        for kind in ("prose", "dead-surface", "doc-reconciliation",
+                     "cli-ergonomics", "test-hardening", "structural-refactor",
+                     "experiment-log", "other"):
+            v.validate_json_schema(self._fu(kind=kind), self.schema)
+
+    def test_invalid_kind_rejected(self):
+        with self.assertRaisesRegex(ValueError, "kind"):
+            v.validate_json_schema(self._fu(kind="bugfix"), self.schema)
+
+    def test_all_statuses_accepted(self):
+        for status in ("open", "accepted", "partially-closed", "closed",
+                       "wontfix"):
+            v.validate_json_schema(self._fu(status=status), self.schema)
+
+    def test_invalid_status_rejected(self):
+        with self.assertRaisesRegex(ValueError, "status"):
+            v.validate_json_schema(self._fu(status="done"), self.schema)
+
+    def test_id_pattern_enforced(self):
+        with self.assertRaisesRegex(ValueError, "id|pattern"):
+            v.validate_json_schema(self._fu(id="41"), self.schema)
+
+    def test_missing_required_rejected(self):
+        bad = [{"id": "FU-1", "title": "x", "status": "open"}]  # no kind
+        with self.assertRaisesRegex(ValueError, "kind"):
+            v.validate_json_schema(bad, self.schema)
+
+    def test_unknown_field_rejected(self):
+        with self.assertRaisesRegex(ValueError, "typo|additional"):
+            v.validate_json_schema(self._fu(typo="x"), self.schema)
+
+
 if __name__ == "__main__":
     unittest.main()

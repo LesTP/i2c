@@ -919,5 +919,74 @@ class TestFromFileAppendGotcha(unittest.TestCase):
             self.assertIn("cannot be empty", err)
 
 
+class TestFollowupsState(unittest.TestCase):
+    """Proposal A step 1: once followups.json is registered, the generic
+    `i2c state` ops (append-record / update-record) and bare-name resolution
+    work for it with no further wiring."""
+
+    _VALID_FU = {
+        "id": "FU-1", "title": "prose pass", "kind": "prose", "status": "open",
+    }
+
+    def test_append_record_followup(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "followups.json"
+            path.write_text("[]")
+            rc, out, err = run_state(
+                "append-record", str(path), json.dumps(self._VALID_FU),
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(path.read_text())
+            self.assertEqual(len(data), 1)
+            self.assertEqual(data[0]["id"], "FU-1")
+
+    def test_append_record_rejected_by_schema(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "followups.json"
+            path.write_text("[]")
+            bad = {"id": "FU-2", "title": "x", "kind": "bogus", "status": "open"}
+            rc, out, err = run_state(
+                "append-record", str(path), json.dumps(bad),
+            )
+            self.assertEqual(rc, 1)
+            self.assertIn("VALIDATION FAILED", err)
+            # File untouched.
+            self.assertEqual(json.loads(path.read_text()), [])
+
+    def test_close_followup_via_update_record(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "followups.json"
+            path.write_text(json.dumps([self._VALID_FU]))
+            rc, out, err = run_state(
+                "update-record", str(path),
+                "--match", "id=FU-1",
+                "status=closed",
+                "resolution=done in-session",
+                "closed=2026-07-02",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(path.read_text())
+            self.assertEqual(data[0]["status"], "closed")
+            self.assertEqual(data[0]["resolution"], "done in-session")
+
+    def test_bare_filename_resolves(self):
+        # Bare `followups.json` resolves to .state/followups.json (FU-19 path),
+        # confirming registration alone enables it.
+        with TempStateDir() as t:
+            (t.state_dir / "followups.json").write_text("[]")
+            root = t.state_dir.parent
+            prev = Path.cwd()
+            os.chdir(root)
+            try:
+                rc, out, err = run_state(
+                    "append-record", "followups.json", json.dumps(self._VALID_FU),
+                )
+                self.assertEqual(rc, 0, msg=err)
+                data = json.loads((t.state_dir / "followups.json").read_text())
+                self.assertEqual(len(data), 1)
+            finally:
+                os.chdir(prev)
+
+
 if __name__ == "__main__":
     unittest.main()

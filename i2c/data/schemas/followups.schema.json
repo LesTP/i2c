@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/followups.schema.json",
+  "title": "Followups",
+  "description": "Array of refine-backlog (follow-up) records. Lives at .state/followups.json. The structured, git-tracked refine backlog (DESIGN_refine_v1.md Proposal A); replaces the hand-maintained FOLLOWUPS.md tables.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "title", "kind", "status"],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^FU-\\d+$",
+        "description": "Follow-up ID like 'FU-41'."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "prose",
+          "dead-surface",
+          "doc-reconciliation",
+          "cli-ergonomics",
+          "test-hardening",
+          "structural-refactor",
+          "experiment-log",
+          "other"
+        ],
+        "description": "Refine kind (DESIGN_refine_v1.md §2 taxonomy)."
+      },
+      "status": {
+        "type": "string",
+        "enum": ["open", "accepted", "partially-closed", "closed", "wontfix"],
+        "description": "Backlog lifecycle status."
+      },
+      "context": {
+        "type": "string",
+        "description": "What the item is and why, in brief."
+      },
+      "trigger": {
+        "type": "string",
+        "description": "When to address it (the condition that makes it worth doing)."
+      },
+      "resolution": {
+        "type": "string",
+        "description": "How it was resolved. Set when status is closed or wontfix."
+      },
+      "refs": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "description": "Related decisions, commits, or other FU / design-doc ids."
+      },
+      "files": {
+        "type": "array",
+        "items": {"type": "string", "minLength": 1},
+        "description": "Files the item touches; a hint for the refine loop (Proposal B)."
+      },
+      "opened": {
+        "type": "string",
+        "format": "date",
+        "description": "Date the item was opened (YYYY-MM-DD). Set by `i2c fu add`."
+      },
+      "closed": {
+        "type": "string",
+        "format": "date",
+        "description": "Date the item was closed. Set by `i2c fu close`."
+      }
+    }
+  }
+}
