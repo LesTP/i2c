@@ -16,7 +16,8 @@
 > CLI-over-shared-state model: `i2c fu` (backlog; mirrors `i2c state`) + `/refine`
 > on the i2c bot (mirrors `/run`). Per-project `.state/followups.json`; capture is
 > an operator-session step; dispatch is loop *or* orch; sessions learn the
-> protocol from a thin `.llms` rule (§10). See §4.4; decisions D-refine-3..6.
+> protocol from a thin `.llms` rule (§10). See §4.4; decisions D-refine-3..8
+> (D-refine-7/8 — the tracker/log unification — live in §11–§12, not a separate section).
 
 ---
 
@@ -75,10 +76,21 @@ and the per-kind checklists in §6.
 | **cli-ergonomics** | a real workflow keeps hitting a rough edge in the worker/operator surface | add the minimal subcommand/flag; schema-validated; sibling to existing ops | FU-2/13 (`append-record`/`update-record`), FU-19 (bare-filename resolve), FU-21 (`--from-file`) |
 | **test-hardening** | an invariant is asserted in prose but nothing checks it | add a targeted test + a floor/guard against regression | FU-11 (instruction-example validation), FU-17 (arg rejection) |
 | **structural-refactor** | duplicated/overloaded machinery has accreted; a cleaner single form exists | design memo + decisions + a coordinated multi-commit stack | FU-39 (single projection layer), the 7-state lifecycle redesign (D-state-1..7, 5 commits), `retire predecessor-dialect` |
+| **experiment-log** | a run/experiment produced a result or finding worth recording | append the finding to a log/notes, often with a numbered writeup; no code change | *(diplomat)* `Run 21 …`, `Run 18 writeup`, `TUNING_LOG Run 15 findings`, `RESEARCH_NOTES Note 1`; i2c's own benchmark thread (§7) will generate these |
 
 Note the last row is the bridge to §3: **structural-refactor is refine done at
 phase scale** — it already gets a memo + decisions + a commit stack. The other
-five kinds are *sub-phase* and today get nothing but an FU-table row and a commit.
+six kinds are *sub-phase* and today get nothing but an FU-table row and a commit.
+
+**Validated against a second corpus (2026-07-02).** A skim of diplomat's recent
+250 of 533 commits — a research/negotiation project, not tooling — found every
+sub-phase kind recurring, including a near-identical prose pass (its `U-36
+reason-first lens` mirrors i2c's FU-36). It independently reproduced the **drift
+class** (recurring `NEXT_STEPS` / `TUNING_LOG` cleanup / reorg / sync commits — the
+exact motivation for Proposal A) and surfaced **`experiment-log`** as a
+generalizable seventh kind (added above; i2c's own benchmark thread §7 will produce
+these). Watch-items not adopted: `bugfix` (standalone fixes — may fold into
+test-hardening); viz / output-polish (diplomat-specific presentation work).
 
 ---
 
@@ -129,7 +141,7 @@ resolution note:
 {
   "id": "FU-41",
   "title": "…",
-  "kind": "prose | dead-surface | doc-reconciliation | cli-ergonomics | test-hardening | structural-refactor | other",
+  "kind": "prose | dead-surface | doc-reconciliation | cli-ergonomics | test-hardening | structural-refactor | experiment-log | other",
   "status": "open | accepted | partially-closed | closed | wontfix",
   "context": "…",
   "trigger": "…",
@@ -141,10 +153,13 @@ resolution note:
 }
 ```
 
-`refinelog.jsonl` — append-only outcome log for refine work (a devlog sibling,
-scoped to the ad-hoc tier): `{ts, fu, kind, summary, commit, files_touched}`. This
-becomes the source for a *rendered* "Recently shipped (refine)" view, replacing
-the hand-maintained log.
+**Outcome logging — reuse `devlog.jsonl` (D-refine-8).** Refine runs get **no**
+separate log; outcomes append to the existing `devlog.jsonl` (discriminated by
+`action`/`kind`, with `phase`/`step` null) plus `telemetry.jsonl`
+(`action_type=refine`). The rendered "recently shipped (refine)" view reads those.
+Needs `devlog_entry.schema.json` to allow null `phase`/`step` and carry
+`action`/`kind` for refine rows — additive (devlog already tolerates `step: null`,
+per FU-9, whose iteration-identity question applies to refine rows too).
 
 ### 4.2 Surface
 
@@ -174,8 +189,8 @@ this VS Code session on the laptop, a Claude Code orch session on the pi, and a
 loop worker on the pi. `i2c fu` is to the refine backlog what `i2c state` is to
 `.state/`; `/refine` is to a refine item what `/run` is to a phase.
 
-**State location — per-project (D-refine-3).** `<proj>/.state/followups.json` +
-`refinelog.jsonl`. Slots into the bot's per-project `/setdir` + cwd model with
+**State location — per-project (D-refine-3).** `<proj>/.state/followups.json`
+(refine outcomes go to the shared `devlog.jsonl`, D-refine-8). Slots into the bot's per-project `/setdir` + cwd model with
 zero new plumbing, and — being independent of `phases.json` — lets any repo (even
 non-migrated ones like codexbot / e2e, and i2c itself) adopt the refine tier
 **without** running the full lifecycle. i2c's own `FOLLOWUPS.md` is the first
@@ -186,11 +201,11 @@ migration.
 | Step | Who / where | Interface |
 |---|---|---|
 | Capture / formalize | operator/agent session (this one, or Claude Code orch on pi) | assistant runs `i2c fu add` (may also write a DESIGN doc the FU `refs`) |
-| Store | the share: `<proj>/.state/followups.json` + `refinelog.jsonl` | atomic, schema-validated writes via `i2c fu` |
+| Store | the share: `<proj>/.state/followups.json` (outcomes → shared `devlog.jsonl`, D-refine-8) | atomic, schema-validated writes via `i2c fu` |
 | Read / orient | any session + the i2c bot | `i2c fu list` / `i2c fu render`; bot read facet (`/fu` or `/audit fu`) |
 | Dispatch | operator, via either driver | bot `/refine <fu-id>` (deterministic) or "do FU-N" in a session |
 | Implement | refine loop on pi **or** orch session | `i2c refine <fu-id>` worker (§5), or the session edits directly |
-| Close / log | the implementer | `i2c fu close` + `refinelog` append; runner commits (loop) or assistant commits (session) |
+| Close / log | the implementer | `i2c fu close` + a `devlog.jsonl` refine row; runner commits (loop) or assistant commits (session) |
 
 **Capture is a session step (D-refine-4).** Turning an observation into a
 well-specified FU is judgment work — it belongs in an operator/agent session, not
@@ -222,15 +237,15 @@ pre-assembled context, writes a structured outcome") to refine.
    adapter Tool Rules + the `followups.json` record (title/context/trigger/kind) +
    the declared/heuristic `files` — no `instructions/{plan,execute,…}`, no phase
    context.
-2. The **worker** makes the change, appends a `refinelog.jsonl` row, and sets the
+2. The **worker** makes the change, appends a refine row to `devlog.jsonl`, and sets the
    FU `status` via `i2c fu close` — **no `phases.json`/`project.state` write**
    (this is the sub-phase property; D-refine-1).
 3. The **runner** commits (runner-owned per FU-40; message body from the
-   refinelog `summary`), scoped so operator WIP is untouched.
+   devlog `summary`), scoped so operator WIP is untouched.
 
 Relationship to existing pieces: it reuses the `--emit system/user` split (FU-35),
-the invariants harness (a refine-specific post-check: FU closed + refinelog row
-appended), and — if we want refine measured too — emits a telemetry row with a
+the invariants harness (a refine-specific post-check: FU closed + a `devlog`
+refine row appended), and — if we want refine measured too — emits a telemetry row with a
 `refine` action_type, feeding the benchmark's refine bucket (Q-refine-3).
 
 Deliberately **not** included: multi-step planning, review/close gates. If a
@@ -281,7 +296,7 @@ from Build steps to refine work too.
   adopts the refine tier without the full lifecycle.
 - **Q-refine-2 — RESOLVED (2026-07-02): render the data, author the narrative.**
   Migrate the FU-tables + recently-shipped log to state (rendered via `i2c fu
-  render` / from `refinelog`); leave the cold-start orientation + Active Roadmap
+  render` / from `devlog` refine rows); leave the cold-start orientation + Active Roadmap
   as authored prose. Revisit only if the roadmap itself starts drifting.
 - **Q-refine-3 — RESOLVED (2026-07-02): yes.** Ad-hoc refine emits telemetry
   rows with a `refine` action_type so it feeds the benchmark's refine bucket;
@@ -291,7 +306,7 @@ from Build steps to refine work too.
   verbs, no collision.
 - **Q-refine-5 — RESOLVED (2026-07-02): runner stamps a machine-parseable
   format.** The §5 runner-owned commit uses `refine(<kind>): <fu-id> <summary>`
-  so `git log` is mineable by kind/FU and cross-references `refinelog` + telemetry
+  so `git log` is mineable by kind/FU and cross-references the `devlog` refine rows + telemetry
   — readability is a non-goal (the operator never reads titles); *analyzability*
   is the point. Extends the FU-8/FU-40 committer-format direction to the refine
   tier. Session/hand commits are encouraged to match but not enforced.
@@ -302,9 +317,9 @@ from Build steps to refine work too.
 
 - **`i2c.control` / render** — A's `fu render` is the same single-projection
   pattern (state is truth, prose is formatted output). Reuse `i2c/render.py`.
-- **Refine regime + FU-9** — B's refinelog is the ad-hoc-tier sibling of the
-  devlog; FU-9's "which iteration" question for Refine-regime devlog entries maps
-  onto refinelog's per-row identity.
+- **Refine regime + FU-9** — refine outcomes reuse `devlog.jsonl` (D-refine-8), not
+  a separate log; FU-9's "which iteration" question for Refine-regime devlog entries
+  applies to refine rows' per-row identity too.
 - **Telemetry (`DESIGN_telemetry_v1.md`)** — Q-refine-3 adds a `refine`
   action_type to the existing envelope; no new mechanism.
 - **FU-40** — B's runner-owned refine commit is the same committer-centralization
@@ -361,7 +376,7 @@ thin and pointer-based so they neither overlap nor drift into one another.
 ## 11. Implementation scope (A) — schema + `i2c fu` CLI
 
 Buildable unit for Proposal A. Scope = the **schema + the `i2c fu` backlog
-surface** (the loop `i2c refine`, `refinelog.jsonl`, telemetry, and bot commands
+surface** (the loop `i2c refine`, its `devlog`/telemetry logging, and bot commands
 are Proposal B, deferred). Grounded against the current codebase; the key lever:
 **registering `followups.json` in `SCHEMA_BY_FILENAME` unlocks generic `i2c state`
 writes + bare-name resolution for free**, so write verbs are thin wrappers and
@@ -375,7 +390,7 @@ Envelope: draft-2020-12, `type: array`, `items.additionalProperties: false`.
 |---|---|---|
 | `id` | string | `^FU-\d+$`, **required** |
 | `title` | string | **required** |
-| `kind` | enum | `prose · dead-surface · doc-reconciliation · cli-ergonomics · test-hardening · structural-refactor · other`, **required** |
+| `kind` | enum | `prose · dead-surface · doc-reconciliation · cli-ergonomics · test-hardening · structural-refactor · experiment-log · other`, **required** |
 | `status` | enum | `open · accepted · partially-closed · closed · wontfix`, **required** |
 | `context`, `trigger`, `resolution` | string | optional |
 | `refs`, `files` | array[string] | optional |
@@ -421,8 +436,8 @@ Namespaces (the `control._apply_proposal` pattern).
 
 ### 11.4 Deferred to Proposal B
 
-`refinelog.jsonl` + `fu close`→refinelog; the `refine` telemetry action_type; the
-`i2c refine <fu-id>` loop; bot `/refine` + `/fu` facets.
+the `refine` telemetry action_type; `devlog_entry.schema.json` refine-row support
+(D-refine-8); the `i2c refine <fu-id>` loop; bot `/refine` + `/fu` facets.
 
 ### 11.5 Scoping decisions
 
@@ -431,7 +446,7 @@ Namespaces (the `control._apply_proposal` pattern).
 - **Q-A2 — ID source.** `fu add` next-id = max numeric id in `followups.json`;
   post-migration starts at FU-41, never reused. *(Lean: yes.)*
 - **Q-A3 — migration is a session job** (status enum normalization = judgment).
-- **Q-A4 — `fu close` in A = status only;** refinelog is B. *(Lean: yes.)*
+- **Q-A4 — `fu close` in A = status only;** outcome logging (`devlog`) + the loop are B. *(Lean: yes.)*
 
 ---
 
@@ -455,7 +470,7 @@ i2c refine FU-41 [--backend …]
        + Output Contract (EXIT: 0|2 / REASON)     — NO phase/steps/decisions context
        (reuses the --emit system/user cache split, FU-35)
   3. Invoke backend (claude -p / codex exec) — backend from [run.backends].refine.
-  4. Worker acts: edits files → appends refinelog.jsonl → does NOT touch
+  4. Worker acts: edits files → appends a refine row to devlog.jsonl → does NOT touch
      phases.json / steps.json / project.json.
   5. Runner post-processing (runner-owned, per FU-40):
        parse EXIT; on EXIT:0 → i2c fu close FU-41 --resolution "<REASON>"
@@ -473,11 +488,11 @@ One invocation — no `plan→execute→review→close`, no `audit_boundary`. Th
 |---|---|---|
 | `run_refine.py` (or a `refine` path in `run_iteration.py`) | single-shot driver | **reuses** `invoke_claude`/`invoke_codex`, `assemble_prompt(emit=…)`, telemetry capture, the FU-40 commit helper |
 | assembler `--action refine` | new recipe: WORKER_SPEC + adapter + `instructions/refine.md` + FU-record provider (reads `followups.json` for the id) + `files` | **new** recipe + one context provider; reuses section machinery |
-| `instructions/refine.md` | refine worker procedure (read FU → minimal change → run tests if present → append refinelog → don't touch phase state → EXIT) | **new**, thin |
-| `refinelog_entry.schema.json` + register | append-only outcome log (`{ts, fu, kind, summary, commit, files_touched}`) | **new** (mirrors devlog/telemetry JSONL registration) |
+| `instructions/refine.md` | refine worker procedure (read FU → minimal change → run tests if present → append a `devlog` refine row → don't touch phase state → EXIT) | **new**, thin |
+| extend `devlog_entry.schema.json` (D-refine-8) | refine rows in the shared `devlog.jsonl` — null `phase`/`step` + `action`/`kind` | **additive** schema change (no new log file) |
 | `config._RUN_ACTIONS += "refine"` | enables `[run.backends].refine` routing | **one-line** (list already carries diagnose/reconcile) |
 | telemetry `action_type=refine` | refine rows feed the benchmark bucket (Q-refine-3) | **additive**; schema already nullable |
-| `invariants` refine check | assert FU closed + refinelog row appended + **phase files unchanged** | **new** small check (mirrors post-CLOSE invariant, FU-22) |
+| `invariants` refine check | assert FU closed + a `devlog` refine row appended + **phase files unchanged** | **new** small check (mirrors post-CLOSE invariant, FU-22) |
 | bot `/refine <fu-id>` | admin-gated; shells `i2c refine` in project cwd on a worker thread | **new** entry in `telegram_core.MUTATING_COMMANDS` + dispatch (mirrors `/run`) |
 
 ### 12.3 Design choices (Q-B*)
@@ -503,14 +518,20 @@ One invocation — no `plan→execute→review→close`, no `audit_boundary`. Th
 |---|---|---|
 | Driver | `run_iteration` + **state machine** picks the action | `run_refine` — **no state machine**; action fixed |
 | Unit | one action of a phase | one FU |
-| State written | `phases`/`steps`/`project`/`devlog`/`decisions` | **only** `followups.json` + `refinelog.jsonl` |
+| State written | `phases`/`steps`/`project`/`devlog`/`decisions` | `followups.json` + shared `devlog`/`telemetry`/`decisions` |
 | Lifecycle | advances `project.state` → `audit_boundary` | none — one shot |
 | Gate | human at phase close | none (reopen if wrong) |
 | Backend | `[run.backends].<action>` | `[run.backends].refine` |
+
+**What merges vs stays (D-refine-7).** The dispatchers/lifecycles above stay
+distinct; what unifies is the *substrate* — one `.state/` + CLI, one shared
+`devlog`/`telemetry`/`decisions` log-and-decision store (D-refine-8), and one
+reporting surface (`i2c status` / render shows the current phase **and** open FUs).
+Tracking merges; implementing doesn't.
 
 ### 12.5 Net
 
 Mostly wiring: reuses the assembler, the backend-invoke + `--emit` cache split,
 telemetry, and the FU-40 commit helper. Genuinely new surface is small — a refine
-recipe + `instructions/refine.md`, the refinelog schema, a single-shot driver, a
-refine invariant, and the `/refine` bot command. B is gated on A.
+recipe + `instructions/refine.md`, the `devlog` refine-row support, a single-shot
+driver, a refine invariant, and the `/refine` bot command. B is gated on A.
