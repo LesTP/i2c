@@ -6,6 +6,7 @@ full-section invocations. Golden-output snapshots deferred per D-impl-2.
 
 from __future__ import annotations
 
+import atexit
 import io
 import json
 import os
@@ -20,6 +21,39 @@ from i2c import assemble_context as ac
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
+
+# FU-18: the fixture + adapters live on a (slow) network share; copying them from
+# the share on every TempProject dominated this module's runtime. Cache them
+# locally once per process and copy from the local cache instead (copytree source
+# becomes local disk, not Samba). The cache is read-only — tests always mutate
+# their own per-test copy.
+_FIXTURE_CACHE: tempfile.TemporaryDirectory | None = None
+_CACHED_FIXTURE: Path | None = None
+_ADAPTER_CACHE: dict[str, str] | None = None
+
+
+def _cached_fixture() -> Path:
+    """A local one-time copy of FIXTURE; the copytree source for every TempProject."""
+    global _FIXTURE_CACHE, _CACHED_FIXTURE
+    if _CACHED_FIXTURE is None:
+        _FIXTURE_CACHE = tempfile.TemporaryDirectory(prefix="i2c_asm_cache_")
+        atexit.register(_FIXTURE_CACHE.cleanup)
+        dst = Path(_FIXTURE_CACHE.name) / "fixture"
+        shutil.copytree(FIXTURE, dst)
+        _CACHED_FIXTURE = dst
+    return _CACHED_FIXTURE
+
+
+def _cached_adapters() -> dict[str, str]:
+    """Adapter file contents, read from the share once."""
+    global _ADAPTER_CACHE
+    if _ADAPTER_CACHE is None:
+        adapters = I2C_ROOT / "i2c" / "data" / "adapters"
+        _ADAPTER_CACHE = {
+            "CLAUDE.md": (adapters / "claude.md").read_text(encoding="utf-8"),
+            "CODEX.md": (adapters / "codex.md").read_text(encoding="utf-8"),
+        }
+    return _ADAPTER_CACHE
 
 
 # ---------------------------------------------------------------------------
@@ -48,14 +82,13 @@ class TempProject:
     def __enter__(self) -> Path:
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_asm_")
         root = Path(self._tmp.name) / "project"
-        shutil.copytree(FIXTURE, root)
+        shutil.copytree(_cached_fixture(), root)
         if self.with_framework:
-            # Adapters are project-root assets; copy them from the packaged
-            # templates. WORKER_SPEC.md and instructions/ now resolve from
-            # package-data (§5.3), so they need not be copied into the project.
-            adapters = I2C_ROOT / "i2c" / "data" / "adapters"
-            shutil.copy2(adapters / "claude.md", root / "CLAUDE.md")
-            shutil.copy2(adapters / "codex.md", root / "CODEX.md")
+            # Adapters are project-root assets. WORKER_SPEC.md and instructions/
+            # resolve from package-data (§5.3), so they need not be copied.
+            adapters = _cached_adapters()
+            (root / "CLAUDE.md").write_text(adapters["CLAUDE.md"], encoding="utf-8")
+            (root / "CODEX.md").write_text(adapters["CODEX.md"], encoding="utf-8")
         for relpath, content in self.with_extra.items():
             target = root / relpath
             target.parent.mkdir(parents=True, exist_ok=True)
