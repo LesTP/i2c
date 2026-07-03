@@ -158,8 +158,11 @@ separate log; outcomes append to the existing `devlog.jsonl` (discriminated by
 `action`/`kind`, with `phase`/`step` null) plus `telemetry.jsonl`
 (`action_type=refine`). The rendered "recently shipped (refine)" view reads those.
 Needs `devlog_entry.schema.json` to allow null `phase`/`step` and carry
-`action`/`kind` for refine rows — additive (devlog already tolerates `step: null`,
-per FU-9, whose iteration-identity question applies to refine rows too).
+`action`/`kind` for refine rows — additive (devlog already tolerates `step: null`).
+The **same schema change also adds an optional `iteration: int`** so a null-`step`
+row (Refine-regime or refine-tier) can name which iteration it belongs to — this
+**folds in FU-9** (closed as superseded; telemetry.jsonl already covers the
+quantitative per-iteration analytics).
 
 ### 4.2 Surface
 
@@ -318,8 +321,9 @@ from Build steps to refine work too.
 - **`i2c.control` / render** — A's `fu render` is the same single-projection
   pattern (state is truth, prose is formatted output). Reuse `i2c/render.py`.
 - **Refine regime + FU-9** — refine outcomes reuse `devlog.jsonl` (D-refine-8), not
-  a separate log; FU-9's "which iteration" question for Refine-regime devlog entries
-  applies to refine rows' per-row identity too.
+  a separate log. **FU-9 is folded into D-refine-8:** the same `devlog_entry` change
+  adds an optional `iteration: int`, so a null-`step` entry (Refine-regime or
+  refine-tier) can name its iteration. FU-9 is therefore closed as superseded.
 - **Telemetry (`DESIGN_telemetry_v1.md`)** — Q-refine-3 adds a `refine`
   action_type to the existing envelope; no new mechanism.
 - **FU-40** — B's runner-owned refine commit is the same committer-centralization
@@ -498,7 +502,7 @@ One invocation — no `plan→execute→review→close`, no `audit_boundary`. Th
 | `run_refine.py` (or a `refine` path in `run_iteration.py`) | single-shot driver | **reuses** `invoke_claude`/`invoke_codex`, `assemble_prompt(emit=…)`, telemetry capture, the FU-40 commit helper |
 | assembler `--action refine` | new recipe: WORKER_SPEC + adapter + `instructions/refine.md` + FU-record provider (reads `followups.json` for the id) + `files` | **new** recipe + one context provider; reuses section machinery |
 | `instructions/refine.md` | refine worker procedure (read FU → minimal change → run tests if present → append a `devlog` refine row → don't touch phase state → EXIT) | **new**, thin |
-| extend `devlog_entry.schema.json` (D-refine-8) | refine rows in the shared `devlog.jsonl` — null `phase`/`step` + `action`/`kind` | **additive** schema change (no new log file) |
+| extend `devlog_entry.schema.json` (D-refine-8) | refine rows in the shared `devlog.jsonl` — null `phase`/`step` + `action`/`kind` + optional `iteration: int` (folds in FU-9) | **additive** schema change (no new log file) |
 | `config._RUN_ACTIONS += "refine"` | enables `[run.backends].refine` routing | **one-line** (list already carries diagnose/reconcile) |
 | telemetry `action_type=refine` | refine rows feed the benchmark bucket (Q-refine-3) | **additive**; schema already nullable |
 | `invariants` refine check | assert FU closed + a `devlog` refine row appended + **phase files unchanged** | **new** small check (mirrors post-CLOSE invariant, FU-22) |
@@ -520,6 +524,15 @@ One invocation — no `plan→execute→review→close`, no `audit_boundary`. Th
   noted, not blocking.
 - **Q-B5 — commit ownership.** Runner-owned `refine(<kind>): FU-N …` (extends the
   FU-40 direction), scoped so operator WIP is untouched.
+- **Q-B6 — survey/propose mode.** Beyond *executing* a known FU, the loop grows a
+  mirror facet that *files* FUs: a refine call that scans and emits candidates.
+  First user is the **dead-surface audit (FU-37)** — a report-only detector
+  (vulture + grep) that emits `dead-surface` FUs for normal, human-gated dispatch.
+  **Distinct from `diagnose`** (recovery: reactive, iteration-targeted, reads
+  `.state/` + loop logs, feeds `reconcile` deterministically); survey is proactive,
+  whole-tree, source-reading, and feeds the `fu` backlog by judgment. Per D-refine-7
+  they stay **separate lifecycles** but may share the finding/proposal reporting
+  shape. Later facet — execute mode is v1.
 
 ### 12.4 Build loop vs refine loop
 
