@@ -43,6 +43,8 @@ clankercourts drove Phases 2–14 autonomously (claude + codex).
 (telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is unblocked** (D-tests-1 resolved: `plan→tests`) — the next Build-tier feature.
 See **Active Roadmap** below for tracks, priorities, and the current recommendation.
 
+**Next session (planned order).** (1) **FU-40 Inc 3** — wire REVIEW fix-ups + CLOSE docs onto the `commit_execute` helper; then FU-40 flips to `closed`. (2) **FU-20** (ship `templates/.llms/commands/` for Devmate + the loading check) — *maybe*. (3) then **Proposal B** (the `i2c refine` loop) *or* **tests_action** — both ready: B unlocks the fix/bugfix consolidation; tests_action is the benchmark oracle (`plan→tests`, D-tests-1 done).
+
 **Quick orientation** (from a project root with `.state/`, package installed):
 
 ```powershell
