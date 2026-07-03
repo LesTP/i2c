@@ -1,4 +1,4 @@
-# i2c Followups — orientation, roadmap, and the refine-backlog pointer
+# i2c — status, roadmap, and the refine-backlog pointer
 
 The single ongoing tracker for i2c: a static "how it works" preamble (here), a
 dynamic **Status** (session entry point), and the **Active Roadmap** (strategic

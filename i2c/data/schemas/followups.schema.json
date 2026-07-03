@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://i2c.local/schemas/followups.schema.json",
   "title": "Followups",
-  "description": "Array of refine-backlog (follow-up) records. Lives at .state/followups.json. The structured, git-tracked refine backlog (DESIGN_refine_v1.md Proposal A); replaces the hand-maintained FOLLOWUPS.md tables.",
+  "description": "Array of refine-backlog (follow-up) records. Lives at .state/followups.json. The structured, git-tracked refine backlog (DESIGN_refine_v1.md Proposal A); replaces the hand-maintained markdown backlog tables.",
   "type": "array",
   "items": {
     "type": "object",

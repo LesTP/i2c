@@ -422,4 +422,4 @@ i2c state append devlog.jsonl '{"phase":8,"step":null,"action":"integration_chec
   devlog.jsonl --phase 11 --where 'contracts != []'`). The contract scan
   in step 5 uses raw `jq` instead. This is intentional for now — reads
   don't need atomicity, and the assembler is the eventual home for
-  pre-formatted queries. Tracked as **FU-14** in `FOLLOWUPS.md`.
+  pre-formatted queries. Tracked as **FU-14** (`i2c fu`).

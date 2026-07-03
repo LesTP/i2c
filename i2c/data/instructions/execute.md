@@ -317,4 +317,4 @@ Stay in your lane: do the step, record the result, exit.
 
 - **Mid-phase step append:** `i2c state` has no `append-step` subcommand.
   Adjacent work surfaces in the next PLAN action via `Deferred:` flag in
-  devlog summary. Tracked as **FU-2** in `FOLLOWUPS.md`.
+  devlog summary. Tracked as **FU-2** (`i2c fu`).

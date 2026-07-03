@@ -4,7 +4,7 @@ All notable changes to i2c are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and from this release
 forward the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-This is the public counterpart to `FOLLOWUPS.md` (internal tracking).
+This is the public counterpart to `STATUS.md` (internal tracking).
 
 ## [Unreleased]
 

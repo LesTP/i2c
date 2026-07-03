@@ -7,7 +7,7 @@ that forced consumers to carry ABI-compatible tool copies. This test fails if
 the old surface leaks back into those files.
 
 Scope is deliberately the runtime worker surface only. Design / architecture
-records (`DESIGN_*.md`, `ARCH_assembler.md`, `FOLLOWUPS.md`) intentionally
+records (`DESIGN_*.md`, `ARCH_assembler.md`, `STATUS.md`) intentionally
 retain historical lineage, decision provenance, program interface specs, and
 program-emitted strings, so they are not linted here.
 """

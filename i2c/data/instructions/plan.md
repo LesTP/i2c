@@ -516,4 +516,4 @@ i2c state set project.json state=execute
 - **No `i2c state set` on array files.** `update-record` covers single-record
   field updates (used above to amend `dependencies` etc. on existing phase
   records). Generic-set across N records is not supported. Tracked as
-  **FU-3** in `FOLLOWUPS.md`.
+  **FU-3** (`i2c fu`).

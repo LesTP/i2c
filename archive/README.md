@@ -12,4 +12,4 @@ the *why*; don't read them for the *what*.
 
 These are internal records and are not part of the shippable/public doc set.
 The live design memo (`../DESIGN_packaging_v1.md`) and the rolling backlog
-(`../FOLLOWUPS.md`) stay at the repo root.
+(`../STATUS.md`) stay at the repo root.
