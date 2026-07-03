@@ -416,7 +416,7 @@ _FU_KINDS = (
     "test-hardening", "structural-refactor", "experiment-log", "other",
 )
 
-_FU_HORIZONS = ("immediate", "next", "eventually", "icebox")
+_FU_HORIZONS = ("now", "next", "eventually", "icebox")
 
 
 def _split_csv(value: str | None) -> list[str]:

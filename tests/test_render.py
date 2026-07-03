@@ -28,8 +28,8 @@ class TestRenderFollowupsList(unittest.TestCase):
         self.assertIn("next adapter touch", out)
 
     def test_includes_priority_when_present(self):
-        out = render._render_followups([_fu(priority="immediate")])
-        self.assertIn("immediate", out)
+        out = render._render_followups([_fu(priority="now")])
+        self.assertIn("now", out)
 
 
 class TestRenderFollowupsTables(unittest.TestCase):

@@ -353,7 +353,7 @@ class TestFollowupsSchema(unittest.TestCase):
             v.validate_json_schema(self._fu(status="done"), self.schema)
 
     def test_priority_accepted(self):
-        for p in ("immediate", "next", "eventually", "icebox"):
+        for p in ("now", "next", "eventually", "icebox"):
             v.validate_json_schema(self._fu(priority=p), self.schema)
 
     def test_invalid_priority_rejected(self):

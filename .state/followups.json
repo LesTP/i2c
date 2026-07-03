@@ -1,0 +1,146 @@
+[
+  {
+    "id": "FU-2",
+    "title": "No subcommand to append a new step mid-phase",
+    "kind": "cli-ergonomics",
+    "status": "partially-closed",
+    "priority": "eventually",
+    "context": "`state.py append-record steps.json '{...}'` exists (covers PLAN-time and in principle mid-phase). The original framing was specifically about EXECUTE-time step creation; `instructions/execute.md` still funnels deferred work through devlog `Deferred:` flags so PLAN owns step authoring. If a real workflow demands runtime step append from EXECUTE, lift the restriction in execute.md prose - the CLI now supports it.",
+    "trigger": "Phase 2 pilot shows execute-time step append is wanted; loosen the prose."
+  },
+  {
+    "id": "FU-3",
+    "title": "`state.py set` only handles JSON object files, not arrays",
+    "kind": "cli-ergonomics",
+    "status": "partially-closed",
+    "priority": "icebox",
+    "context": "`update-record` (added for review/close authoring) covers single-record updates on array files via `--match KEY=VALUE`. Generic-set-on-array still isn't supported (e.g., updating fields on N records at once).",
+    "trigger": "A real workflow needs bulk update across multiple records (rare). Until then, `update-record` covers the gap that drove FU-3 in practice."
+  },
+  {
+    "id": "FU-4",
+    "title": "No named lifecycle-transition op (e.g., `state.py escalate --reason \"...\"`)",
+    "kind": "cli-ergonomics",
+    "status": "open",
+    "priority": "icebox",
+    "context": "Post-FU-30 the `blocked` field is gone; lifecycle transitions use `state.py set project.json state=<enum>`. The dense `set` syntax works for autonomous and supervised use alike. A named op like `state.py escalate --reason \"...\"` (or `state.py raise-gate`) could log a structured reason and read more naturally, but adds API surface for little gain.",
+    "trigger": "Revisit if supervised UI grows a need for richer transition flows."
+  },
+  {
+    "id": "FU-14",
+    "title": "No read-side query helper in `state.py` (e.g., `state.py query devlog.jsonl --where 'contracts != []'`)",
+    "kind": "cli-ergonomics",
+    "status": "accepted",
+    "priority": "eventually",
+    "context": "The assembler (Phase 1.3) exposes pre-formatted views: `--section devlog --phase N` gives a bulleted phase tail, `--section status` an orientation snapshot. Ad-hoc queries still fall back to `jq`. Per ARCH §2 / §10, the assembler intentionally does not absorb general-purpose queries.",
+    "trigger": "Phase 2 pilot reveals a repeated query pattern worth absorbing into `--section`."
+  },
+  {
+    "id": "FU-15",
+    "title": "`Module Contract` section is hard-required when `phases.json[current].module` is set",
+    "kind": "other",
+    "status": "open",
+    "priority": "icebox",
+    "context": "Per ARCH §11.1 / §4.1, the assembler exits 1 if a phase declares a `module` field but no `ARCH_<module>.md` file exists. This is strict by spec — useful for catching missing contracts early — and the FU-32 Δ4 ARCH-authoring discipline (per `ref/SPEC_architecture.md`) now codifies pre-authoring as the standard: every module's ARCH is written during architecture-phase work *before* any PLAN runs on that phase. **Original CC pilot (2026-06-05)** workaround (pre-author `ARCH_resolver.md` at bootstrap) is now the documented norm rather than a workaround.",
+    "trigger": "Only revisit if a future workflow genuinely needs to plan against an unwritten ARCH (e.g., research/spike phases). For now the strictness is correct."
+  },
+  {
+    "id": "FU-16",
+    "title": "Available Modules ARCHITECTURE.md fallback is naive",
+    "kind": "cli-ergonomics",
+    "status": "open",
+    "priority": "eventually",
+    "context": "When the adapter's `## Available Modules` section is placeholder-only, the assembler grabs `## Implementation Sequence` from `ARCHITECTURE.md` verbatim and surfaces its body. If projects use richer Implementation Sequence tables (extra columns, longer prose), the rendered Available Modules section will be noisy.",
+    "trigger": "Phase 2 / 3 pilots show real-world Implementation Sequence tables overflow the section. Tighten the fallback to extract only module names, or document a project convention for the fallback shape."
+  },
+  {
+    "id": "FU-18",
+    "title": "Assembler tests slow on Windows network share",
+    "kind": "test-hardening",
+    "status": "open",
+    "priority": "eventually",
+    "context": "`tests/test_assemble_context.py` runs in ~60s on `\\\\192.168.0.50\\shared\\...`. Primary cost: `TempProject(with_framework=True)` copies the full `instructions/` directory and WORKER_SPEC + both adapters per test invocation.",
+    "trigger": "If iteration cost becomes painful, refactor `TempProject` to copy only what each test class needs (most renderer tests don't read instructions), or cache the framework copy per pytest session. Not a correctness issue."
+  },
+  {
+    "id": "FU-32",
+    "title": "PLAN action not yet autonomous-capable; needs five framework deltas + ARCH-file discipline",
+    "kind": "other",
+    "status": "partially-closed",
+    "priority": "icebox",
+    "context": "After CC Phase 4 EXECUTE shipped supervised (commit `97e9ea4`), the meta-question surfaced: i2c's autonomous loop runs EXECUTE/REVIEW/CLOSE cleanly, but PLAN's step-breakdown step still requires human authoring because ARCH files aren't constrained enough to drive mechanical step decomposition. e2e solves this via a two-step workflow (pre-arch design separately, autonomous batch implementation); i2c lacks the ARCH-authoring discipline and the safety-net escalation triggers that make autonomous PLAN safe. Five deltas identified — see the progress log below for current state and the Δ5 spec.",
+    "trigger": "Continue with CC Phase 5+ ARCH authoring against the new template; Δ5 follows once the template is validated."
+  },
+  {
+    "id": "FU-40",
+    "title": "Centralize commits in the deterministic runner (worker stops running git)",
+    "kind": "structural-refactor",
+    "status": "partially-closed",
+    "priority": "next",
+    "context": "Commits are model-owned today: EXECUTE commits code (`phase.step:`), CLOSE (`close.md` step 10) commits docs + `.state/`; the runner and `state_machine.py` never committed (`state_machine` is read-only by design, so the committer is the runner). **Increment 1 shipped:** the runner commits `.state/`+telemetry after a successful CLOSE — only a post-worker committer can capture the close tail (close devlog / audit_boundary / the runner-authored telemetry row all land *after* the worker's own commit). **Direction:** move *all* commits to the runner — the worker edits files + writes `.state/` via `i2c state`; the runner commits (code as `N.M:` using the devlog `summary` as the body; `.state/`+telemetry at the boundary). This **resolves FU-8** (the runner enforces the `phase.step:` format that recovery's `commit_exists_step_pending` depends on) and removes worker-git hazards (interactive-hang, wrong scope, forgotten commits). Commits are scoped (`git commit -- .state`) so operator WIP is untouched.",
+    "trigger": "Migrate EXECUTE/REVIEW deliberately after the CLOSE increment proves out; requires rewriting `execute.md`/`close.md` to drop worker git + a golden regen."
+  },
+  {
+    "id": "FU-8",
+    "title": "execute.md commit-format suggestion (`phase.step: title`) is not enforced anywhere",
+    "kind": "test-hardening",
+    "status": "open",
+    "priority": "icebox",
+    "context": "The prose says \"default commit message format `phase.step: short title`\" but nothing validates it. A pre-commit hook or a `state.py complete --validate-commit-msg` check could enforce. **Superseded by FU-40** — centralizing commits in the runner enforces the format by construction.",
+    "trigger": "Phase 2 pilot reveals workers drift from the format and downstream tooling (codexbot `/diff <phase>`, waymark commit-by-phase view) needs consistency."
+  },
+  {
+    "id": "FU-9",
+    "title": "Refine regime in execute.md uses `step: null` for devlog entries",
+    "kind": "other",
+    "status": "open",
+    "priority": "eventually",
+    "context": "The schema allows `step: null` and the prose recommends it for Refine iterations. But there's no constraint that ties a Refine entry to *which* iteration (no iteration counter field). The commit message carries it (`14.iter3:`) but the structured data doesn't.",
+    "trigger": "Phase 2 pilot does enough Refine work that iteration-by-iteration analytics matter. Add `iteration: int` optional field to `devlog_entry.schema.json`."
+  },
+  {
+    "id": "FU-10",
+    "title": "Production-incident anecdotes in WORKER_SPEC §3 are e2e-vintage",
+    "kind": "prose",
+    "status": "open",
+    "priority": "eventually",
+    "context": "Per D-prose-8 the Codex 105k-char and Claude 5-3 incidents stay verbatim — they have pedagogical value. But once i2c has its own incidents, those should be added or substituted to keep the pedagogy current. **2026-06-21:** the public de-Meta pass dropped the explicit `(e2e)` / `state_machine.sh` labels (the anecdotes now read as neutral \"A Codex/Claude iteration\"); the refresh-with-i2c-native-incidents ask still stands.",
+    "trigger": "i2c accumulates 2+ documented loop-discipline failures of its own. Add a refresh pass to WORKER_SPEC §3."
+  },
+  {
+    "id": "FU-29",
+    "title": "i2c's `CODEX.md` and `CLAUDE.md` adapters lacked an inline `## Output Contract` section; codex skips the 5-line exit signal as a result",
+    "kind": "prose",
+    "status": "partially-closed",
+    "priority": "eventually",
+    "context": "The e2e template (`templates/CODEX_worker.md` line 136) and diplomat (`CODEX.md` line 188) both ship an explicit `## Output Contract` section that reads *\"End every invocation with exactly these five lines — no additional text after\"* plus the 5-line example and an exit-code table. i2c's adapters only reference `WORKER_SPEC.md` (which contains the contract) without inlining it. Claude is robust enough to follow the contract from the reference alone; codex is not. **CC Phase 3 iter 15 (2026-06-07):** first codex-on-i2c production run after the runner gained `--backend codex` support. Codex completed step 3.4 correctly — commit `f7620cc`, 228/228 tests pass, `state.py` writes for steps.json and devlog.jsonl landed coherently — but emitted prose-only output with no 5-line EXIT signal. Runner correctly reported `exit=2 \"signal missing or malformed\"` even though the work was substantively successful. **Partial fix applied (2026-06-07):** ported the e2e Output Contract section verbatim (with i2c-specific wording — `.state/project.json` rather than `DEVPLAN`) into `i2c/CODEX.md`, `i2c/CLAUDE.md`, `clankercourts/CODEX.md`, `clankercourts/CLAUDE.md`. Section sits between `## Runner Info` and `## Mode`. Re-firing the next codex iter on clankercourts validates the fix. **Surface reduction (FU-7, 2026-06-12):** contract is now 2 lines instead of 5; codex iter 65 (2026-06-11) showed the partial fix is necessary-but-not-sufficient (still skipped the block). A smaller block has less surface to skip but doesn't address the root cause (codex defaulting to conversational tail without the EXIT/REASON pair).",
+    "trigger": "**Remaining work for full resolution:** (a) once i2c grows a `templates/` directory for bootstrap adapters (today the top-level CODEX.md / CLAUDE.md double as both reference and template), make sure the templates include the Output Contract section so every new i2c project ships with it; (b) consider whether claude adapters genuinely need it — claude historically follows the contract from WORKER_SPEC alone, but inlining is belt-and-suspenders and harmless. The CC pilot's own adapters have been patched, so this FU stays open until the template-layer fix lands."
+  },
+  {
+    "id": "FU-36",
+    "title": "Worker-facing prose drifts toward threat-framing instead of reason-first",
+    "kind": "prose",
+    "status": "open",
+    "priority": "eventually",
+    "context": "Style principle, surfaced 2026-06-10 while rewriting the decisions-phase rule. **Pattern:** `field — does X for purpose Y. Read from Z.` Sourcing second, purpose first. **Anti-pattern:** imperative + reasoning-from-error + operator-context remediation + escape-hatch enumeration. The worker doesn't act on what-happens-if-broken or on the operator's recovery procedure; including that text adds prompt budget and shifts processing tone defensively. Worked example: `**Always include phase: ...** -- Decisions without phase do not appear ...; the operator has to back-fill later.` (3 lines) → `phase: <current phase id> -- marks the decision as belonging to this phase, so it appears in the phase audit (...). Read from Project State.` (2 lines, same info).",
+    "trigger": "Apply the lens at next touch of `WORKER_SPEC.md`, `instructions/{plan,execute,review,close}.md`, or adapter Tool Rules. Not urgent enough for a dedicated pass; opportunistic cleanup. Likely candidates: `close.md` (many \"do X so that Y\" lines with Y as operator context), `plan.md` step 2.5 escalation-triggers table's Resolution column."
+  },
+  {
+    "id": "FU-37",
+    "title": "Periodic dead-surface audit (lightweight, opportunistic)",
+    "kind": "dead-surface",
+    "status": "open",
+    "priority": "eventually",
+    "context": "i2c has accumulated invisible structure — assembler section catalog, conditional markers, CLI flags, env vars, schema fields — that's hard to verify is still load-bearing without explicit checking. Two recent cleanups (FU-7 exit-signal trim 2026-06-12; STOP_BEFORE_REVIEW removal 2026-06-12) were both surfaced by ad-hoc audits prompted by other work, each removing 50+ LOC of dormant or vestigial machinery. The framework's reliability gain over e2e came from moving prose into code; the opacity cost is that dead code is invisible where dead prose was self-announcing. **Categories to mine** (from the 2026-06-12 audit session): schema fields written but never read; CLI flags / env vars declared but never set in production; assembler `--section` modes with no live callers; conditional markers in `instructions/*.md` that always evaluate the same way; procedure steps workers never perform; tools nobody imports outside tests; documented invariants nobody checks.",
+    "trigger": "Apply opportunistically at natural session starts (\"before adding to X, is anything in X unused?\"). When a cleanup candidate surfaces, scope it like FU-7 / STOP_BEFORE_REVIEW: mine the codebase + CC corpus for consumers, surface evidence, decide cut-or-keep, execute as one focused commit. Avoid big-bang audit projects; the practice is the audit. **2026-06-21 pass:** removed the no-op `STEP_BUDGET` env-var read in `state_machine.py` (read into `_` and discarded — distinct from the live assembler `--step-budget` flag), plus the `_parse_int_env` helper, the now-unused `import os`, and the test that only guarded the no-op."
+  },
+  {
+    "id": "FU-20",
+    "title": "Templates assume `.claude/commands/` autoloads in Devmate; project-level `.llms/commands/` also doesn't get picked up in the workflows seen so far — operator-global `~/.llms/commands/` is the only reliable surface",
+    "kind": "other",
+    "status": "open",
+    "priority": "eventually",
+    "context": "`templates/README.md` states \"Devmate / Claude Code picks up the project's `.claude/commands/` automatically — no extra configuration step.\" True for Claude Code, false for Devmate. Devmate's `agent_customization` skill documents `.llms/commands/` as the project-level convention. **CC pilot (2026-06-05/06) found both don't work in practice for the current Devmate session:** the operator's Devmate session is reading commands from `C:\\Users\\myeluashvili\\.llms\\commands\\` only; neither `p:\\shared\\clankercourts\\.claude\\commands\\*.md` nor `p:\\shared\\clankercourts\\.llms\\commands\\*.md` showed up in the personal_context skills list. Possible causes: network-share path not scanned, workspace-root mismatch, requires Devmate restart to pick up new project-level commands, or project-level scanning not actually implemented for this Devmate build. **Workaround applied:** copied the 5 i2c slash commands to `~/.llms/commands/i2c-*.md` (operator-global with `i2c-` prefix). Now `/i2c-phase-plan`, `/i2c-cold-start`, etc. are available in any Devmate session; global `/phase-plan` continues to call e2e (Diplomat workflow unaffected). The commands shell out to `python tools/...` so they only do useful work inside an i2c project root; elsewhere they fail with a clear error.",
+    "trigger": "Address before next i2c bootstrap: **(a)** update templates to ship the `i2c-` prefixed commands at both `templates/.claude/commands/` (for Claude Code) and `templates/.llms/commands/` (for Devmate at project-level if/when that works), AND document a manual copy-to-global step for Devmate users (`xcopy templates\\.llms\\commands\\* %USERPROFILE%\\.llms\\commands\\`); **(b)** investigate whether Devmate project-level `.llms/commands/` actually loads — may be a config / workspace setup question, or a network-share limitation. If (b) confirms project-level works under some setup, document the prerequisites."
+  }
+]

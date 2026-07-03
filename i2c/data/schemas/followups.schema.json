@@ -39,7 +39,7 @@
       },
       "priority": {
         "type": "string",
-        "enum": ["immediate", "next", "eventually", "icebox"],
+        "enum": ["now", "next", "eventually", "icebox"],
         "description": "Optional scheduling horizon (when to do it). Distinct from decisions' severity-priority."
       },
       "context": {

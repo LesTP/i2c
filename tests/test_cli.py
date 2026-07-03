@@ -721,10 +721,10 @@ class TestFuCli(unittest.TestCase):
         with TempProject() as t:
             run_cli("fu", "add", "--kind", "prose", "--title", "one")
             rc, out, err = run_cli(
-                "fu", "prioritize", "FU-1", "--priority", "immediate",
+                "fu", "prioritize", "FU-1", "--priority", "now",
             )
             self.assertEqual(rc, 0, msg=err)
-            self.assertEqual(self._backlog(t.root)[0]["priority"], "immediate")
+            self.assertEqual(self._backlog(t.root)[0]["priority"], "now")
 
     def test_list_filter_by_priority(self):
         with TempProject():
