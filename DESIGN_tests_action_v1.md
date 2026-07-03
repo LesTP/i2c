@@ -48,9 +48,11 @@ but **not** an independent backend. Hence a real state.)
 
 ---
 
-## 3. ⚠️ Ordering decision (needs sign-off) — D-tests-1
+## 3. Ordering decision (RESOLVED 2026-07-03) — D-tests-1
 
-You asked for `tests → plan → execute` (tests *before* plan). There's a
+> **Resolved: `plan → tests → execute → review → close`** (the primary design below). PLAN authors the step breakdown and creates the phase/regime record, so `tests` cannot precede it; the oracle property still holds (the acceptance suite is frozen before EXECUTE and not authored by EXECUTE). The literal `tests → plan` variant is declined (deferred).
+
+You asked for `tests → plan → execute`
 chicken-and-egg: **PLAN is what chooses the regime and creates the phase
 record.** A pre-PLAN `tests` state therefore has (a) no regime to gate Build-only
 conditionality on, and (b) no `phases.json` record to attach to (telemetry's
@@ -294,8 +296,7 @@ for the guard.
 
 ## 12. Open questions
 
-- **Q-tests-1 (ordering, D-tests-1):** primary `plan → tests → execute`, or the
-  literal `tests → plan` via regime-at-advance? (Spec assumes primary.)
+- **Q-tests-1 (ordering, D-tests-1):** ✅ **RESOLVED (2026-07-03): `plan → tests → execute`** — PLAN creates the phase/regime record + steps, so tests can't precede it. Literal `tests → plan` declined.
 - **Q-tests-2 (suite identification, D-tests-3):** path convention
   (`tests/acceptance/phase_<N>/`) vs marker vs recorded path. (Lean path.)
 - **Q-tests-3:** does the `tests_pass` oracle run *only* the acceptance suite, or
