@@ -259,6 +259,19 @@ radius as a bad PLAN/REVIEW (it poisons every EXECUTE via false failures). Per
 Whether a cheaper model is safe for test authoring is a question for the
 benchmark to answer with real `action=tests` data — **do not pre-optimize.**
 
+**Supervised command surface (decided 2026-07-03).** The routing rationale above
+is *autonomous-only* — it's why `tests` is a distinct dispatched action (so
+`[run.backends].tests` can pin it to a capable tier). In **supervised** mode one
+session (the operator / orch model) performs every action, so there is no
+per-action backend to route to and a separate supervised `tests` command buys
+nothing. The supervised command layer therefore **folds test-authoring into
+`phase-plan`** (plan the phase, then write the contract-derived acceptance suite)
+rather than adding a `phase-tests` command — kept as a **distinct step** so the
+suite is still frozen before EXECUTE. The oracle is inherently weaker supervised
+(the same model authors tests and implements), so splitting the command would not
+strengthen it; autonomous keeps the split for routing + cross-backend oracle
+isolation.
+
 ---
 
 ## 10. Migration (D-tests-7)
