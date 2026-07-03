@@ -208,31 +208,25 @@ in the assembled `Current Phase` section, then follow the matching branch.
    relevant subset). Passing tests is the gate to commit. If they fail,
    fix in place or escalate per the rules in Escalation Conditions.
 
-4. **Commit.** Default to a **new commit**, message format `phase.step: short
-   title` (e.g., `11.3: Wire orchestrator slash commands`). Use
-   `--amend` **only** when explicitly asked or when fixing the immediately
-   preceding commit before any other state writes have happened.
+4. **Do not commit — the runner does.** Leave your edits in the working tree;
+   do **not** run `git`. After you exit, the deterministic runner commits the
+   files you changed (fenced off from any unrelated working-tree changes) as
+   `phase.step: <your devlog summary>` and records the commit hash for you. This
+   removes the interactive-hang / wrong-scope / forgotten-commit hazards and
+   guarantees the `phase.step:` format recovery relies on.
+
+5. **Mark the step complete.**
 
    ```bash
-   git add <paths>
-   git commit -m "11.3: Wire orchestrator slash commands"
+   i2c state complete steps.json --phase N --step M
    ```
 
-   Always pass `-m` to keep git non-interactive. See the `Shell command
-   discipline` section in your Worker Contract for the full prohibitions list.
-
-5. **Mark the step complete.** Capture the commit hash and write it:
-
-   ```bash
-   i2c state complete steps.json --phase N --step M --commit <hash>
-   ```
-
-   The CLI atomically rewrites `steps.json` after validating the schema
-   and the commit-hash format.
+   The CLI atomically rewrites `steps.json` after validating the schema. Do
+   **not** pass `--commit` — the runner back-fills the hash after it commits.
 
 6. **Append a devlog entry.** One entry per step, JSON envelope matching
    `schemas/devlog_entry.schema.json`. Required fields: `phase`, `step`,
-   `action`, `outcome`, `summary`, `timestamp`. Optional: `contracts`, `commit`.
+   `action`, `outcome`, `summary`, `timestamp`. Optional: `contracts`.
 
    ```bash
    i2c state append devlog.jsonl '{
@@ -242,7 +236,6 @@ in the assembled `Current Phase` section, then follow the matching branch.
      "outcome": "complete",
      "summary": "Wired orchestrator slash commands through CodexClient with 7 new tests.",
      "contracts": [],
-     "commit": "9876abc",
      "timestamp": "2026-06-04T04:30:00Z"
    }'
    ```
@@ -289,9 +282,9 @@ than being pre-listed. Budget is wall-clock, not step count
    `$EDITOR`, etc.). Tests where they apply, but absence of automated tests
    is expected for perceptual work.
 
-4. **Commit.** Same format as Build: `phase.iteration: short title`. Use the
-   devlog entry count for the current phase as the iteration number if you
-   don't have a steps.json record to reference.
+4. **Do not commit — the runner does.** Leave your increment in the working
+   tree; the runner commits it after you exit as `phase: <your devlog summary>`
+   (Refine has no step number). Do **not** run `git`.
 
 5. **Append a devlog entry.** Use `"step": null` (devlog schema allows it for
    non-step-bound entries) or use the iteration number you used in the
@@ -306,7 +299,6 @@ than being pre-listed. Budget is wall-clock, not step count
      "action": "execute",
      "outcome": "partial",
      "summary": "First pass at telegram message formatting. MarkdownV2 escape edge cases need a second look.",
-     "commit": "abc1234",
      "timestamp": "2026-06-04T05:00:00Z"
    }'
    ```
@@ -353,8 +345,8 @@ When a step modifies a contract:
    - **Immediate** (same commit as the implementation): cross-module API
      signature changes, type changes, anything where a cold-start session
      on a *consumer* module would generate wrong code reading the current
-     `ARCH_*.md`. Edit the affected `ARCH_*.md` files now, include them in
-     the same commit.
+     `ARCH_*.md`. Edit the affected `ARCH_*.md` files now — the runner commits
+     them together with the code change.
    - **Phase boundary** (defer to close): purely additive changes,
      documentation-only updates, anything that doesn't break consumers. The
      close action scans `devlog.jsonl` for non-empty `contracts` arrays and
@@ -371,7 +363,7 @@ When a step modifies a contract:
    - Update the consumer's test double to match the new signature
    - Add or update a boundary test that exercises the real producer through
      the consumer's call path
-   - Both updates land in the same commit as the contract change
+   - Both updates land in the runner's commit alongside the contract change
 
 ---
 
@@ -408,15 +400,15 @@ Worker Contract (regime shift, unclear spec, all modules complete, etc.).
 
 ---
 
-# captured hash: 9876abc
-
-i2c state complete steps.json --phase 11 --step 3 --commit 9876abc
-i2c state append devlog.jsonl '{"phase":11,"step":3,"action":"execute","outcome":"complete","summary":"Wired orchestrator slash commands through CodexClient. 7 new tests pass.","contracts":[],"commit":"9876abc","timestamp":"2026-06-04T04:30:00Z"}'
+# Edit the files. Do NOT run git — the runner commits after you exit.
+i2c state complete steps.json --phase 11 --step 3
+i2c state append devlog.jsonl '{"phase":11,"step":3,"action":"execute","outcome":"complete","summary":"Wired orchestrator slash commands through CodexClient. 7 new tests pass.","contracts":[],"timestamp":"2026-06-04T04:30:00Z"}'
 
 # Last step of the phase? Transition:
 i2c state set project.json state=review
 
 # Emit exit signal (2-line block, see Worker Contract §4).
+# The runner then commits your edits as "11.3: Wired orchestrator slash commands...".
 ```
 
 ### Step with an immediate-propagation contract change
@@ -452,12 +444,11 @@ i2c state append devlog.jsonl '{"phase":8,"step":4,"action":"execute","outcome":
 Phase 14, message formatting Refine. Iteration 3 of N.
 
 ```bash
-git add src/formatting.py
-git commit -m "14.iter3: Tighten markdown escape edge cases"
-
-i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outcome":"partial","summary":"Iteration 3: closed the parens-in-link bug. Still surfacing one MarkdownV2 edge case with nested code blocks.","commit":"abc1234","timestamp":"2026-06-04T05:00:00Z"}'
+# Edit the files. Do NOT run git — the runner commits after you exit.
+i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outcome":"partial","summary":"Iteration 3: closed the parens-in-link bug. Still surfacing one MarkdownV2 edge case with nested code blocks.","timestamp":"2026-06-04T05:00:00Z"}'
 
 # Time remaining, more iterations planned. Stay in execute, emit exit signal.
+# The runner then commits your edit as "14: Iteration 3: closed the parens-in-link bug...".
 ```
 
 ---
@@ -470,6 +461,7 @@ i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outco
   (CLOSE action; runs after review)
 - Read governance files — all needed context is in your assembled prompt
 - Decide the next ACTION — the state machine does that after you exit
+- Run `git` / commit — the runner commits your changes deterministically after you exit
 
 Stay in your lane: do the step, record the result, exit.
 

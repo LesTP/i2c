@@ -48,6 +48,7 @@ from typing import Any
 from i2c import assemble_context as ac
 from i2c import config as cfg
 from i2c import invariants
+from i2c import state
 from i2c import telemetry as tel
 from i2c import validate as v
 
@@ -561,6 +562,100 @@ def dirty_tracked_outside_state(root: Path) -> list[str]:
         return []
 
 
+def _worker_dirty_paths(root: Path) -> set[str]:
+    """Non-``.state`` paths that are dirty or untracked (best-effort).
+
+    Snapshotted before and after the worker so the runner commits only what the
+    worker *newly* changed (after - before), fencing off pre-existing operator
+    working-tree changes (e.g. doc WIP). Never raises.
+    """
+    try:
+        st = subprocess.run(
+            ["git", "status", "--porcelain", "-uall"],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        if st.returncode != 0:
+            return set()
+        out: set[str] = set()
+        for line in st.stdout.splitlines():
+            path = line[3:].strip() if len(line) > 3 else ""
+            if " -> " in path:  # rename: keep the destination
+                path = path.split(" -> ", 1)[1]
+            if path and not path.startswith(".state"):
+                out.add(path)
+        return out
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _last_devlog(root: Path) -> dict[str, Any] | None:
+    """The last ``.state/devlog.jsonl`` entry (best-effort), or None."""
+    try:
+        text = (root / ".state" / "devlog.jsonl").read_text(encoding="utf-8")
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        return json.loads(lines[-1]) if lines else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def commit_execute(
+    root: Path, *, phase: int, step: Any, summary: str, pre_dirty: set[str],
+) -> tuple[bool, str | None, str]:
+    """Deterministically commit the worker's code after an EXECUTE step (FU-40) --
+    the runner-owned counterpart to ``commit_state``.
+
+    Commits only paths the worker newly dirtied (current non-``.state`` dirty set
+    minus ``pre_dirty``), so operator WIP is never swept. Message is
+    ``<phase>.<step>: <summary>`` (``<phase>: <summary>`` for step-less Refine),
+    matching recovery's step/commit convention. Returns ``(committed, short_hash,
+    note)``. Best-effort; never raises.
+    """
+    try:
+        changed = sorted(_worker_dirty_paths(root) - pre_dirty)
+        if not changed:
+            return False, None, "no worker code changes to commit"
+        label = f"{phase}.{step}" if step is not None else f"{phase}"
+        msg = f"{label}: {summary}".strip()[:200]
+        add = subprocess.run(
+            ["git", "add", "--", *changed],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        if add.returncode != 0:
+            return False, None, "git add failed"
+        cm = subprocess.run(
+            ["git", "commit", "-m", msg, "--", *changed],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        if cm.returncode != 0:
+            detail = (cm.stderr or cm.stdout).strip().replace("\n", " ")[:200]
+            return False, None, f"commit failed: {detail}"
+        rev = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        short = rev.stdout.strip() if rev.returncode == 0 else None
+        return True, short, msg
+    except Exception as e:  # noqa: BLE001 - a commit failure must never break a run
+        return False, None, f"error: {e}"
+
+
+def _backfill_step_commit(root: Path, phase: int, step: int, commit: str) -> None:
+    """Record the runner's commit hash on the (already-complete) step so
+    recovery's step/commit check holds (the worker no longer supplies it)."""
+    import contextlib
+    import io
+
+    ns = argparse.Namespace(
+        file=str(root / ".state" / "steps.json"),
+        phase=phase, step=step, commit=commit,
+    )
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            state.cmd_complete(ns)
+    except Exception as e:  # noqa: BLE001
+        sys.stderr.write(f"NOTE: step commit back-fill skipped ({e}).\n")
+
+
 # ---------------------------------------------------------------------------
 # Top-level runner
 # ---------------------------------------------------------------------------
@@ -578,6 +673,7 @@ def run_iteration(
     claude_invoker=invoke_claude,
     codex_invoker=invoke_codex,
     state_committer=commit_state,
+    execute_committer=commit_execute,
 ) -> int:
     """Execute one iteration end-to-end and return the runner exit code.
 
@@ -671,6 +767,7 @@ def run_iteration(
     )
     start_commit = tel.head_commit(root)
     prev_devlog = tel.count_devlog_lines(root)
+    pre_dirty = _worker_dirty_paths(root)  # FU-40: fence the worker commit off operator WIP
     wall_start = time.monotonic()
 
     # 6. Invoke the chosen backend.
@@ -817,6 +914,29 @@ def run_iteration(
                 f"({', '.join(f.signal for f in reconcilable)}); "
                 "run `i2c diagnose` then `i2c reconcile`.\n"
             )
+
+    # 8c. Runner-owned EXECUTE code commit (FU-40 Inc 2). The worker edits files
+    #     + writes .state via `i2c state`; the deterministic runner commits the
+    #     code it changed (current non-.state dirty set minus the pre-invoke
+    #     snapshot, so operator WIP is fenced off) as "<phase>.<step>: <summary>",
+    #     re-capturing end_commit so telemetry sees it, then back-fills the hash
+    #     into steps.json (recovery's step/commit link). Best-effort; never fatal.
+    if action == "EXECUTE" and worker_exit == 0:
+        entry = _last_devlog(root)
+        if entry is not None:
+            e_step = entry.get("step")
+            e_phase = int(entry.get("phase", phase))
+            committed, chash, note = execute_committer(
+                root, phase=e_phase, step=e_step,
+                summary=str(entry.get("summary", "")), pre_dirty=pre_dirty,
+            )
+            if committed:
+                sys.stdout.write(f"committed EXECUTE code: {note}\n")
+                end_commit = tel.head_commit(root)
+                if e_step is not None and chash:
+                    _backfill_step_commit(root, e_phase, int(e_step), chash)
+            else:
+                sys.stdout.write(f"NOTE: no EXECUTE code commit ({note}).\n")
 
     # 9. Normal summary + return worker's exit code.
     line = write_summary_line(

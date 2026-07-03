@@ -713,5 +713,164 @@ class TestCloseStateCommit(unittest.TestCase):
             self.assertEqual(calls, [])  # execute -> no state commit
 
 
+class TestCommitExecute(unittest.TestCase):
+    """FU-40 Inc 2: runner-owned EXECUTE code commit (commit_execute + snapshot)."""
+
+    def _repo(self):
+        tmp = tempfile.TemporaryDirectory(prefix="i2c_ce_")
+        root = Path(tmp.name)
+
+        def run(*a):
+            return subprocess.run(
+                ["git", *a], cwd=root, capture_output=True, text=True
+            )
+
+        run("init", "-q")
+        run("config", "user.email", "t@t")
+        run("config", "user.name", "t")
+        (root / "seed.py").write_text("x = 1\n", encoding="utf-8")
+        run("add", "-A")
+        run("commit", "-q", "-m", "seed")
+        return tmp, root, run
+
+    def test_commits_worker_changes_fencing_off_wip(self):
+        tmp, root, run = self._repo()
+        try:
+            # operator WIP: an untracked half-finished doc
+            (root / "NOTES.md").write_text("draft...\n", encoding="utf-8")
+            pre = ri._worker_dirty_paths(root)
+            self.assertIn("NOTES.md", pre)
+            # worker edits code (modify + new file)
+            (root / "seed.py").write_text("x = 2\n", encoding="utf-8")
+            (root / "new_mod.py").write_text("y = 3\n", encoding="utf-8")
+            committed, chash, note = ri.commit_execute(
+                root, phase=2, step=3, summary="do the thing", pre_dirty=pre,
+            )
+            self.assertTrue(committed, msg=note)
+            self.assertTrue(note.startswith("2.3: do the thing"))
+            self.assertTrue(chash)
+            still = ri._worker_dirty_paths(root)
+            self.assertIn("NOTES.md", still)        # WIP left uncommitted
+            self.assertNotIn("seed.py", still)      # worker code committed
+            self.assertNotIn("new_mod.py", still)
+            self.assertEqual(
+                run("log", "-1", "--pretty=%s").stdout.strip(), "2.3: do the thing"
+            )
+        finally:
+            tmp.cleanup()
+
+    def test_step_none_uses_phase_only_message(self):
+        tmp, root, run = self._repo()
+        try:
+            pre = ri._worker_dirty_paths(root)
+            (root / "seed.py").write_text("x = 9\n", encoding="utf-8")
+            committed, _, note = ri.commit_execute(
+                root, phase=14, step=None, summary="refine pass", pre_dirty=pre,
+            )
+            self.assertTrue(committed, msg=note)
+            self.assertTrue(note.startswith("14: refine pass"))
+        finally:
+            tmp.cleanup()
+
+    def test_no_worker_changes_no_commit(self):
+        tmp, root, run = self._repo()
+        try:
+            committed, chash, _ = ri.commit_execute(
+                root, phase=2, step=1, summary="noop",
+                pre_dirty=ri._worker_dirty_paths(root),
+            )
+            self.assertFalse(committed)
+            self.assertIsNone(chash)
+        finally:
+            tmp.cleanup()
+
+    def test_overlap_wip_file_left_uncommitted(self):
+        # A file already operator-WIP, then also touched by the worker, is fenced
+        # off (D\W) and left uncommitted — the accepted trade-off (FU-40).
+        tmp, root, run = self._repo()
+        try:
+            (root / "seed.py").write_text("x = 1  # wip\n", encoding="utf-8")
+            pre = ri._worker_dirty_paths(root)
+            self.assertIn("seed.py", pre)
+            (root / "seed.py").write_text("x = 1  # wip + worker\n", encoding="utf-8")
+            (root / "new.py").write_text("a = 1\n", encoding="utf-8")
+            committed, _, _ = ri.commit_execute(
+                root, phase=2, step=1, summary="s", pre_dirty=pre,
+            )
+            self.assertTrue(committed)
+            still = ri._worker_dirty_paths(root)
+            self.assertIn("seed.py", still)     # overlap left for the human
+            self.assertNotIn("new.py", still)   # clean worker file committed
+        finally:
+            tmp.cleanup()
+
+    def test_worker_dirty_paths_excludes_state(self):
+        tmp, root, run = self._repo()
+        try:
+            (root / ".state").mkdir()
+            (root / ".state" / "devlog.jsonl").write_text("{}\n", encoding="utf-8")
+            (root / "code.py").write_text("z = 1\n", encoding="utf-8")
+            paths = ri._worker_dirty_paths(root)
+            self.assertIn("code.py", paths)
+            self.assertFalse(any(p.startswith(".state") for p in paths))
+        finally:
+            tmp.cleanup()
+
+
+class TestExecuteCommitWiring(unittest.TestCase):
+    """FU-40 Inc 2: run_iteration drives execute_committer on a successful EXECUTE."""
+
+    @staticmethod
+    def _seed_devlog(root, *, outcome="complete"):
+        (root / ".state" / "devlog.jsonl").write_text(
+            json.dumps({
+                "phase": 2, "step": 3, "action": "execute", "outcome": outcome,
+                "summary": "did step 3", "timestamp": "2026-07-03T00:00:00Z",
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_execute_commit_invoked_with_devlog_and_predirty(self):
+        with TempProject() as tp:
+            self._seed_devlog(tp.root)
+            calls = []
+
+            def fake(r, *, phase, step, summary, pre_dirty):
+                calls.append((phase, step, summary, pre_dirty))
+                return True, "abc1234", f"{phase}.{step}: {summary}"
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block(exit_code=0)),
+                    execute_committer=fake,
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertEqual(len(calls), 1)
+            phase, step, summary, pre_dirty = calls[0]
+            self.assertEqual((phase, step, summary), (2, 3, "did step 3"))
+            self.assertIsInstance(pre_dirty, set)
+
+    def test_execute_commit_not_invoked_on_worker_exit_2(self):
+        with TempProject() as tp:
+            self._seed_devlog(tp.root, outcome="failed")
+            calls = []
+
+            def fake(r, **kw):
+                calls.append(kw)
+                return False, None, "x"
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block(exit_code=2)),
+                    execute_committer=fake,
+                )
+            self.assertEqual(rc, 2)
+            self.assertEqual(calls, [])  # no commit on a failed step
+
+
 if __name__ == "__main__":
     unittest.main()
