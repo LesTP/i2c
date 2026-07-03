@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -16,6 +15,7 @@ I2C_ROOT = Path(__file__).resolve().parent.parent
 from i2c import cli  # noqa: E402
 from i2c import control  # noqa: E402
 from i2c import run_iteration  # noqa: E402
+from tests._fixtures import copy_fixture  # noqa: E402
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -57,7 +57,7 @@ class TempProject:
     def __enter__(self) -> "TempProject":
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_cli_")
         self.root = Path(self._tmp.name) / "project"
-        shutil.copytree(FIXTURE, self.root)
+        copy_fixture(self.root)
         self._prev = Path.cwd()
         os.chdir(self.root)
         return self
@@ -297,8 +297,8 @@ class TestPortfolioCli(unittest.TestCase):
     def test_portfolio_json(self):
         with tempfile.TemporaryDirectory(prefix="i2c_pf_cli_") as tmp:
             root = Path(tmp)
-            shutil.copytree(FIXTURE, root / "a")
-            shutil.copytree(FIXTURE, root / "b")
+            copy_fixture(root / "a")
+            copy_fixture(root / "b")
             rc, out, err = run_cli("portfolio", "--root", str(root), "--json")
             self.assertEqual(rc, 0, msg=err)
             data = json.loads(out)

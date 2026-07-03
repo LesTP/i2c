@@ -11,7 +11,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -22,6 +21,7 @@ from unittest import mock
 I2C_ROOT = Path(__file__).resolve().parent.parent
 
 from i2c import state_machine as sm
+from tests._fixtures import copy_fixture
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -45,7 +45,7 @@ class TempProject:
     def __enter__(self) -> "TempProject":
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_sm_")
         self.root = Path(self._tmp.name) / "project"
-        shutil.copytree(FIXTURE, self.root)
+        copy_fixture(self.root)
         self._prev_cwd = Path.cwd()
         os.chdir(self.root)
         return self

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,6 +11,7 @@ I2C_ROOT = Path(__file__).resolve().parent.parent
 
 from i2c import control as c  # noqa: E402
 from i2c import validate as v  # noqa: E402
+from tests._fixtures import copy_fixture  # noqa: E402
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -26,7 +26,7 @@ class TempProject:
     def __enter__(self) -> "TempProject":
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_control_")
         self.root = Path(self._tmp.name) / "project"
-        shutil.copytree(FIXTURE, self.root)
+        copy_fixture(self.root)
         return self
 
     def __exit__(self, *args):
@@ -332,7 +332,7 @@ class TestPortfolio(unittest.TestCase):
         project.json overrides."""
         for name, overrides in specs.items():
             dst = root / name
-            shutil.copytree(FIXTURE, dst)
+            copy_fixture(dst)
             if overrides:
                 pj = dst / ".state" / "project.json"
                 data = json.loads(pj.read_text(encoding="utf-8"))
@@ -354,7 +354,7 @@ class TestPortfolio(unittest.TestCase):
             (root / "node_modules").mkdir()
             (root / ".hidden").mkdir()
             # A nested project inside a/ must not be discovered separately.
-            shutil.copytree(FIXTURE, root / "a" / "nested")
+            copy_fixture(root / "a" / "nested")
             self.assertEqual([p.name for p in c.discover_projects(root)], ["a"])
 
     def test_orders_attention_first(self):

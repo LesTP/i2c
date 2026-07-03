@@ -7,7 +7,6 @@ and testable without the `telegram` extra).
 from __future__ import annotations
 
 import json
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +14,7 @@ from pathlib import Path
 I2C_ROOT = Path(__file__).resolve().parent.parent
 
 from i2c.surfaces import telegram_core as tc  # noqa: E402
+from tests._fixtures import copy_fixture  # noqa: E402
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -22,7 +22,7 @@ FIXTURE = I2C_ROOT / "examples" / "initial_state"
 def _make(root: Path, specs: dict) -> None:
     for name, overrides in specs.items():
         dst = root / name
-        shutil.copytree(FIXTURE, dst)
+        copy_fixture(dst)
         if overrides:
             pj = dst / ".state" / "project.json"
             data = json.loads(pj.read_text(encoding="utf-8"))

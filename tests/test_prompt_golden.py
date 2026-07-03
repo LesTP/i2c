@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from i2c import assemble_context as ac
+from tests._fixtures import copy_fixture, write_adapters
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
@@ -59,10 +59,8 @@ class _Project:
     def __enter__(self) -> Path:
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_golden_")
         root = Path(self._tmp.name) / "project"
-        shutil.copytree(FIXTURE, root)
-        adapters = I2C_ROOT / "i2c" / "data" / "adapters"
-        shutil.copy2(adapters / "claude.md", root / "CLAUDE.md")
-        shutil.copy2(adapters / "codex.md", root / "CODEX.md")
+        copy_fixture(root)
+        write_adapters(root)
         (root / "ARCH_event_store.md").write_text(ARCH_EVENT_STORE, encoding="utf-8")
         self._prev = Path.cwd()
         os.chdir(root)

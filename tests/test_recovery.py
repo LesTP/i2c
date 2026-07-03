@@ -10,7 +10,6 @@ import argparse
 import io
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +22,7 @@ from i2c import assemble_context as ac
 from i2c import control
 from i2c import recovery
 from i2c import run_iteration as ri
+from tests._fixtures import copy_fixture, write_adapters
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -50,7 +50,7 @@ class TempProject:
     def __enter__(self) -> "TempProject":
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_recovery_")
         self.root = Path(self._tmp.name) / "project"
-        shutil.copytree(FIXTURE, self.root)
+        copy_fixture(self.root)
         self._prev_cwd = Path.cwd()
         os.chdir(self.root)
         return self
@@ -133,9 +133,7 @@ class TempProject:
 
     def setup_assembly_assets(self) -> None:
         """Copy framework adapters + a fixed ARCH so a full prompt assembles."""
-        adapters = I2C_ROOT / "i2c" / "data" / "adapters"
-        shutil.copy2(adapters / "claude.md", self.root / "CLAUDE.md")
-        shutil.copy2(adapters / "codex.md", self.root / "CODEX.md")
+        write_adapters(self.root)
         (self.root / "ARCH_event_store.md").write_text(
             ARCH_EVENT_STORE, encoding="utf-8"
         )

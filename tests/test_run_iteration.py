@@ -11,7 +11,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,6 +21,7 @@ from pathlib import Path
 I2C_ROOT = Path(__file__).resolve().parent.parent
 
 from i2c import run_iteration as ri
+from tests._fixtures import copy_fixture, write_adapters
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -47,13 +47,10 @@ class TempProject:
     def __enter__(self) -> "TempProject":
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_run_")
         self.root = Path(self._tmp.name) / "project"
-        shutil.copytree(FIXTURE, self.root)
-        # Adapters are project-root assets; copy them from the packaged
-        # templates. WORKER_SPEC.md and instructions/ resolve from package-data
-        # (§5.3), so they aren't copied.
-        adapters = I2C_ROOT / "i2c" / "data" / "adapters"
-        shutil.copy2(adapters / "claude.md", self.root / "CLAUDE.md")
-        shutil.copy2(adapters / "codex.md", self.root / "CODEX.md")
+        copy_fixture(self.root)
+        # Adapters are project-root assets (WORKER_SPEC.md + instructions/ resolve
+        # from package-data, §5.3, so they aren't copied).
+        write_adapters(self.root)
         # Stub ARCH_event_store.md to satisfy the module-contract requirement
         # for the fixture's current phase. Content is irrelevant to runner
         # tests; the assembler just needs the file to exist.
