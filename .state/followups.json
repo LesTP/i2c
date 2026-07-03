@@ -84,7 +84,7 @@
       "tests/test_assemble_context.py"
     ],
     "closed": "2026-07-02",
-    "resolution": "Cached the fixture + adapter files locally once per process; TempProject now copytrees from the local cache instead of the Samba share on every test. test_assemble_context.py: ~60s -> ~20s (110 tests, ~3x). Full suite still ~235s because test_cli / test_control etc. copytree from the share too -- the same caching pattern would extend to them (follow-up)."
+    "resolution": "Cached the fixture + adapter files locally once per process; tests copytree from the local cache instead of the Samba share on every test. test_assemble_context.py: ~60s -> ~20s (110 tests, ~3x). Follow-up shipped (df8698e): extracted the cache into shared tests/_fixtures.py and routed all 9 fixture-copying suites through it; full suite ~260s -> ~194s. Fully resolved."
   },
   {
     "id": "FU-32",
