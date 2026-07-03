@@ -27,20 +27,20 @@ deferred initiative); this is the catch-all orientation + tracker.
 
 ## Status (session entry point)
 
-**Where we are (2026-07-02).** Foundation + **state-lifecycle v1** (7-state enum)
+**Where we are (2026-07-03).** Foundation + **state-lifecycle v1** (7-state enum)
 + **packaging** (installable `i2c` package/console, `i2c init`/`eject`, `i2c.toml`,
 `schema_version` + `i2c migrate`) are shipped. The **control surface** is complete:
 `i2c.control` is the single structured projection layer (`status` / `phase-summary`
 / `decisions` / `devlog` / `escalation` / `logs` / `portfolio`, all `--json`) with a
 `clear-boundary` action and a Telegram bot (`i2c serve telegram`). **Recovery v1**
 (`i2c diagnose` / `reconcile`) and the **telemetry sidecar** (`.state/telemetry.jsonl`)
-have landed. **FU-40** is centralizing commits in the runner (CLOSE increment shipped).
+have landed. **FU-40** is centralizing commits in the runner (CLOSE **and EXECUTE** increments shipped; REVIEW + CLOSE-docs = Inc 3, pending).
 The **refine tier** shipped — the ad-hoc backlog is now the `i2c fu` command.
 **diplomat** migrated to i2c (2026-07-01), live at **phase 51** via the bot;
 clankercourts drove Phases 2–14 autonomously (claude + codex).
 
 **What's next.** The dominant thread is the **model-benchmark initiative**
-(telemetry → a phase-level `tests` action as a real oracle → benchmark + routing).
+(telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is unblocked** (D-tests-1 resolved: `plan→tests`) — the next Build-tier feature.
 See **Active Roadmap** below for tracks, priorities, and the current recommendation.
 
 **Quick orientation** (from a project root with `.state/`, package installed):
