@@ -56,7 +56,10 @@ def _md_cell(text: str | None) -> str:
 
 
 def _fmt_followup(f: control.FollowupView) -> str:
-    body = f"  - {f.id} [{f.status} · {f.kind}] {f.title}"
+    tag = f"{f.status} · {f.kind}"
+    if f.priority:
+        tag += f" · {f.priority}"
+    body = f"  - {f.id} [{tag}] {f.title}"
     if f.trigger:
         body += f" — trigger: {f.trigger}"
     return body

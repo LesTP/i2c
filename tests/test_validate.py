@@ -352,6 +352,17 @@ class TestFollowupsSchema(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "status"):
             v.validate_json_schema(self._fu(status="done"), self.schema)
 
+    def test_priority_accepted(self):
+        for p in ("immediate", "next", "eventually", "icebox"):
+            v.validate_json_schema(self._fu(priority=p), self.schema)
+
+    def test_invalid_priority_rejected(self):
+        with self.assertRaisesRegex(ValueError, "priority"):
+            v.validate_json_schema(self._fu(priority="high"), self.schema)
+
+    def test_priority_optional(self):
+        v.validate_json_schema(self._fu(), self.schema)  # absent priority is fine
+
     def test_id_pattern_enforced(self):
         with self.assertRaisesRegex(ValueError, "id|pattern"):
             v.validate_json_schema(self._fu(id="41"), self.schema)

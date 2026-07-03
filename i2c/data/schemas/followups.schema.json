@@ -37,6 +37,11 @@
         "enum": ["open", "accepted", "partially-closed", "closed", "wontfix"],
         "description": "Backlog lifecycle status."
       },
+      "priority": {
+        "type": "string",
+        "enum": ["immediate", "next", "eventually", "icebox"],
+        "description": "Optional scheduling horizon (when to do it). Distinct from decisions' severity-priority."
+      },
       "context": {
         "type": "string",
         "description": "What the item is and why, in brief."

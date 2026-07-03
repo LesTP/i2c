@@ -700,6 +700,42 @@ class TestFuCli(unittest.TestCase):
             self.assertEqual(rec["refs"], ["D-1", "9d39390"])
             self.assertEqual(rec["context"], "c")
 
+    def test_add_with_priority(self):
+        with TempProject() as t:
+            rc, out, err = run_cli(
+                "fu", "add", "--kind", "prose", "--title", "one",
+                "--priority", "next",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(self._backlog(t.root)[0]["priority"], "next")
+
+    def test_add_invalid_priority_rejected(self):
+        with TempProject():
+            rc, out, err = run_cli(
+                "fu", "add", "--kind", "prose", "--title", "x",
+                "--priority", "high",
+            )
+            self.assertEqual(rc, 2)
+
+    def test_prioritize(self):
+        with TempProject() as t:
+            run_cli("fu", "add", "--kind", "prose", "--title", "one")
+            rc, out, err = run_cli(
+                "fu", "prioritize", "FU-1", "--priority", "immediate",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(self._backlog(t.root)[0]["priority"], "immediate")
+
+    def test_list_filter_by_priority(self):
+        with TempProject():
+            run_cli("fu", "add", "--kind", "prose", "--title", "one",
+                    "--priority", "next")
+            run_cli("fu", "add", "--kind", "other", "--title", "two",
+                    "--priority", "icebox")
+            rc, out, err = run_cli("fu", "list", "--priority", "next", "--json")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual([r["id"] for r in json.loads(out)], ["FU-1"])
+
     def test_add_invalid_kind_rejected(self):
         with TempProject():
             rc, out, err = run_cli(

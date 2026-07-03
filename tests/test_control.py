@@ -670,6 +670,18 @@ class TestFollowups(unittest.TestCase):
             result = c.followups(t.root, kind="experiment-log")
             self.assertEqual([f.id for f in result], ["FU-3"])
 
+    def test_filter_by_priority(self):
+        with TempProject() as t:
+            self._write(t.root, [
+                {"id": "FU-1", "title": "a", "kind": "prose", "status": "open",
+                 "priority": "next"},
+                {"id": "FU-2", "title": "b", "kind": "other", "status": "open",
+                 "priority": "icebox"},
+            ])
+            result = c.followups(t.root, priority="next")
+            self.assertEqual([f.id for f in result], ["FU-1"])
+            self.assertEqual(result[0].priority, "next")
+
     def test_full_fields_mapped(self):
         with TempProject() as t:
             self._write(t.root, self._FUS)

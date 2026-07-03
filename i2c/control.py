@@ -91,6 +91,7 @@ class FollowupView:
     title: str
     kind: str
     status: str
+    priority: str | None = None
     context: str | None = None
     trigger: str | None = None
     resolution: str | None = None
@@ -419,6 +420,7 @@ def _followup_view(record: dict[str, Any]) -> FollowupView:
         title=record.get("title", ""),
         kind=record.get("kind", ""),
         status=record.get("status", ""),
+        priority=record.get("priority"),
         context=record.get("context"),
         trigger=record.get("trigger"),
         resolution=record.get("resolution"),
@@ -564,18 +566,21 @@ def devlog(
 
 
 def followups(
-    root: Path | None = None, *, status: str | None = None, kind: str | None = None
+    root: Path | None = None, *, status: str | None = None, kind: str | None = None,
+    priority: str | None = None,
 ) -> list[FollowupView]:
-    """The refine backlog (Proposal A), optionally filtered by ``status`` and/or
-    ``kind``. Reads ``.state/followups.json`` independently of the phase-lifecycle
-    state, so it works in any repo that has adopted the refine tier (D-refine-3).
-    Empty list when the backlog file is absent."""
+    """The refine backlog (Proposal A), optionally filtered by ``status``,
+    ``kind``, and/or ``priority``. Reads ``.state/followups.json`` independently
+    of the phase-lifecycle state, so it works in any repo that has adopted the
+    refine tier (D-refine-3). Empty list when the backlog file is absent."""
     root = root or _find_followups_root()
     records = _read_followups(root)
     if status is not None:
         records = [r for r in records if r.get("status") == status]
     if kind is not None:
         records = [r for r in records if r.get("kind") == kind]
+    if priority is not None:
+        records = [r for r in records if r.get("priority") == priority]
     return [_followup_view(r) for r in records]
 
 

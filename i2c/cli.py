@@ -416,6 +416,8 @@ _FU_KINDS = (
     "test-hardening", "structural-refactor", "experiment-log", "other",
 )
 
+_FU_HORIZONS = ("immediate", "next", "eventually", "icebox")
+
 
 def _split_csv(value: str | None) -> list[str]:
     if not value:
@@ -425,7 +427,9 @@ def _split_csv(value: str | None) -> list[str]:
 
 def cmd_fu_list(args: argparse.Namespace) -> int:
     try:
-        result = control.followups(status=args.status, kind=args.kind)
+        result = control.followups(
+            status=args.status, kind=args.kind, priority=args.priority,
+        )
     except control.ControlError as e:
         return _fail(e)
     _emit(result, as_json=args.json, renderer=_render_followups)
@@ -502,6 +506,8 @@ def cmd_fu_add(args: argparse.Namespace) -> int:
         record["context"] = args.context
     if args.trigger:
         record["trigger"] = args.trigger
+    if args.priority:
+        record["priority"] = args.priority
     files = _split_csv(args.files)
     refs = _split_csv(args.refs)
     if files:
@@ -554,6 +560,22 @@ def cmd_fu_reopen(args: argparse.Namespace) -> int:
     if rc != 0:
         return rc
     sys.stdout.write(f"reopened {args.id}\n")
+    return 0
+
+
+def cmd_fu_prioritize(args: argparse.Namespace) -> int:
+    try:
+        path = _fu_backlog_path()
+    except control.ControlError as e:
+        return _fail(e)
+    ns = argparse.Namespace(
+        file=str(path), match=f"id={args.id}",
+        updates=[f"priority={args.priority}"], from_file=None,
+    )
+    rc = _run_state_cmd(state.cmd_update_record, ns)
+    if rc != 0:
+        return rc
+    sys.stdout.write(f"prioritized {args.id} = {args.priority}\n")
     return 0
 
 
@@ -833,6 +855,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fu_list.add_argument("--status", default=None, help="Filter by status.")
     p_fu_list.add_argument("--kind", default=None, help="Filter by kind.")
+    p_fu_list.add_argument("--priority", default=None, help="Filter by priority.")
     p_fu_list.set_defaults(func=cmd_fu_list)
 
     p_fu_show = fu_sub.add_parser(
@@ -854,6 +877,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_fu_add.add_argument("--title", required=True, help="One-line title.")
     p_fu_add.add_argument("--context", default=None)
     p_fu_add.add_argument("--trigger", default=None)
+    p_fu_add.add_argument(
+        "--priority", choices=_FU_HORIZONS, default=None,
+        help="Optional scheduling horizon.",
+    )
     p_fu_add.add_argument(
         "--files", default=None, help="Comma-separated file hints.",
     )
@@ -878,6 +905,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_fu_reopen.add_argument("id")
     p_fu_reopen.set_defaults(func=cmd_fu_reopen)
+
+    p_fu_prioritize = fu_sub.add_parser(
+        "prioritize", help="Set an item's scheduling horizon.",
+    )
+    p_fu_prioritize.add_argument("id")
+    p_fu_prioritize.add_argument(
+        "--priority", required=True, choices=_FU_HORIZONS,
+    )
+    p_fu_prioritize.set_defaults(func=cmd_fu_prioritize)
 
     # Passthrough subcommands.
     # (forwarding raw argv to the tool's own argparse) — registered here only so
