@@ -1,6 +1,6 @@
 ---
 name: phase-complete
-description: Close the current phase in supervised mode - replaces e2e's phase-complete
+description: Close the current phase in supervised mode
 ---
 
 Wrap up the current phase: run phase-level tests, integration-check if
@@ -11,7 +11,7 @@ before each write.
 Run:
 
 ```bash
-python3 tools/assemble_context.py --action close --phase $PHASE --mode supervised
+i2c assemble --action close --phase $PHASE --mode supervised
 ```
 
 Replace `$PHASE` with the current phase number from
@@ -29,11 +29,11 @@ Follow the procedure. Notable write operations the procedure references
 
 - Gotcha promotion:
   ```bash
-  python3 tools/state.py append-gotcha project.json "<one-line lesson>"
+  i2c state append-gotcha project.json "<one-line lesson>"
   ```
 - Close an open decision:
   ```bash
-  python3 tools/state.py update-record decisions.json --match id=D-N status=closed decision="..."
+  i2c state update-record decisions.json --match id=D-N status=closed decision="..."
   ```
 - Contract scan over devlog (read-only):
   ```bash
@@ -41,16 +41,16 @@ Follow the procedure. Notable write operations the procedure references
   ```
 - Mark phase complete + set the gate:
   ```bash
-  python3 tools/state.py complete phases.json --phase $PHASE
-  python3 tools/state.py set project.json state=audit_boundary
+  i2c state complete phases.json --phase $PHASE
+  i2c state set project.json state=audit_boundary
   ```
 
 After close, project sits at `state=audit_boundary`. The next gate-clear
-(by you, or via codexbot `/close` once it ships) writes one of:
+(by you, or via the i2c bot's `/endphase`) writes one of:
 
 - `set project.json phase=N+1 state=plan` — advance to the next phase
 - `set project.json state=done` — declare project terminal
 
-See `DESIGN_state_lifecycle_v1.md` §3 for the full lifecycle model.
+See `archive/DESIGN_state_lifecycle_v1.md` §3 for the full lifecycle model.
 
 Full assembler contract: see `ARCH_assembler.md`.

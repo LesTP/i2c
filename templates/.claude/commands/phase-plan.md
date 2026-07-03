@@ -1,6 +1,6 @@
 ---
 name: phase-plan
-description: Plan the next phase in supervised mode - replaces e2e's phase-plan
+description: Plan the next phase in supervised mode
 ---
 
 Plan the next phase. Supervised mode framing: pause for human approval
@@ -10,7 +10,7 @@ ask before ambiguous decisions.
 Run:
 
 ```bash
-python3 tools/assemble_context.py --action plan --phase $PHASE --mode supervised
+i2c assemble --action plan --phase $PHASE --mode supervised
 ```
 
 Replace `$PHASE` with the phase being planned (typically
@@ -26,7 +26,7 @@ The assembled output contains:
   prior phase summary, decisions, gotchas
 
 Follow the procedure in the assembled `Instructions` section. State
-writes go through `python3 tools/state.py` (subcommands `set`,
+writes go through `i2c state` (subcommands `set`,
 `complete`, `append`, `append-record`, `append-gotcha`, `update-record`).
 Pause before each `.state/` mutation for confirmation.
 

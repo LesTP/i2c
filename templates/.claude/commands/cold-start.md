@@ -1,6 +1,6 @@
 ---
 name: cold-start
-description: Orient on the current project state - replaces e2e's cold-start procedure
+description: Orient on the current project state
 ---
 
 Show the current project status: phase, lifecycle state, pending steps,
@@ -25,7 +25,7 @@ Read the output carefully and report what you see. Specifically:
 
 If the state is a halt state (`audit_boundary`, `audit_escalation`, or
 `done`), do not propose work — surface the gate and wait for direction.
-See `DESIGN_state_lifecycle_v1.md` §3 for what each halt state means and
+See `archive/DESIGN_state_lifecycle_v1.md` §3 for what each halt state means and
 the expected human/wrapper recovery write.
 
 `i2c status` is the control-backed snapshot (`i2c.control.status`); add
