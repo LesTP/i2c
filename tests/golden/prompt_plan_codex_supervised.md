@@ -93,12 +93,11 @@ TOOL RULES
   re-read it immediately — not at the start of the iteration. Governance
   arrived fresh in your prompt; this rule applies to source files only.
 - **Non-interactive shell only.** The loop has no stdin. Commands that
-  open editors (`vim`, `nano`, `git commit` without `-m`,
-  `git rebase -i`), prompt for input (`read`, `sudo` without `-n`,
-  `ssh` without `-o BatchMode=yes`), or pipe through pagers (`less`,
-  `more`, `git log` without `--no-pager`) will hang. To stage part of
-  a file, split into discrete edits or use `git restore` to revert
-  unwanted parts before `git add`. `git add -p` is interactive-only.
+  open editors (`vim`, `nano`), prompt for input (`read`, `sudo` without
+  `-n`, `ssh` without `-o BatchMode=yes`), or pipe through pagers (`less`,
+  `more`, `git log` without `--no-pager`) will hang. You never commit — the
+  runner does — so the only git you run is read-only; always pass
+  `--no-pager` (e.g. `git log --no-pager`, `git --no-pager show`).
 - **State writes go through `i2c state`.** Never use `sed`, `echo >`, or
   direct file edits on `.state/` files. The CLI guarantees atomic,
   schema-validated writes.

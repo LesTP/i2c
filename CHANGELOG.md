@@ -8,6 +8,22 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ## [Unreleased]
 
+### Changed
+
+- **Runner owns all git commits (FU-40 complete).** The deterministic runner
+  now commits REVIEW fix-ups (`<phase>: <review summary>`) and CLOSE docs
+  (`<phase>: <close summary>`, alongside the separate `.state/` + telemetry
+  commit), joining the EXECUTE code commit shipped earlier. The worker no
+  longer runs `git` for any action — it edits files and writes `.state/` via
+  `i2c state`, and the runner commits deterministically after it exits, fencing
+  off operator working-tree changes. This removes the interactive-hang /
+  wrong-scope / forgotten-commit hazards and guarantees the
+  `<phase>.<step>:` / `<phase>:` commit-message format recovery's
+  `commit_exists_step_pending` check relies on (also closes FU-8). The
+  `execute` / `review` / `close` instruction files, `WORKER_SPEC.md`, and the
+  Claude/Codex adapters were updated to match; worker-prompt goldens
+  regenerated.
+
 ## [0.2.0] - 2026-06-30
 
 The Phase-3 control-surface arc: a single structured command/projection layer

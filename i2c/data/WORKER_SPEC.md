@@ -57,7 +57,7 @@ LOOP:
   4. perform the action (PLAN / EXECUTE / REVIEW / CLOSE)
   5. if error → emit exit signal with EXIT 2, stop
   6. complete the action's writes via i2c state
-     (i2c state complete steps.json --phase N --step M --commit ...)
+     (i2c state complete steps.json --phase N --step M)
      (i2c state append devlog.jsonl '...')
      (i2c state set project.json state=$NEXT, etc.)
   7. goto 1
@@ -169,9 +169,11 @@ duplicated in the signal. The runner validates the emitted block against
 ## 5. Autonomous Behavioral Rules
 <!-- assembler:autonomous_only -->
 
-- **Commits:** Commit per step without waiting for human approval. Log
-  decisions to `decisions.json` (via `i2c state append-record`) for
-  asynchronous audit.
+- **Commits:** You never run `git` — the deterministic runner commits your
+  work after you exit (EXECUTE code, REVIEW fix-ups, and CLOSE docs, plus the
+  `.state/` tail). Leave your edits in the working tree and write state via
+  `i2c state`. Log decisions to `decisions.json` (via
+  `i2c state append-record`) for asynchronous audit.
 - **Scope expansion:** Beyond the defined phase is a hard stop — EXIT 2.
 - **Contract changes affecting other modules:** Hard stop — log via
   devlog with `outcome: "escalate"`, EXIT 2.

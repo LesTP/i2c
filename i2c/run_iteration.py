@@ -938,6 +938,44 @@ def run_iteration(
             else:
                 sys.stdout.write(f"NOTE: no EXECUTE code commit ({note}).\n")
 
+    # 8d. Runner-owned REVIEW fix-up commit (FU-40 Inc 3). REVIEW applies Must/
+    #     Should fixes to code; the deterministic runner commits them phase-level
+    #     (step=None) as "<phase>: <review summary>", mirroring the EXECUTE path
+    #     with the same operator-WIP fence. Best-effort; never fatal.
+    if action == "REVIEW" and worker_exit == 0:
+        entry = _last_devlog(root)
+        if entry is not None:
+            r_phase = int(entry.get("phase", phase))
+            committed, _chash, note = execute_committer(
+                root, phase=r_phase, step=None,
+                summary=str(entry.get("summary", "")), pre_dirty=pre_dirty,
+            )
+            if committed:
+                sys.stdout.write(f"committed REVIEW fix-ups: {note}\n")
+                end_commit = tel.head_commit(root)
+            else:
+                sys.stdout.write(f"NOTE: no REVIEW commit ({note}).\n")
+
+    # 8e. Runner-owned CLOSE docs commit (FU-40 Inc 3). CLOSE edits project docs
+    #     (ARCHITECTURE.md / ARCH_*.md / PROJECT.md); the runner commits those
+    #     worker-authored edits phase-level as "<phase>: <close summary>" here,
+    #     then commits the .state/ + telemetry tail separately after telemetry
+    #     (§9b) — keeping worker docs and the runner-authored state tail as two
+    #     commits. Best-effort; never fatal.
+    if action == "CLOSE" and worker_exit == 0:
+        entry = _last_devlog(root)
+        if entry is not None:
+            c_phase = int(entry.get("phase", phase))
+            committed, _chash, note = execute_committer(
+                root, phase=c_phase, step=None,
+                summary=str(entry.get("summary", "")), pre_dirty=pre_dirty,
+            )
+            if committed:
+                sys.stdout.write(f"committed CLOSE docs: {note}\n")
+                end_commit = tel.head_commit(root)
+            else:
+                sys.stdout.write(f"NOTE: no CLOSE docs commit ({note}).\n")
+
     # 9. Normal summary + return worker's exit code.
     line = write_summary_line(
         log_dir,

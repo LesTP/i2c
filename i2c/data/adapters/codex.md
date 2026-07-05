@@ -66,12 +66,11 @@ short and prescriptive. Examples:
   re-read it immediately — not at the start of the iteration. Governance
   arrived fresh in your prompt; this rule applies to source files only.
 - **Non-interactive shell only.** The loop has no stdin. Commands that
-  open editors (`vim`, `nano`, `git commit` without `-m`,
-  `git rebase -i`), prompt for input (`read`, `sudo` without `-n`,
-  `ssh` without `-o BatchMode=yes`), or pipe through pagers (`less`,
-  `more`, `git log` without `--no-pager`) will hang. To stage part of
-  a file, split into discrete edits or use `git restore` to revert
-  unwanted parts before `git add`. `git add -p` is interactive-only.
+  open editors (`vim`, `nano`), prompt for input (`read`, `sudo` without
+  `-n`, `ssh` without `-o BatchMode=yes`), or pipe through pagers (`less`,
+  `more`, `git log` without `--no-pager`) will hang. You never commit — the
+  runner does — so the only git you run is read-only; always pass
+  `--no-pager` (e.g. `git log --no-pager`, `git --no-pager show`).
 - **State writes go through `i2c state`.** Never use `sed`, `echo >`, or
   direct file edits on `.state/` files. The CLI guarantees atomic,
   schema-validated writes.
@@ -105,8 +104,8 @@ Calibration notes (apply judgment, not just the formula):
   the worker mostly reads, edits, and tests within one project directory.
 - **Cross-repo work** (e.g., a step that edits both this project and
   `toolkit/`) legitimately needs more tool calls — discovering the
-  editable install path, reading files in two repos, committing to two
-  repos. If you trip the ceiling during a clearly-cross-repo step, log
+  editable install path, reading and editing files across two repos. If
+  you trip the ceiling during a clearly-cross-repo step, log
   the exit and note the cause in the devlog `summary` so the orchestrator
   can decide whether to relax the threshold for future cross-repo phases.
 - The check is a circuit breaker, not the budgeting mechanism. The step
@@ -142,10 +141,10 @@ The runner's parser uses line-anchored regexes. The block can be plain or inside
 Mode (autonomous vs. supervised) is set by the runner via the assembler's
 `--mode` flag. The assembled prompt's framing reflects the active mode:
 
-- **Autonomous** (default): apply fixes, commit, transition state, emit the
+- **Autonomous** (default): apply fixes, transition state, emit the
   exit signal without waiting for input.
 - **Supervised** (`--mode supervised`): the assembled instructions include
-  pause-for-approval framing; surface proposed changes before committing.
+  pause-for-approval framing; surface proposed changes before finalizing.
 
 You do not choose the mode. If the framing in your prompt is ambiguous,
 default to autonomous behavior and note the ambiguity in the devlog

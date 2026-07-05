@@ -77,9 +77,11 @@ duplicated in the signal. The runner validates the emitted block against
 
 ## 5. Autonomous Behavioral Rules
 
-- **Commits:** Commit per step without waiting for human approval. Log
-  decisions to `decisions.json` (via `i2c state append-record`) for
-  asynchronous audit.
+- **Commits:** You never run `git` — the deterministic runner commits your
+  work after you exit (EXECUTE code, REVIEW fix-ups, and CLOSE docs, plus the
+  `.state/` tail). Leave your edits in the working tree and write state via
+  `i2c state`. Log decisions to `decisions.json` (via
+  `i2c state append-record`) for asynchronous audit.
 - **Scope expansion:** Beyond the defined phase is a hard stop — EXIT 2.
 - **Contract changes affecting other modules:** Hard stop — log via
   devlog with `outcome: "escalate"`, EXIT 2.
@@ -130,12 +132,11 @@ TOOL RULES
   re-read it immediately — not at the start of the iteration. Governance
   arrived fresh in your prompt; this rule applies to source files only.
 - **Non-interactive shell only.** The loop has no stdin. Commands that
-  open editors (`vim`, `nano`, `git commit` without `-m`,
-  `git rebase -i`), prompt for input (`read`, `sudo` without `-n`,
-  `ssh` without `-o BatchMode=yes`), or pipe through pagers (`less`,
-  `more`, `git log` without `--no-pager`) will hang. To stage part of
-  a file, split into discrete edits or use `git restore` to revert
-  unwanted parts before `git add`. `git add -p` is interactive-only.
+  open editors (`vim`, `nano`), prompt for input (`read`, `sudo` without
+  `-n`, `ssh` without `-o BatchMode=yes`), or pipe through pagers (`less`,
+  `more`, `git log` without `--no-pager`) will hang. You never commit — the
+  runner does — so the only git you run is read-only; always pass
+  `--no-pager` (e.g. `git log --no-pager`, `git --no-pager show`).
 - **State writes go through `i2c state`.** Never use `sed`, `echo >`, or
   direct file edits on `.state/` files. The CLI guarantees atomic,
   schema-validated writes.
@@ -286,15 +287,13 @@ For each Must finding and each Should finding, apply the fix. Run tests
 after each fix or batch (your judgment on batching). Apply every Must
 finding; skipped Shoulds log a decision per step 5.
 
-Commit per logical batch of fixes (one Must fix, one Should refactor, or
-one related set of cleanups). Commit message format: `phase: review — short title`.
+**Do not commit — the runner does.** Leave your fixes in the working tree; do
+**not** run `git`. After you exit, the deterministic runner commits the files
+you changed (fenced off from any unrelated working-tree changes) as
+`<phase>: <your review devlog summary>` — one phase-level commit for the review.
+This removes the interactive-hang / wrong-scope / forgotten-commit hazards.
 
-```bash
-git add <paths>
-git commit -m "11: review — drop dead helper from event loop"
-```
-
-If a Must fix balloons in scope mid-fix (you start fixing a bug and find
+If a Must fix balloons in scope mid-fix
 the bug needs an architecture change to address): stop, set
 `state=audit_escalation` via `i2c state`, and **escalate** (`EXIT 2`,
 reason "review surfaced architecture issue"). The fix becomes a new
@@ -384,6 +383,8 @@ Then emit the exit signal (2-line block, see Worker Contract §4).
   close + human audit)
 - Add or rename steps in `steps.json` (steps are PLAN's responsibility;
   if review uncovered a missed step, escalate)
+- Run `git` / commit — the runner commits your fix-ups deterministically
+  after you exit
 
 ---
 
@@ -397,16 +398,8 @@ redundant null check), one Optional (variable rename). Applied Must and
 Should; skipped Optional.
 
 ```bash
-# Apply Must fix:
-git add src/orchestrator.py
-git commit -m "11: review — check return path in dispatch_action"
-
-# Apply Should fixes:
-git add src/event_loop.py
-git commit -m "11: review — drop dead helper from event loop"
-
-git add src/orchestrator.py
-git commit -m "11: review — remove redundant null check"
+# Edit the files to apply the Must + Should fixes. Do NOT run git —
+# the runner commits your fix-ups after you exit as "11: <review summary>".
 
 # Log skipped Optional:
 i2c state append-record decisions.json '{"id":"D-25","title":"Skip rename: tmp -> events_to_retry","status":"closed","priority":"low","decision":"Leave the local name as-is.","rationale":"Renames in this file should batch with the next pass; isolated rename adds noise to git blame.","revisit_if":"Next significant edit to event_loop touches this function."}'

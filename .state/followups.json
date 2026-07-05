@@ -101,7 +101,7 @@
     "id": "FU-40",
     "title": "Centralize commits in the deterministic runner (worker stops running git)",
     "kind": "structural-refactor",
-    "status": "partially-closed",
+    "status": "closed",
     "priority": "next",
     "context": "Commits are model-owned today: EXECUTE commits code (`phase.step:`), CLOSE (`close.md` step 10) commits docs + `.state/`; the runner and `state_machine.py` never committed (`state_machine` is read-only by design, so the committer is the runner). **Increment 1 shipped:** the runner commits `.state/`+telemetry after a successful CLOSE — only a post-worker committer can capture the close tail (close devlog / audit_boundary / the runner-authored telemetry row all land *after* the worker's own commit). **Direction:** move *all* commits to the runner — the worker edits files + writes `.state/` via `i2c state`; the runner commits (code as `N.M:` using the devlog `summary` as the body; `.state/`+telemetry at the boundary). This **resolves FU-8** (the runner enforces the `phase.step:` format that recovery's `commit_exists_step_pending` depends on) and removes worker-git hazards (interactive-hang, wrong scope, forgotten commits). Commits are scoped (`git commit -- .state`) so operator WIP is untouched.",
     "trigger": "Migrate EXECUTE/REVIEW deliberately after the CLOSE increment proves out; requires rewriting `execute.md`/`close.md` to drop worker git + a golden regen.",
@@ -112,21 +112,23 @@
       "i2c/run_iteration.py",
       "instructions/execute.md",
       "instructions/close.md"
-    ]
+    ],
+    "closed": "2026-07-04",
+    "resolution": "Inc 3 shipped: runner now commits REVIEW fix-ups and CLOSE docs (phase-level) alongside the .state/ tail, joining the EXECUTE commit. Worker git fully removed from execute/review/close instructions + WORKER_SPEC + adapters; goldens regenerated; 164 tests green. Resolves FU-8 (runner enforces the phase.step:/phase: commit-message format)."
   },
   {
     "id": "FU-8",
     "title": "execute.md commit-format suggestion (`phase.step: title`) is not enforced anywhere",
     "kind": "test-hardening",
-    "status": "wontfix",
+    "status": "closed",
     "priority": "icebox",
     "context": "The prose says \"default commit message format `phase.step: short title`\" but nothing validates it. A pre-commit hook or a `state.py complete --validate-commit-msg` check could enforce. **Superseded by FU-40** — centralizing commits in the runner enforces the format by construction.",
     "trigger": "Phase 2 pilot reveals workers drift from the format and downstream tooling (codexbot `/diff <phase>`, waymark commit-by-phase view) needs consistency.",
     "refs": [
       "FU-40"
     ],
-    "resolution": "Superseded by FU-40: centralizing commits in the runner enforces the `phase.step:` (now `N.M:`) format by construction -- no separate validator/hook needed. Enforcement lands with FU-40 EXECUTE/REVIEW migration; tracked there.",
-    "closed": "2026-07-02"
+    "resolution": "Resolved by FU-40: the deterministic runner now commits all worker output (EXECUTE/REVIEW/CLOSE) and enforces the phase.step: / phase: commit-message format, so the format is no longer merely a suggestion. Downstream tooling can rely on it.",
+    "closed": "2026-07-04"
   },
   {
     "id": "FU-9",

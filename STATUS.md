@@ -27,14 +27,14 @@ deferred initiative); this is the catch-all orientation + tracker.
 
 ## Status (session entry point)
 
-**Where we are (2026-07-03).** Foundation + **state-lifecycle v1** (7-state enum)
+**Where we are (2026-07-04).** Foundation + **state-lifecycle v1** (7-state enum)
 + **packaging** (installable `i2c` package/console, `i2c init`/`eject`, `i2c.toml`,
 `schema_version` + `i2c migrate`) are shipped. The **control surface** is complete:
 `i2c.control` is the single structured projection layer (`status` / `phase-summary`
 / `decisions` / `devlog` / `escalation` / `logs` / `portfolio`, all `--json`) with a
 `clear-boundary` action and a Telegram bot (`i2c serve telegram`). **Recovery v1**
 (`i2c diagnose` / `reconcile`) and the **telemetry sidecar** (`.state/telemetry.jsonl`)
-have landed. **FU-40** is centralizing commits in the runner (CLOSE **and EXECUTE** increments shipped; REVIEW + CLOSE-docs = Inc 3, pending).
+have landed. **FU-40 is complete (2026-07-04)** — the runner now owns *all* git commits (EXECUTE code, REVIEW fix-ups, CLOSE docs, and the .state/ tail); the worker no longer runs git for any action (also closes FU-8).
 The **refine tier** shipped — the ad-hoc backlog is now the `i2c fu` command.
 **diplomat** migrated to i2c (2026-07-01), live at **phase 51** via the bot;
 clankercourts drove Phases 2–14 autonomously (claude + codex).
@@ -43,7 +43,7 @@ clankercourts drove Phases 2–14 autonomously (claude + codex).
 (telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is unblocked** (D-tests-1 resolved: `plan→tests`) — the next Build-tier feature.
 See **Active Roadmap** below for tracks, priorities, and the current recommendation.
 
-**Next session (planned order).** (1) **FU-40 Inc 3** — wire REVIEW fix-ups + CLOSE docs onto the `commit_execute` helper; then FU-40 flips to `closed`. (2) **FU-20** (ship `templates/.llms/commands/` for Devmate + the loading check) — *maybe*. (3) then **Proposal B** (the `i2c refine` loop) *or* **tests_action** — both ready: B unlocks the fix/bugfix consolidation; tests_action is the benchmark oracle (`plan→tests`, D-tests-1 done).
+**Next session (planned order).** (1) **FU-20** (ship `templates/.llms/commands/` for Devmate + the loading check) — *maybe*. (2) then **Proposal B** (the `i2c refine` loop) *or* **tests_action** — both ready: B unlocks the fix/bugfix consolidation; tests_action is the benchmark oracle (`plan→tests`, D-tests-1 done).
 
 **Quick orientation** (from a project root with `.state/`, package installed):
 
@@ -100,7 +100,7 @@ historical memos → `archive/`.
 - **Explicit brownfield path** — Reverse Architecture → CODEBASE.md → scoped discovery, plus the brownfield-archaeology skill. i2c's README is greenfield-focused.
 
 ### 6. Rolling backlog (small FUs, opportunistic)
-FU-16 (naive Available-Modules fallback) · **FU-40** (centralize commits in the runner; resolves FU-8's unenforced `phase.step:` format — load-bearing for recovery's `commit_exists_step_pending`; **CLOSE increment shipped `9d39390`**, EXECUTE/REVIEW migration pending) · FU-29 (adapter Output Contract → `templates/` layer) · FU-20 (Devmate project-level commands) · FU-18 (slow tests on share) · FU-9 (Refine devlog iteration field) · FU-10 (refresh WORKER_SPEC anecdotes) · FU-36 (reason-first prose) · FU-37 (rolling dead-surface audit) · FU-15 / FU-4 / FU-3 / FU-14 (low-pri ergonomics). Full detail via `i2c fu show <id>`.
+FU-16 (naive Available-Modules fallback) · ~~**FU-40**~~ (**closed 2026-07-04**: runner owns all commits — EXECUTE/REVIEW/CLOSE + .state/ tail; resolved FU-8)  · FU-29 (adapter Output Contract → `templates/` layer) · FU-20 (Devmate project-level commands) · FU-18 (slow tests on share) · FU-9 (Refine devlog iteration field) · FU-10 (refresh WORKER_SPEC anecdotes) · FU-36 (reason-first prose) · FU-37 (rolling dead-surface audit) · FU-15 / FU-4 / FU-3 / FU-14 (low-pri ergonomics). Full detail via `i2c fu show <id>`.
 - ~~FU-32 Δ5~~ → **deprioritized.** No occurrence; current soft-handling beats the spec; only worth it for externally/migration-authored ARCHes, and then scoped to `## Phasing` only.
 
 ### 7. Model-benchmark initiative (telemetry · test isolation · benchmark)

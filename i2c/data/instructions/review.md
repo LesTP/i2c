@@ -7,8 +7,9 @@ to close. The state machine has already decided this action is appropriate
 
 This file is assembled into the worker's prompt when the state machine emits
 `ACTION: REVIEW`. Pair this procedure with the `Worker Contract` section
-in your prompt for loop/escalation/output rules, and inherit the commit
-and devlog conventions from `instructions/execute.md`.
+in your prompt for loop/escalation/output rules, and inherit the devlog
+conventions from `instructions/execute.md`. As in EXECUTE, the runner — not
+you — commits; do not run `git`.
 
 ---
 
@@ -73,15 +74,13 @@ For each Must finding and each Should finding, apply the fix. Run tests
 after each fix or batch (your judgment on batching). Apply every Must
 finding; skipped Shoulds log a decision per step 5.
 
-Commit per logical batch of fixes (one Must fix, one Should refactor, or
-one related set of cleanups). Commit message format: `phase: review — short title`.
+**Do not commit — the runner does.** Leave your fixes in the working tree; do
+**not** run `git`. After you exit, the deterministic runner commits the files
+you changed (fenced off from any unrelated working-tree changes) as
+`<phase>: <your review devlog summary>` — one phase-level commit for the review.
+This removes the interactive-hang / wrong-scope / forgotten-commit hazards.
 
-```bash
-git add <paths>
-git commit -m "11: review — drop dead helper from event loop"
-```
-
-If a Must fix balloons in scope mid-fix (you start fixing a bug and find
+If a Must fix balloons in scope mid-fix
 the bug needs an architecture change to address): stop, set
 `state=audit_escalation` via `i2c state`, and **escalate** (`EXIT 2`,
 reason "review surfaced architecture issue"). The fix becomes a new
@@ -189,6 +188,8 @@ means autonomous.
   close + human audit)
 - Add or rename steps in `steps.json` (steps are PLAN's responsibility;
   if review uncovered a missed step, escalate)
+- Run `git` / commit — the runner commits your fix-ups deterministically
+  after you exit
 
 ---
 
@@ -214,16 +215,8 @@ redundant null check), one Optional (variable rename). Applied Must and
 Should; skipped Optional.
 
 ```bash
-# Apply Must fix:
-git add src/orchestrator.py
-git commit -m "11: review — check return path in dispatch_action"
-
-# Apply Should fixes:
-git add src/event_loop.py
-git commit -m "11: review — drop dead helper from event loop"
-
-git add src/orchestrator.py
-git commit -m "11: review — remove redundant null check"
+# Edit the files to apply the Must + Should fixes. Do NOT run git —
+# the runner commits your fix-ups after you exit as "11: <review summary>".
 
 # Log skipped Optional:
 i2c state append-record decisions.json '{"id":"D-25","title":"Skip rename: tmp -> events_to_retry","status":"closed","priority":"low","decision":"Leave the local name as-is.","rationale":"Renames in this file should batch with the next pass; isolated rename adds noise to git blame.","revisit_if":"Next significant edit to event_loop touches this function."}'

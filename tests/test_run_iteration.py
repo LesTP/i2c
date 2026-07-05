@@ -872,5 +872,132 @@ class TestExecuteCommitWiring(unittest.TestCase):
             self.assertEqual(calls, [])  # no commit on a failed step
 
 
+class TestReviewCommitWiring(unittest.TestCase):
+    """FU-40 Inc 3: run_iteration drives execute_committer on a successful REVIEW."""
+
+    @staticmethod
+    def _seed_review_devlog(root, *, outcome="complete"):
+        (root / ".state" / "devlog.jsonl").write_text(
+            json.dumps({
+                "phase": 2, "step": None, "action": "review", "outcome": outcome,
+                "summary": "phase 2 review: 1 Must, 2 Should applied",
+                "timestamp": "2026-07-03T00:00:00Z",
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_review_commit_invoked_phase_level(self):
+        with TempProject() as tp:
+            tp.patch_project(state="review")
+            self._seed_review_devlog(tp.root)
+            calls = []
+
+            def fake(r, *, phase, step, summary, pre_dirty):
+                calls.append((phase, step, summary, pre_dirty))
+                return True, "abc1234", f"{phase}: {summary}"
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block(exit_code=0)),
+                    execute_committer=fake,
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertEqual(len(calls), 1)
+            phase, step, summary, pre_dirty = calls[0]
+            self.assertEqual((phase, step), (2, None))  # review is phase-level
+            self.assertIn("review", summary)
+            self.assertIsInstance(pre_dirty, set)
+
+    def test_review_commit_not_invoked_on_worker_exit_2(self):
+        with TempProject() as tp:
+            tp.patch_project(state="review")
+            self._seed_review_devlog(tp.root, outcome="escalate")
+            calls = []
+
+            def fake(r, **kw):
+                calls.append(kw)
+                return False, None, "x"
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block(exit_code=2)),
+                    execute_committer=fake,
+                )
+            self.assertEqual(rc, 2)
+            self.assertEqual(calls, [])
+
+
+class TestCloseDocsCommitWiring(unittest.TestCase):
+    """FU-40 Inc 3: a successful CLOSE drives the docs committer (phase-level)
+    and, separately, the .state/ committer."""
+
+    @staticmethod
+    def _seed_close_devlog(root):
+        (root / ".state" / "devlog.jsonl").write_text(
+            json.dumps({
+                "phase": 2, "step": None, "action": "close", "outcome": "complete",
+                "summary": "phase 2 closed: ARCHITECTURE.md updated",
+                "timestamp": "2026-07-03T00:00:00Z",
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_docs_and_state_committers_both_invoked(self):
+        with TempProject() as tp:
+            tp.patch_project(state="close")
+            self._seed_close_devlog(tp.root)
+            doc_calls, state_calls = [], []
+            orig = ri.invariants.check_post_action
+            ri.invariants.check_post_action = lambda root, action: []
+            try:
+                def fake_docs(r, *, phase, step, summary, pre_dirty):
+                    doc_calls.append((phase, step, summary))
+                    return True, "abc1234", f"{phase}: {summary}"
+
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = ri.run_iteration(
+                        backend="claude", model="sonnet", max_budget_usd=5.0,
+                        claude_invoker=make_fake_invoker(signal_block()),
+                        execute_committer=fake_docs,
+                        state_committer=lambda root, *, phase: (
+                            state_calls.append(phase) or (True, "ok")),
+                    )
+            finally:
+                ri.invariants.check_post_action = orig
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertEqual(len(doc_calls), 1)
+            self.assertEqual(doc_calls[0][:2], (2, None))  # phase 2, step None
+            self.assertEqual(state_calls, [2])
+
+    def test_docs_committer_not_invoked_on_worker_exit_2(self):
+        with TempProject() as tp:
+            tp.patch_project(state="close")
+            self._seed_close_devlog(tp.root)
+            doc_calls, state_calls = [], []
+            orig = ri.invariants.check_post_action
+            ri.invariants.check_post_action = lambda root, action: []
+            try:
+                out, err = io.StringIO(), io.StringIO()
+                with redirect_stdout(out), redirect_stderr(err):
+                    rc = ri.run_iteration(
+                        backend="claude", model="sonnet", max_budget_usd=5.0,
+                        claude_invoker=make_fake_invoker(signal_block(exit_code=2)),
+                        execute_committer=lambda r, **kw: (
+                            doc_calls.append(kw) or (False, None, "x")),
+                        state_committer=lambda root, *, phase: (
+                            state_calls.append(phase) or (True, "ok")),
+                    )
+            finally:
+                ri.invariants.check_post_action = orig
+            self.assertEqual(rc, 2)
+            self.assertEqual(doc_calls, [])   # docs commit gated on exit 0
+            self.assertEqual(state_calls, [])  # state commit gated on exit 0
+
+
 if __name__ == "__main__":
     unittest.main()

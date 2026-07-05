@@ -8,8 +8,9 @@ transitioned the project to `close`); do not re-decide.
 
 This file is assembled into the worker's prompt when the state machine emits
 `ACTION: CLOSE`. Pair this procedure with the `Worker Contract` section in
-your prompt for loop/escalation/output rules, and inherit the commit and
-devlog conventions from `instructions/execute.md`.
+your prompt for loop/escalation/output rules, and inherit the devlog
+conventions from `instructions/execute.md`. As in EXECUTE/REVIEW, the runner
+— not you — commits; do not run `git`.
 
 ---
 
@@ -147,8 +148,8 @@ happened. Two cases:
   source change per `instructions/execute.md`): confirm the ARCH file
   was updated in the same commit. If yes, nothing to do here.
 - **Phase-boundary propagation** (deferred to close per
-  `instructions/execute.md`): edit the ARCH file now, in one commit
-  per affected file.
+  `instructions/execute.md`): edit the ARCH file now; the runner commits it
+  with the other close docs when you exit.
 
 If you find a contract was logged in devlog but no ARCH file edit
 exists in *any* commit of this phase: that's a **propagation gap**. Edit
@@ -209,7 +210,7 @@ If nothing changed beyond the Implementation Sequence status flip, that
 one edit is the only one needed.
 
 `ARCHITECTURE.md` is markdown, not structured state — direct file edit,
-no `i2c state` call. The edit ships in the close commit (step 10).
+no `i2c state` call. The runner commits this edit after you exit (see step 10).
 
 ### 8. Update PROJECT.md risks (optional)
 
@@ -228,19 +229,21 @@ i2c state complete phases.json --phase $PHASE
 This sets `phases.json[id=$PHASE].status = "complete"`. No commit hash
 argument here — phases are not tied to a single commit.
 
-### 10. Commit close artifacts
+### 10. Do not commit — the runner does
 
-One commit for the close action's writes (contract propagation edits,
-ARCHITECTURE.md update, PROJECT.md risk edits, gotcha promotions).
-Format: `phase: close — short title`.
+Leave your close edits in the working tree; do **not** run `git`. After you
+exit, the deterministic runner makes two commits:
 
-```bash
-git add ARCH_<module>.md ARCHITECTURE.md PROJECT.md .state/
-git commit -m "11: close — propagate orchestrator contract, promote 2 gotchas"
-```
+- your doc edits (contract propagation, `ARCHITECTURE.md`, `PROJECT.md`) as
+  `<phase>: <your close devlog summary>`, fenced off from unrelated
+  working-tree changes; then
+- the `.state/` + telemetry tail (the close devlog entry, the
+  `audit_boundary` write, and the runner-authored telemetry row) as a
+  separate `<phase>: close - persist .state/ + telemetry` commit.
 
-Always pass `-m`. The full prohibitions on interactive git commands
-apply (see the Shell command discipline section in your Worker Contract).
+Only a post-worker committer can capture that state tail — the close devlog,
+the gate write, and the telemetry row all land *after* your own work — which
+is why the runner, not you, commits at close.
 
 ### 11. Append a CLOSE devlog entry
 
@@ -288,6 +291,8 @@ Exit code is `0` — close always terminates normally.
 - Plan the next phase (that's the next PLAN, after the human audit)
 - Advance `project.json.phase`
 - Declare project terminus (`state=done`) on its own
+- Run `git` / commit — the runner commits your close edits (docs + the
+  `.state/` tail) deterministically after you exit
 
 ---
 
@@ -327,9 +332,8 @@ i2c state update-record decisions.json \
 # Mark phase complete:
 i2c state complete phases.json --phase 5
 
-# Commit:
-git add ARCHITECTURE.md .state/
-git commit -m "5: close — event_store core storage, D-16 resolved"
+# Do NOT run git — after you exit the runner commits your doc edits and the
+# .state/ tail as two commits ("5: <close summary>" and the .state/ persist).
 
 # Devlog:
 i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule); ARCHITECTURE.md event_store row → Complete. No ARCH_<module> contract changes.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
@@ -383,10 +387,8 @@ i2c state update-record decisions.json \
 # Mark phase complete:
 i2c state complete phases.json --phase 11
 
-# Commit (ARCH_orchestrator.md was propagated immediately in step 11.4;
-# ARCHITECTURE.md picks up the status flip + coupling-note update):
-git add ARCHITECTURE.md .state/
-git commit -m "11: close — orchestrator complete, 2 decisions resolved"
+# Do NOT run git — the runner commits ARCHITECTURE.md (status flip +
+# coupling-note update) and the .state/ tail after you exit.
 
 # Devlog:
 i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed; ARCHITECTURE.md orchestrator row → Complete plus coupling-note refresh. ARCH_orchestrator.md propagation confirmed in step 11.4 commit.","contracts":[],"timestamp":"2026-06-04T11:00:00Z"}'
