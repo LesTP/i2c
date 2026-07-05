@@ -273,18 +273,6 @@ def _eval_supervised_only(ctx: "AssemblerContext", value: str | None) -> bool:
     return ctx.mode == "supervised"
 
 
-def _eval_multi_step_only(ctx: "AssemblerContext", value: str | None) -> bool:
-    """True iff the worker is invoked with a multi-step budget (STEP_BUDGET > 1).
-
-    v1 runner always passes step_budget=1, so this evaluator strips the
-    multi-step LOOP machinery (WORKER_SPEC §2 multi-step subsections) on
-    every assembled prompt today. Forward-compatible with the multi-iteration
-    loop landing later — once runners can pass --step-budget > 1, those
-    sections automatically reappear.
-    """
-    return ctx.step_budget > 1
-
-
 def _eval_omit_in_prompt(ctx: "AssemblerContext", value: str | None) -> bool:
     """Always False — sections marked this way are unconditionally stripped.
 
@@ -301,7 +289,6 @@ def _eval_omit_in_prompt(ctx: "AssemblerContext", value: str | None) -> bool:
 EVALUATORS: dict[str, Callable[["AssemblerContext", str | None], bool]] = {
     "autonomous_only": _eval_autonomous_only,
     "supervised_only": _eval_supervised_only,
-    "multi_step_only": _eval_multi_step_only,
     "omit_in_prompt": _eval_omit_in_prompt,
 }
 
@@ -425,7 +412,6 @@ class AssemblerContext:
     phase: int | None  # required for --action and --section devlog
     module: str | None  # required for --section module
     target: int | None = None  # recovery actions: which iteration to diagnose
-    step_budget: int = 1  # runner-supplied; v1 always 1. Drives multi_step_only stripping.
     # State (lazy-populated; populated by build_context).
     project: dict[str, Any] = field(default_factory=dict)
     phases: list[dict[str, Any]] = field(default_factory=list)
@@ -460,7 +446,6 @@ def build_context(args: argparse.Namespace) -> AssemblerContext:
         phase=getattr(args, "phase", None),
         module=getattr(args, "module", None),
         target=getattr(args, "target", None),
-        step_budget=getattr(args, "step_budget", 1) or 1,
     )
     ctx.project = _load_required_state(root, "project.json")
     ctx.phases = _load_required_state(root, "phases.json")
@@ -1314,17 +1299,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Which adapter to read for Tool Rules. Default: claude.",
     )
     parser.add_argument(
-        "--step-budget",
-        type=int,
-        default=1,
-        help=(
-            "Step budget the runner gave the worker. Default 1 (single-step). "
-            "When > 1, multi-step-only WORKER_SPEC subsections are kept; when "
-            "== 1, they're stripped. Forward-compat with the multi-iteration "
-            "loop landing later."
-        ),
-    )
-    parser.add_argument(
         "--emit",
         choices=("full", "system", "user"),
         default="full",
@@ -1342,8 +1316,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Cross-flag validation that argparse can't express directly. Exits 2 on failure."""
-    if getattr(args, "step_budget", 1) < 1:
-        parser.error("--step-budget must be a positive integer")
     if args.action is not None:
         if args.phase is None:
             parser.error("--phase is required with --action")

@@ -23,9 +23,8 @@ and emit the exit signal defined in §4.
 The state machine decides what action you perform. **The runner has
 already determined the next ACTION before invoking you**, and the result —
 `ACTION` and `NEXT` — arrived in your prompt's `Action Context` section.
-For single-step invocations (the common case, `STEP_BUDGET = 1`), this is
-all the state-machine interaction you need: do the action, emit the exit
-signal, the runner re-invokes you for the next action.
+This is all the state-machine interaction you need: do the action, emit
+the exit signal, and the runner re-invokes you for the next action.
 
 | ACTION | What you do |
 |--------|-------------|
@@ -34,6 +33,8 @@ signal, the runner re-invokes you for the next action.
 | `REVIEW` | Review the phase against its contract. Follow `instructions/review.md`. |
 | `CLOSE` | Wrap up the phase. Follow `instructions/close.md`. |
 | `EXIT` | Emit the exit signal and stop. Do not perform any action. |
+
+---
 
 ## 3. Escalation Conditions
 
@@ -251,10 +252,8 @@ in the assembled `Current Phase` section, then follow the matching branch.
 
 7. **Decide what's next.**
 
-   - **More pending steps in this phase?** State stays `execute`. In
-     single-step mode, emit the exit signal — the runner will re-invoke for
-     the next step. In multi-step mode, loop back to step 1 of this
-     procedure.
+   - **More pending steps in this phase?** State stays `execute`. Emit the
+     exit signal — the runner will re-invoke for the next step.
    - **All steps in this phase are now `complete`?** Transition the project
      state to `review`:
 
@@ -304,9 +303,10 @@ than being pre-listed. Budget is wall-clock, not step count
 
 6. **Decide what's next.**
 
-   - **Time budget remaining and more work to do?** Stay in `execute`.
-     The state machine handles the time check; if it returns EXECUTE again,
-     loop back to step 2.
+   - **Time budget remaining and more work to do?** Stay in `execute` and
+     emit the exit signal — the runner re-invokes for the next increment
+     (the state machine's time check returns EXECUTE again while budget
+     remains).
    - **Time exhausted OR phase goal met?** Transition to `review`:
 
      ```bash

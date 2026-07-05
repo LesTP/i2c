@@ -386,7 +386,7 @@ class TestDirtyTree(unittest.TestCase):
 def _full_prompt(action: str, *, target: int | None = None) -> str:
     ns = argparse.Namespace(
         action=action, section=None, phase=2, mode="autonomous", module=None,
-        backend="claude", target=target, step_budget=1, emit="full",
+        backend="claude", target=target, emit="full",
     )
     return ac.build_full_prompt(ac.build_context(ns))
 

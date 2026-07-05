@@ -116,17 +116,11 @@ sequenceDiagram
     R->>R: 6. parse signal, write summary.log
 ```
 
-### Single-step vs multi-step
+### One action per invocation
 
-**Single-step (STEP_BUDGET = 1, common case):** Runner handles everything before invocation. Worker does one action and exits.
-
-**Multi-step (STEP_BUDGET > 1):** First step's context arrives pre-assembled. Between steps, the worker calls the assembler for updated context:
+The runner assembles a full prompt and invokes the worker **once per action**; the worker does one action and exits, and the runner re-invokes for the next. There is no multi-step mode — see DECISIONS D-run-1 (single-iteration-per-invocation). The `--section` forms remain for operator / supervised orientation:
 
 ```bash
-# Mid-step context request:
-i2c assemble --action execute --phase 11
-
-# Or request a single section:
 i2c assemble --section architecture
 i2c assemble --section module --module event_store
 ```

@@ -20,7 +20,6 @@ The same binary serves two callers:
 
 - **Autonomous mode:** the runner calls `--action $ACTION --phase $PHASE` per invocation; output is piped into `claude -p` / `codex exec`.
 - **Supervised mode:** the human or their assistant calls `--section status` for orientation or `--action $ACTION --phase $PHASE --mode supervised` for per-action context. Output goes to the terminal or a Devmate slash-command wrapper.
-- **Mid-step (multi-step):** the worker may call `--section X` between steps for fresh governance context (see §10).
 
 ---
 
@@ -69,7 +68,6 @@ passthrough); the runner invokes `assemble_context.py` directly.
 | `--section` | building a single section | `architecture`, `module` | — |
 | `--module` | only with `--section module` | non-empty module name | — |
 | `--target` | optional with `--action` (recovery) | positive integer | — |
-| `--step-budget` | optional with `--action` | positive integer | `1` |
 | `--emit` | optional with `--action` | `full`, `system`, `user` | `full` |
 
 `diagnose` / `reconcile` are the out-of-band **recovery** actions
@@ -81,8 +79,6 @@ no Next State. `--target` selects which iteration's failure context to render.
 The mode flag is *only* meaningful with `--action`. Specifying `--mode` together with `--section` is a CLI argument error. The same holds for `--emit`: it is only meaningful with `--action`, and a non-default `--emit` with `--section` is a CLI argument error.
 
 `--emit` selects which part of the assembled prompt to write to stdout (FU-35, prompt-cache support). `full` (default) is the whole prompt and is byte-identical to pre-FU-35 output. `system` is the cache-stable prefix — the WORKER CONTRACT and TOOL RULES regions (§6) — which the runner routes through Claude Code's `--append-system-prompt-file` so it can be prompt-cached and reused across consecutive same-phase iterations. `user` is the per-iteration body — the PROJECT CONTEXT and ACTION CONTEXT regions plus the Output Contract reminder. The split is exact: `full == system.rstrip() + "\n\n" + user`. Only the claude backend splits; codex sends `full` on stdin and relies on server-side prefix caching.
-
-`--step-budget` controls whether the `multi_step_only`-marked subsections in `WORKER_SPEC.md` (the multi-step LOOP, "Loop discipline — multi-step only", and the production-incident anecdotes) appear in the assembled prompt. Default `1` (the v1 runner's value) strips them; values > 1 keep them, in preparation for the multi-iteration loop (Phase 3.B/C).
 
 ### 3.3 Output
 
@@ -111,7 +107,7 @@ i2c assemble --action execute --phase 11 --emit user
 # Supervised assistant, per-action
 i2c assemble --action plan --phase 12 --mode supervised
 
-# Single-section context (worker mid-step or operator)
+# Single-section context (operator / supervised orientation)
 i2c assemble --section architecture
 i2c assemble --section module --module event_store
 
@@ -201,9 +197,6 @@ The per-action inclusion table, derived from §4 for fast reference.
 - `Output Contract` and `Autonomous Behavioral Rules` from the Worker Contract banner
 - `Next State: $STATE` from the Action Context banner
 - Any subsection marked `<!-- assembler:autonomous_only -->` inside `WORKER_SPEC.md` or `instructions/$ACTION.md`
-
-`--step-budget 1` (the v1 runner default) also strips:
-- Any subsection marked `<!-- assembler:multi_step_only -->` (currently `WORKER_SPEC.md`'s multi-step LOOP pseudocode, the "Loop discipline — multi-step only" subsection, and the production-incident anecdotes that motivate that discipline).
 
 The `<!-- assembler:omit_in_prompt -->` marker strips unconditionally on every assembly — used in `instructions/*.md` for operator-facing prose (Examples, Known tooling gaps, Behavior modes) that adds no signal in the assembled prompt.
 
@@ -336,7 +329,6 @@ The marker applies to the section that begins at the preceding heading and ends 
 | `requires=dependencies_nonempty` | True iff `phases.json[id=$PHASE].dependencies` has length > 0 | condition is false | `plan.md` Pre-plan Dependency Probe, `close.md` Pre-close Integration Check |
 | `autonomous_only` | True iff `--mode` is `autonomous` (the default) | condition is false (i.e., `--mode supervised`) | `WORKER_SPEC.md` Output Contract & Autonomous Behavioral Rules, any autonomous-only paragraphs in instruction files |
 | `supervised_only` | True iff `--mode supervised` | condition is false (i.e., autonomous mode) | Reserved for future use; no current consumers |
-| `multi_step_only` | True iff `--step-budget > 1` (default is `1`) | condition is false (the single-step common case) | `WORKER_SPEC.md` Multi-step LOOP, Loop discipline subsection, and production-incident anecdotes. Forward-compatible with the multi-iteration loop (Phase 3.B/C). |
 | `omit_in_prompt` | Always false | always | Operator-facing sections in `instructions/*.md` (Examples, Known tooling gaps, Behavior modes) that read well in the source file but add no signal in the assembled prompt. |
 
 ### 7.3 Evaluation order
@@ -420,20 +412,11 @@ The runner (autonomous mode) passes `--mode autonomous` explicitly. Devmate slas
 
 ---
 
-## 10. Multi-Step Mid-Step Usage
+## 10. Single-Iteration Invocation Model
 
-In multi-step mode (`STEP_BUDGET > 1`), the worker loops the state machine itself between steps (per `WORKER_SPEC.md` §2). Between steps, the worker may call the assembler for fresh single-section context. The following `--section` invocations are callable mid-step:
+The assembler builds **one full prompt per worker invocation**; there is no multi-step mid-step usage and no `--step-budget` flag. The worker performs the dispatched ACTION, writes state via `i2c state`, emits the exit signal, and exits; the runner re-invokes for the next action.
 
-| Section | Use case |
-|---------|----------|
-| `--section architecture` | Need the full ARCHITECTURE.md to reason about cross-module wiring during a refactor step |
-| `--section module --module $NAME` | Need a different module's contract than the active phase's module (e.g., reviewing how a consumer uses this module's API) |
-
-`--action` is **not** callable mid-step. Re-assembling the full prompt mid-step would duplicate context already in the worker's window and burn tokens. The runner is the only caller authorized to issue full-prompt assemblies.
-
-Mid-step assembler calls do not decrement the step budget (`state.py` budget decrement is the state machine's job, not the assembler's).
-
-Note that the `multi_step_only` marker mechanism used to strip `WORKER_SPEC.md`'s multi-step LOOP and discipline subsections in single-step mode (Phase 3.A.1) is the same `--step-budget`-driven evaluator described in §7.2. When the multi-iteration loop ships and the runner starts passing `--step-budget > 1`, those subsections automatically reappear in the assembled prompt.
+This is the design, not a v1 limitation — see **DECISIONS.md (D-run-1/D-run-2)**. Cross-action multi-step (one invocation spanning PLAN→EXECUTE→REVIEW→CLOSE) is incompatible with per-action backend routing (`[run.backends]`), since one invocation is one backend. The only coherent multi-step unit — a single invocation running several EXECUTE steps for continuous context — trades away the per-step commit and per-(action×step) telemetry granularity that FU-40 established and the model-benchmark initiative depends on. It is therefore deferred until benchmark data shows EXECUTE quality is context-starved.
 
 ---
 
@@ -538,7 +521,7 @@ Locked decisions, captured inline so the contract's rationale travels with it.
 | **D-arch-4** | Title Case section names throughout | Matches the DESIGN sketch, the most-quoted reference. Standardizing eliminates the drift surfaced during cross-reference. |
 | **D-arch-5** | `Decisions` section included for all four actions | PLAN authors D-IDs and would collide without seeing existing decisions. Size cost is negligible. |
 | **D-arch-6** | `Current Phase` and `Current Phase Steps` are two distinct sections | Different sources (`phases.json` record vs `steps.json` filter) and different consumers. Conflating them was a documentation oversight. |
-| **D-arch-7** | Mid-step `--section X` is documented and bounded | Per D16. Bounded to two section types (§10) so it doesn't sprawl into a runtime tool. `--action` is not callable mid-step. (Originally four; `status`/`devlog` removed in Phase 3a — see §8.) |
+| **D-arch-7** | ~~Mid-step `--section X`~~ removed with multi-step | Superseded by D-run-1/D-run-2 (single-iteration-per-invocation). The `--section architecture` / `--section module` forms remain for operator/supervised orientation, but there is no worker mid-step usage. |
 | **D-arch-8** | Available Modules: adapter primary, ARCHITECTURE.md fallback | Adapter has the `Available Modules` placeholder explicitly for this purpose. Architecture is a sensible fallback when the placeholder is unfilled. |
 | **D-arch-9** | This contract is authoritative; archive/DESIGN_governance_v3.md gets a forward-pointer | Avoids rewriting the design doc while making the authority explicit. |
 | **D-arch-10** | Output is markdown / UTF-8 / LF / trailing newline | No source specified; pick the existing toolchain convention. |

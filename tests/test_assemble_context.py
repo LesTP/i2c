@@ -494,42 +494,8 @@ class TestConditionalStripping(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Phase 3.A.1 evaluators: multi_step_only + omit_in_prompt
+# Conditional-section evaluator: omit_in_prompt
 # ---------------------------------------------------------------------------
-
-
-class TestMultiStepOnlyEvaluator(unittest.TestCase):
-    """Marker `multi_step_only` strips when step_budget == 1, keeps when > 1."""
-
-    def _ctx(self, *, step_budget: int) -> ac.AssemblerContext:
-        ctx = build_ctx(action="plan", phase=2, mode="autonomous")
-        ctx.step_budget = step_budget
-        return ctx
-
-    def test_strips_when_default_single_step(self):
-        with TempProject():
-            md = (
-                "## Always\nx\n\n## Multi\n"
-                "<!-- assembler:multi_step_only -->\n"
-                "multi-step body\n\n## End\ny\n"
-            )
-            out = ac.strip_conditional_sections(md, self._ctx(step_budget=1))
-            self.assertIn("## Always", out)
-            self.assertNotIn("## Multi", out)
-            self.assertNotIn("multi-step body", out)
-
-    def test_keeps_when_step_budget_greater_than_one(self):
-        with TempProject():
-            md = (
-                "## Always\nx\n\n## Multi\n"
-                "<!-- assembler:multi_step_only -->\n"
-                "multi-step body\n\n## End\ny\n"
-            )
-            out = ac.strip_conditional_sections(md, self._ctx(step_budget=3))
-            self.assertIn("## Multi", out)
-            self.assertIn("multi-step body", out)
-            # Marker line itself is removed.
-            self.assertNotIn("multi_step_only", out)
 
 
 class TestOmitInPromptEvaluator(unittest.TestCase):
@@ -550,42 +516,6 @@ class TestOmitInPromptEvaluator(unittest.TestCase):
             self.assertNotIn("## Drop", out)
             self.assertNotIn("operator-only prose", out)
             self.assertIn("## Tail", out)
-
-
-class TestStepBudgetFlag(unittest.TestCase):
-    """--step-budget CLI flag parsing + validation."""
-
-    def test_default_is_one(self):
-        parser = ac.build_parser()
-        args = parser.parse_args(
-            ["--action", "plan", "--phase", "2", "--mode", "autonomous"],
-        )
-        self.assertEqual(args.step_budget, 1)
-
-    def test_accepts_positive_int(self):
-        parser = ac.build_parser()
-        args = parser.parse_args(
-            ["--action", "plan", "--phase", "2", "--step-budget", "5"],
-        )
-        self.assertEqual(args.step_budget, 5)
-
-    def test_rejects_zero(self):
-        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
-            rc, _, err = run_cli(
-                "--action", "plan", "--phase", "2",
-                "--mode", "autonomous", "--step-budget", "0",
-            )
-            self.assertEqual(rc, 2)
-            self.assertIn("--step-budget must be a positive integer", err)
-
-    def test_rejects_negative(self):
-        with TempProject(with_framework=True, with_extra=_FRAMEWORK_EXTRAS):
-            rc, _, err = run_cli(
-                "--action", "plan", "--phase", "2",
-                "--mode", "autonomous", "--step-budget", "-3",
-            )
-            self.assertEqual(rc, 2)
-            self.assertIn("--step-budget must be a positive integer", err)
 
 
 # ---------------------------------------------------------------------------

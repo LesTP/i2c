@@ -149,11 +149,6 @@ def assemble_prompt(
         "--phase", str(phase),
         "--mode", "autonomous",
         "--backend", backend,
-        # v1 runner is always single-step. When the multi-iteration loop
-        # ships, this becomes a runner parameter; for now it's a constant
-        # so the multi_step_only marker mechanism keeps stripping the
-        # WORKER_SPEC multi-step subsections.
-        "--step-budget", "1",
         "--emit", emit,
     ]
     if target is not None:

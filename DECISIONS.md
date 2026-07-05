@@ -102,6 +102,17 @@ for the framework). Implementation commits reference the decision IDs.
 | D-recovery-5 | Recovery actions dispatch out-of-band (`i2c run --action … --target N`), bypassing the state machine and emitting no Next State | Active |
 | D-recovery-6 | Full `fix` code-repair agent deferred | Roadmap (see `FUTURE_recovery.md`) |
 
+### Runner / iteration model - `ARCH_assembler.md` (section 10) (D-run-1..2)
+
+> Single-iteration-per-invocation (decided 2026-07-05); resolves the STATUS
+> section-2 multi-iteration-loop open item. Rationale lives in
+> `ARCH_assembler.md` section 10.
+
+| ID | Decision (short) | Status |
+|----|------------------|--------|
+| D-run-1 | One worker invocation performs exactly one ACTION; the runner re-invokes for the next. No worker-side multi-step loop and no `--step-budget` flag (both removed). | Active |
+| D-run-2 | Cross-action multi-step is rejected: one invocation is one backend, so it is incompatible with per-action routing (`[run.backends]`). The only coherent unit - a single invocation running several EXECUTE steps for continuous context - is deferred pending model-benchmark evidence, since it forfeits the per-step commit and per-(action, step) telemetry granularity FU-40 established. | Active |
+
 ---
 
 ## Component-local decisions (kept with their contract)

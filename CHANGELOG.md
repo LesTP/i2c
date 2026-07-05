@@ -24,6 +24,20 @@ This is the public counterpart to `STATUS.md` (internal tracking).
   Claude/Codex adapters were updated to match; worker-prompt goldens
   regenerated.
 
+### Removed
+
+- **Multi-step / `--step-budget` machinery (D-run-1/D-run-2).** Declared
+  single-iteration-per-invocation the design and removed the unused multi-step
+  surface: the assembler's `--step-budget` flag and `multi_step_only` marker,
+  the runner's hardcoded pass-through, and the multi-step LOOP / loop-discipline
+  subsections of `WORKER_SPEC.md`. Rationale: one invocation is one backend, so
+  cross-action multi-step is incompatible with per-action routing
+  (`[run.backends]`); the only coherent unit — a single invocation running
+  several EXECUTE steps for continuous context — is deferred pending
+  model-benchmark evidence, since it would forfeit the per-step commit and
+  per-(action, step) telemetry granularity FU-40 established. Contract docs
+  (`ARCH_assembler.md`, `WORKFLOW.md`) simplified to match.
+
 ## [0.2.0] - 2026-06-30
 
 The Phase-3 control-surface arc: a single structured command/projection layer

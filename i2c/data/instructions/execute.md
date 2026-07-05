@@ -1,8 +1,7 @@
 # Execute — Do the Next Step
 
-Performs one unit of implementation work, records the result, and either yields
-back to the runner (single-step mode) or continues to the next step
-(multi-step mode). The state machine has already decided this action is
+Performs one unit of implementation work, records the result, and yields
+back to the runner. The state machine has already decided this action is
 appropriate; do not re-decide.
 
 This file is assembled into the worker's prompt when the state machine emits
@@ -79,10 +78,8 @@ in the assembled `Current Phase` section, then follow the matching branch.
 
 7. **Decide what's next.**
 
-   - **More pending steps in this phase?** State stays `execute`. In
-     single-step mode, emit the exit signal — the runner will re-invoke for
-     the next step. In multi-step mode, loop back to step 1 of this
-     procedure.
+   - **More pending steps in this phase?** State stays `execute`. Emit the
+     exit signal — the runner will re-invoke for the next step.
    - **All steps in this phase are now `complete`?** Transition the project
      state to `review`:
 
@@ -132,9 +129,10 @@ than being pre-listed. Budget is wall-clock, not step count
 
 6. **Decide what's next.**
 
-   - **Time budget remaining and more work to do?** Stay in `execute`.
-     The state machine handles the time check; if it returns EXECUTE again,
-     loop back to step 2.
+   - **Time budget remaining and more work to do?** Stay in `execute` and
+     emit the exit signal — the runner re-invokes for the next increment
+     (the state machine's time check returns EXECUTE again while budget
+     remains).
    - **Time exhausted OR phase goal met?** Transition to `review`:
 
      ```bash

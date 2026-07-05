@@ -136,7 +136,7 @@ class TestRecoveryPromptGolden(unittest.TestCase):
     def _ns(action: str, emit: str) -> argparse.Namespace:
         return argparse.Namespace(
             action=action, section=None, phase=2, mode="autonomous",
-            module=None, backend="claude", target=None, step_budget=1, emit=emit,
+            module=None, backend="claude", target=None, emit=emit,
         )
 
     def test_recovery_stable_prefix_golden(self):

@@ -23,9 +23,8 @@ and emit the exit signal defined in §4.
 The state machine decides what action you perform. **The runner has
 already determined the next ACTION before invoking you**, and the result —
 `ACTION` and `NEXT` — arrived in your prompt's `Action Context` section.
-For single-step invocations (the common case, `STEP_BUDGET = 1`), this is
-all the state-machine interaction you need: do the action, emit the exit
-signal, the runner re-invokes you for the next action.
+This is all the state-machine interaction you need: do the action, emit
+the exit signal, and the runner re-invokes you for the next action.
 
 | ACTION | What you do |
 |--------|-------------|
@@ -34,6 +33,8 @@ signal, the runner re-invokes you for the next action.
 | `REVIEW` | Review the phase against its contract. Follow `instructions/review.md`. |
 | `CLOSE` | Wrap up the phase. Follow `instructions/close.md`. |
 | `EXIT` | Emit the exit signal and stop. Do not perform any action. |
+
+---
 
 ## 3. Escalation Conditions
 
