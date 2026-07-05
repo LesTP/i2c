@@ -215,5 +215,21 @@
     "files": [
       "templates/README.md"
     ]
+  },
+  {
+    "id": "FU-41",
+    "title": "Fleet refine-tier adoption: roll i2c fu backlog to toolkit + diplomat (clankercourts pilot done)",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-07-04",
+    "context": "Proposal A (i2c fu) was dogfooded on i2c and piloted on clankercourts (2026-07-05, commit 1fd85f7): 17 open items -> .state/followups.json, closed history frozen to archive/, FOLLOWUPS.md reduced to a pointer. Remaining: (a) toolkit -- extract the 6 open LLM-client gap items G-5..G-10 from VALIDATION_NOTES.md into i2c fu (leave the rest; it is interface verification, not a backlog); (b) diplomat (selective) -- import only the flat parked items (NEXT_STEPS.md project-only residual + papers/WORK_SEQUENCING.md section 8 icebox); LEAVE WORK_SEQUENCING (structured publication plan), RESEARCH_NOTES, and experiments/TUNING_LOG* in place. Template: fu add per open item; freeze closed to archive/followups_closed.md; reduce prose tracker to a pointer; verify (fu list/render + migrate --check); commit. Decisions: i2c fu is the general deferred-work backlog (not refine-only); execution stays manual until the Proposal B loop ships. Plan: .llms/plans/fleet_fu_adoption.plan.md.",
+    "trigger": "Next fleet-maintenance touch; toolkit is quick (6 items), diplomat needs selective judgment.",
+    "priority": "next",
+    "files": [
+      "DESIGN_refine_v1.md"
+    ],
+    "refs": [
+      "1fd85f7"
+    ]
   }
 ]

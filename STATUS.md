@@ -82,7 +82,10 @@ historical memos → `archive/`.
 - **Multi-iteration loop (Phase 3.C / FU-32 #2)** - **RESOLVED 2026-07-05 (D-run-1/D-run-2): single-iteration-per-invocation is the design.** Cross-action multi-step is incompatible with per-action backend routing; batched-EXECUTE (the only coherent unit) is deferred pending model-benchmark evidence. The --step-budget flag + multi_step_only machinery were removed and WORKER_SPEC / assembler / contract docs simplified.
 
 ### 3. Fleet migration
-- **toolkit** — done (migrated).
+
+> The bullets below are the **Build** migration. **Refine-tier (`i2c fu`) adoption** is a separate track: i2c done; **clankercourts done (2026-07-05, `1fd85f7`)**; toolkit + diplomat pending (**FU-41**) - diplomat is selective (parked items only; `WORK_SEQUENCING` / `RESEARCH_NOTES` / `TUNING_LOG` stay put).
+
+- **toolkit** - done (migrated).
 - **diplomat** — **migrated & live (2026-07-01)**: fully on i2c at **phase 51 / plan**, driven autonomously via the i2c bot with a `[run.backends]` split (plan=claude, execute=codex, review=claude, close=codex); Stage 0+1 import committed `1c5014c` (49 phases + snapshot history serialized into `.state/`). Residual: normalize the 13 flagged decision statuses; converter FU — handle `Closed (…)` / `Superseded by` / `| Priority:` status suffixes.
 - **phosphene** — blocked on **Q-mig-7 / D-mig-4** (integer phase-id schema vs `MVP.4d`); needs a schema/renumber decision.
 - **codexbot + others** — audit not yet done.
