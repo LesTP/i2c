@@ -993,6 +993,30 @@ def run_iteration(
             else:
                 sys.stdout.write(f"NOTE: no EXECUTE code commit ({note}).\n")
 
+    # 8c-tests. Runner-owned TESTS commit (D-tests-4 / FU-40 spec correction).
+    #     TESTS authors the phase-level acceptance suite under
+    #     tests/acceptance/phase_<N>/ but does not run git; the deterministic
+    #     runner commits those files as "<phase>.tests: <summary>" (a distinct
+    #     prefix so the benchmark / future integrity check can find the TESTS
+    #     commit), fenced off operator WIP like EXECUTE/REVIEW. Without this the
+    #     suite would be left uncommitted and then fenced out of EXECUTE's commit
+    #     (it's in EXECUTE's pre_dirty snapshot) — the suite would never land in
+    #     its own commit, breaking the oracle. No step-hash back-fill (TESTS is
+    #     not a steps.json step). Best-effort; never fatal.
+    if action == "TESTS" and worker_exit == 0:
+        entry = _last_devlog(root)
+        if entry is not None:
+            t_phase = int(entry.get("phase", phase))
+            committed, _chash, note = execute_committer(
+                root, phase=t_phase, step="tests",
+                summary=str(entry.get("summary", "")), pre_dirty=pre_dirty,
+            )
+            if committed:
+                sys.stdout.write(f"committed TESTS suite: {note}\n")
+                end_commit = tel.head_commit(root)
+            else:
+                sys.stdout.write(f"NOTE: no TESTS commit ({note}).\n")
+
     # 8d. Runner-owned REVIEW fix-up commit (FU-40 Inc 3). REVIEW applies Must/
     #     Should fixes to code; the deterministic runner commits them phase-level
     #     (step=None) as "<phase>: <review summary>", mirroring the EXECUTE path

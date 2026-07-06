@@ -772,6 +772,27 @@ class TestCommitExecute(unittest.TestCase):
         finally:
             tmp.cleanup()
 
+    def test_tests_step_uses_dot_tests_prefix(self):
+        # D-tests-4 / DESIGN §8: the frozen acceptance suite is committed with a
+        # distinct "<phase>.tests:" prefix (step="tests", a str) so the
+        # benchmark / integrity check can find the TESTS commit. This locks the
+        # real commit_execute label logic, not just the mocked committer.
+        tmp, root, run = self._repo()
+        try:
+            pre = ri._worker_dirty_paths(root)
+            (root / "seed.py").write_text("x = 7\n", encoding="utf-8")
+            committed, chash, note = ri.commit_execute(
+                root, phase=2, step="tests", summary="acc suite", pre_dirty=pre,
+            )
+            self.assertTrue(committed, msg=note)
+            self.assertTrue(note.startswith("2.tests: acc suite"), msg=note)
+            self.assertTrue(chash)
+            self.assertEqual(
+                run("log", "-1", "--pretty=%s").stdout.strip(), "2.tests: acc suite"
+            )
+        finally:
+            tmp.cleanup()
+
     def test_no_worker_changes_no_commit(self):
         tmp, root, run = self._repo()
         try:
@@ -870,6 +891,65 @@ class TestExecuteCommitWiring(unittest.TestCase):
                 )
             self.assertEqual(rc, 2)
             self.assertEqual(calls, [])  # no commit on a failed step
+
+
+class TestTestsCommitWiring(unittest.TestCase):
+    """D-tests-4 / FU-40: run_iteration commits the TESTS acceptance suite as
+    ``<phase>.tests: …`` on a successful TESTS, and skips it on exit 2."""
+
+    @staticmethod
+    def _seed_tests_devlog(root, *, outcome="complete"):
+        (root / ".state" / "devlog.jsonl").write_text(
+            json.dumps({
+                "phase": 2, "step": None, "action": "tests", "outcome": outcome,
+                "summary": "phase 2 acceptance suite: 8 contract tests (red)",
+                "timestamp": "2026-07-06T00:00:00Z",
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_tests_commit_invoked_with_tests_step(self):
+        with TempProject() as tp:
+            tp.patch_project(state="tests")
+            self._seed_tests_devlog(tp.root)
+            calls = []
+
+            def fake(r, *, phase, step, summary, pre_dirty):
+                calls.append((phase, step, summary, pre_dirty))
+                return True, "abc1234", f"{phase}.{step}: {summary}"
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block(exit_code=0)),
+                    execute_committer=fake,
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertEqual(len(calls), 1)
+            phase, step, summary, pre_dirty = calls[0]
+            self.assertEqual((phase, step), (2, "tests"))  # N.tests: prefix
+            self.assertIsInstance(pre_dirty, set)
+
+    def test_tests_commit_not_invoked_on_worker_exit_2(self):
+        with TempProject() as tp:
+            tp.patch_project(state="tests")
+            self._seed_tests_devlog(tp.root, outcome="escalate")
+            calls = []
+
+            def fake(r, **kw):
+                calls.append(kw)
+                return False, None, "x"
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block(exit_code=2)),
+                    execute_committer=fake,
+                )
+            self.assertEqual(rc, 2)
+            self.assertEqual(calls, [])
 
 
 class TestReviewCommitWiring(unittest.TestCase):

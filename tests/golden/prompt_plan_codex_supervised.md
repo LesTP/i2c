@@ -29,6 +29,7 @@ the exit signal, and the runner re-invokes you for the next action.
 | ACTION | What you do |
 |--------|-------------|
 | `PLAN` | Break the next phase into steps. Follow `instructions/plan.md`. |
+| `TESTS` | Author the phase's acceptance suite (Build only). Follow `instructions/tests.md`. |
 | `EXECUTE` | Do the next incomplete step. Follow `instructions/execute.md`. |
 | `REVIEW` | Review the phase against its contract. Follow `instructions/review.md`. |
 | `CLOSE` | Wrap up the phase. Follow `instructions/close.md`. |
@@ -132,7 +133,7 @@ Append-only event storage with atomic writes.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "phase": 2,
   "state": "execute",
   "steps_remaining": 3,
@@ -530,12 +531,28 @@ Always pass `-m`. The full prohibitions on interactive git commands apply
 
 ### 10. Transition state
 
-Set `project.json.state=execute`. The state machine will then dispatch the
-next invocation as EXECUTE.
+The next state depends on the regime you chose in step 3 (D-tests-1):
+
+- **Build** → set `state=tests`. The state machine dispatches the new TESTS
+  action next: it authors a phase-level acceptance suite from the contract
+  *before* EXECUTE, so the implementation is graded against tests it did not
+  write. (You created the phase record + step breakdown, so `tests` runs after
+  `plan`, not before it — the oracle property holds because the suite is still
+  frozen before EXECUTE and not authored by EXECUTE.)
+- **Refine / Explore** → set `state=execute` as before. TESTS is Build-only
+  (D-tests-5).
 
 ```bash
+# Build phase:
+i2c state set project.json state=tests
+
+# Refine / Explore phase:
 i2c state set project.json state=execute
 ```
+
+> Note: the `Next State` line in your prompt reads `execute` regardless — it is
+> advisory only (at plan-dispatch the regime isn't known to the state machine,
+> D-tests-1a). **You** own the real transition here based on the regime.
 
 Then emit the exit signal (2-line block, see Worker Contract §4). Do not
 start the first execute step in this invocation.
@@ -582,7 +599,7 @@ i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"plan","outcome"
 git add .state/
 git commit -m "11: plan — orchestrator pipeline + event loop"
 
-i2c state set project.json state=execute
+i2c state set project.json state=tests  # Build regime → TESTS next
 ```
 
 ### Refine phase
@@ -603,7 +620,7 @@ i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"plan","outcome"
 git add .state/
 git commit -m "14: plan — telegram formatting Refine"
 
-i2c state set project.json state=execute
+i2c state set project.json state=execute  # Refine regime → execute directly (no TESTS)
 ```
 
 ---

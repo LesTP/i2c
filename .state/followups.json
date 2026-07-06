@@ -244,5 +244,45 @@
     "files": [
       "i2c/run_iteration.py"
     ]
+  },
+  {
+    "id": "FU-43",
+    "title": "Hard CLOSE acceptance-suite integrity invariant (D-tests-4 part 2)",
+    "kind": "test-hardening",
+    "status": "open",
+    "opened": "2026-07-06",
+    "context": "tests action v1 shipped soft integrity only: execute.md prohibits editing the frozen tests/acceptance/phase_<N>/ suite and review.md flags weakening as a Must-fix. The deterministic post-CLOSE invariant is deferred.",
+    "trigger": "Benchmark-era. Needs a TESTS-commit marker (or suite digest) recorded in .state/ so the pure-.state invariants.py can verify the acceptance suite was unchanged since the N.tests: commit, plus git access + graceful skip on non-git fixtures.",
+    "priority": "next",
+    "refs": [
+      "DESIGN_tests_action_v1.md §7 (D-tests-4); i2c/invariants.py"
+    ]
+  },
+  {
+    "id": "FU-44",
+    "title": "Scope tests_pass oracle to the acceptance suite (Q-tests-3)",
+    "kind": "cli-ergonomics",
+    "status": "open",
+    "opened": "2026-07-06",
+    "context": "The increment-2 tests_pass telemetry field is only meaningful once [telemetry].test_cmd points at the frozen acceptance suite (tests/acceptance/phase_<N>/) rather than the whole/self-written suite. tests action v1 authors the suite but does not yet scope the oracle to it.",
+    "trigger": "Benchmark-era: when wiring the clean per-phase oracle, point test_cmd (or a new default) at the acceptance dir so tests_pass grades the contract; keep the whole-suite run at CLOSE.",
+    "priority": "eventually",
+    "refs": [
+      "DESIGN_tests_action_v1.md §6",
+      "§12 Q-tests-3; DESIGN_telemetry_v1.md §6"
+    ]
+  },
+  {
+    "id": "FU-45",
+    "title": "Supervised: fold acceptance-suite authoring into phase-plan command (tests §9)",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-07-06",
+    "context": "tests action v1 ships the autonomous path only. In supervised mode one session performs every action, so there is no per-action backend to route to; the design folds test-authoring into the supervised phase-plan command as a distinct step (write the contract-derived acceptance suite after planning), NOT a separate phase-tests command, so the suite is still frozen before EXECUTE.",
+    "trigger": "When the supervised command layer is next revised: add the acceptance-suite step to the phase-plan command.",
+    "priority": "eventually",
+    "refs": [
+      "DESIGN_tests_action_v1.md §9 (Supervised command surface)"
+    ]
   }
 ]

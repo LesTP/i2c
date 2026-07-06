@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from i2c import import_e2e
+from i2c import migrate
 from i2c import validate as v
 
 # A minimal but realistic e2e prose-state DEVPLAN: frontmatter, a Gotchas
@@ -134,7 +135,7 @@ class TestImportProject(unittest.TestCase):
             project = v.validate_state_file(root / ".state" / "project.json")
             self.assertEqual(project["phase"], 1)
             self.assertEqual(project["state"], "plan")
-            self.assertEqual(project["schema_version"], 1)
+            self.assertEqual(project["schema_version"], migrate.CURRENT_SCHEMA_VERSION)
             self.assertEqual(project["budget_type"], "steps")  # phase 1 is Build
             self.assertEqual(len(project["gotchas"]), 2)
             self.assertNotIn("blocked", project)  # e2e field dropped

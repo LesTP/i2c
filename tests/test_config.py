@@ -75,6 +75,15 @@ class TestLoadRunConfig(unittest.TestCase):
             cfg = config.load_run_config(root)
             self.assertEqual(cfg.backends, {"plan": "claude", "execute": "codex"})
 
+    def test_backends_map_accepts_tests_action(self):
+        with TempDir() as root:
+            _write(
+                root,
+                '[run.backends]\ntests = "claude"\nexecute = "codex"\n',
+            )
+            cfg = config.load_run_config(root)
+            self.assertEqual(cfg.backends, {"tests": "claude", "execute": "codex"})
+
     def test_backends_invalid_action_key_raises(self):
         with TempDir() as root:
             _write(root, '[run.backends]\nbuild = "codex"\n')

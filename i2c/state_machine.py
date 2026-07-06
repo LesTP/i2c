@@ -4,8 +4,8 @@ Reads ``.state/`` (walked up from CWD) and decides which ACTION the next
 worker invocation should perform, plus the NEXT state that worker must set
 after completing the action. Emits the decision as two lines on stdout::
 
-    ACTION: PLAN|EXECUTE|REVIEW|CLOSE|EXIT
-    NEXT: plan|execute|review|close|audit_boundary|audit_escalation|done
+    ACTION: PLAN|TESTS|EXECUTE|REVIEW|CLOSE|EXIT
+    NEXT: plan|tests|execute|review|close|audit_boundary|audit_escalation|done
 
 Pure read + decision per D-r-4: never modifies ``.state/``. The worker
 performs all state writes via ``tools/state.py`` per the action procedure.
@@ -25,6 +25,7 @@ Decision matrix (per DESIGN_state_lifecycle_v1.md §4):
 ``project.json.state``        pending steps for phase      ACTION   NEXT
 ============================  ===========================  =======  ================
 ``plan``                      (any)                        PLAN     execute
+``tests``                     (any)                        TESTS    execute
 ``execute``                   > 1                          EXECUTE  execute
 ``execute``                   == 1                         EXECUTE  review
 ``execute``                   == 0                         REVIEW   close
@@ -54,6 +55,7 @@ from i2c import validate as v
 
 VALID_STATES = (
     "plan",
+    "tests",
     "execute",
     "review",
     "close",
@@ -96,6 +98,8 @@ def decide(
     phase = int(project.get("phase", 0))
     if state == "plan":
         return "PLAN", "execute"
+    if state == "tests":
+        return "TESTS", "execute"
     if state == "execute":
         pending = count_pending_steps(steps, phase)
         if pending == 0:

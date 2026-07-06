@@ -29,6 +29,7 @@ the exit signal, and the runner re-invokes you for the next action.
 | ACTION | What you do |
 |--------|-------------|
 | `PLAN` | Break the next phase into steps. Follow `instructions/plan.md`. |
+| `TESTS` | Author the phase's acceptance suite (Build only). Follow `instructions/tests.md`. |
 | `EXECUTE` | Do the next incomplete step. Follow `instructions/execute.md`. |
 | `REVIEW` | Review the phase against its contract. Follow `instructions/review.md`. |
 | `CLOSE` | Wrap up the phase. Follow `instructions/close.md`. |
@@ -128,7 +129,7 @@ Append-only event storage with atomic writes.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "phase": 2,
   "state": "execute",
   "steps_remaining": 3,
@@ -196,7 +197,11 @@ If either is false, the state machine mis-dispatched; **escalate**
 ### 2. Run phase-level tests
 
 Run the full test suite for the phase's module (and any boundary tests
-that exercise the module from outside). All must pass. If any fail:
+that exercise the module from outside). For a Build phase this run **includes
+the frozen acceptance suite** under `tests/acceptance/phase_<N>/` (authored by
+the TESTS action) — it must be **green** at close, confirming the
+implementation satisfied the contract it was graded against. All must pass. If
+any fail:
 
 - Tests broken by something review missed: **stop**, log via devlog
   `outcome: "failed"`, `EXIT 2`.

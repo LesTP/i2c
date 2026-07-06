@@ -13,7 +13,7 @@
     "step": { "type": ["integer", "null"], "minimum": 1 },
     "action": {
       "type": "string",
-      "enum": ["plan", "execute", "review", "close", "probe", "integration_check", "diagnose", "reconcile"]
+      "enum": ["plan", "tests", "execute", "review", "close", "probe", "integration_check", "diagnose", "reconcile"]
     },
     "outcome": {
       "type": ["string", "null"],

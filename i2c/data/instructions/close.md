@@ -32,7 +32,11 @@ If either is false, the state machine mis-dispatched; **escalate**
 ### 2. Run phase-level tests
 
 Run the full test suite for the phase's module (and any boundary tests
-that exercise the module from outside). All must pass. If any fail:
+that exercise the module from outside). For a Build phase this run **includes
+the frozen acceptance suite** under `tests/acceptance/phase_<N>/` (authored by
+the TESTS action) — it must be **green** at close, confirming the
+implementation satisfied the contract it was graded against. All must pass. If
+any fail:
 
 - Tests broken by something review missed: **stop**, log via devlog
   `outcome: "failed"`, `EXIT 2`.

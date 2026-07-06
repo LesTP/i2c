@@ -48,7 +48,7 @@ Append-only event storage with atomic writes.
 - Storage backend change requires re-architecture -> escalate.
 """
 
-ACTIONS = ("plan", "execute", "review", "close")
+ACTIONS = ("plan", "tests", "execute", "review", "close")
 BACKENDS = ("claude", "codex")
 MODES = ("autonomous", "supervised")
 

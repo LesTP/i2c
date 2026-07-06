@@ -29,6 +29,7 @@ the exit signal, and the runner re-invokes you for the next action.
 | ACTION | What you do |
 |--------|-------------|
 | `PLAN` | Break the next phase into steps. Follow `instructions/plan.md`. |
+| `TESTS` | Author the phase's acceptance suite (Build only). Follow `instructions/tests.md`. |
 | `EXECUTE` | Do the next incomplete step. Follow `instructions/execute.md`. |
 | `REVIEW` | Review the phase against its contract. Follow `instructions/review.md`. |
 | `CLOSE` | Wrap up the phase. Follow `instructions/close.md`. |
@@ -163,7 +164,7 @@ Append-only event storage with atomic writes.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "phase": 2,
   "state": "execute",
   "steps_remaining": 3,
@@ -273,6 +274,29 @@ If you find drift from `ARCH_<module>.md`, the review is over — that's a
 `state=audit_escalation` via `i2c state`, log the finding via devlog with
 `outcome: "escalate"`, and `EXIT 2`. The human/wrapper reconciles
 contract and code; restoring `state=review` resumes.
+
+### 3.5. Acceptance-suite integrity check (Build phases)
+
+If this phase ran a TESTS action, a frozen acceptance suite lives under
+`tests/acceptance/phase_<N>/`, committed as `<phase>.tests: …` *before* the
+EXECUTE commits. EXECUTE is prohibited from editing it (D-tests-4); verify that
+held. Diff the acceptance dir against the TESTS commit:
+
+```bash
+git diff $(git log --pretty=%H --grep="^$PHASE\.tests:" -n 1) HEAD \
+  -- tests/acceptance/phase_$PHASE/
+```
+
+- **No diff** → the suite is intact; nothing to do.
+- **Any change** (weakened/removed/`xfail`ed assertions, deleted tests, loosened
+  comparisons) → treat as a **Must** finding, unless the change is already
+  justified by a decision record (`decisions.json`) with a rationale. An
+  unjustified weakening of the oracle is a Must-fix: restore the acceptance test
+  to its frozen form (fix the *implementation* instead), or, if the acceptance
+  test was genuinely wrong, log a decision recording why the change is correct.
+
+If no `tests/acceptance/phase_<N>/` dir exists, this phase had no TESTS action —
+skip this step.
 
 ### 4. Apply Must fixes and Should fixes
 

@@ -20,7 +20,8 @@ cause subtle, recurring bugs in agent frameworks.
 ## At a glance
 
 ```
-Phase lifecycle:   plan → execute (×N) → review → close → [human gate]
+Phase lifecycle:   plan → tests → execute (×N) → review → close → [human gate]
+                   (tests is Build-only; Refine/Explore go plan → execute)
 State of truth:    .state/project.json + phases.json + steps.json + devlog.jsonl + decisions.json
 Worker prompts:    pre-assembled (the worker reads no governance files)
 Backends:          Claude or Codex (per-backend adapter; the loop contract is universal)
@@ -157,11 +158,12 @@ against its schema first; a validation failure leaves the file untouched.
 ### Lifecycle states
 
 `project.json.state` is the single variable that drives the state machine.
-There are seven values:
+There are eight values:
 
 | State | Meaning | Next dispatch | Recovery write (when halted) |
 |-------|---------|---------------|------------------------------|
 | `plan` | Next action is PLAN | PLAN | — |
+| `tests` | Next action is TESTS (Build only; set by the PLAN worker) | TESTS | `set state=execute` (resume after authoring) |
 | `execute` | Next action is EXECUTE | EXECUTE | — |
 | `review` | Next action is REVIEW | REVIEW | — |
 | `close` | Next action is CLOSE | CLOSE | — |
@@ -174,15 +176,16 @@ the human, not the worker, decides whether the next state is `plan` or
 `done`). EXECUTE and REVIEW workers transition to `audit_escalation` on
 escalation per their instruction files.
 
-### The four worker actions
+### The five worker actions
 
-Each phase moves through four actions. The state machine dispatches them; the
-worker performs them. Each has a single-purpose instruction file.
+Each phase moves through up to five actions. The state machine dispatches them;
+the worker performs them. Each has a single-purpose instruction file.
 
 | Action | Trigger | What the worker does | Instruction file |
 |--------|---------|----------------------|------------------|
 | `PLAN` | `state == "plan"` | Identify the next phase, choose the regime, break work into steps (Build) or set a time budget (Refine/Explore), write the phase record and dependency-probe results if non-leaf | [`instructions/plan.md`](instructions/plan.md) |
-| `EXECUTE` | `state == "execute"` with pending steps | Pick the next pending step, implement and test, commit, log to devlog, transition to review when the last step is done | [`instructions/execute.md`](instructions/execute.md) |
+| `TESTS` | `state == "tests"` (Build phases only) | Read the module contract and author a phase-level acceptance suite under `tests/acceptance/phase_<N>/` *before* EXECUTE, so the implementation is graded against tests it did not write | [`instructions/tests.md`](instructions/tests.md) |
+| `EXECUTE` | `state == "execute"` with pending steps | Pick the next pending step, implement and test (against the frozen acceptance suite), commit, log to devlog, transition to review when the last step is done | [`instructions/execute.md`](instructions/execute.md) |
 | `REVIEW` | `state == "review"` | Read all phase code, categorize findings as Must/Should/Optional, apply Must+Should, log skipped Optionals as decisions | [`instructions/review.md`](instructions/review.md) |
 | `CLOSE` | `state == "close"` | Phase-level tests, integration check if non-leaf, gotcha promotion, contract propagation, decision closure, mark phase complete, set the human gate | [`instructions/close.md`](instructions/close.md) |
 
@@ -452,6 +455,7 @@ max_budget_usd = 5.00
 
 [run.backends]          # optional: route each action to a backend
 plan = "claude"
+tests = "claude"
 execute = "codex"
 review = "claude"
 close = "codex"
@@ -464,9 +468,11 @@ keys are ignored. **Secrets / API keys do not belong in
 `i2c.toml`** — configure those via environment variables.
 
 The optional `[run.backends]` table routes individual worker actions to different
-backends (valid keys: `plan`, `execute`, `review`, `close`, plus the recovery
-actions `diagnose` / `reconcile`); `i2c run` and the Telegram `/batch` command
-select the backend per action from it, falling back to `[run].backend`.
+backends (valid keys: `plan`, `tests`, `execute`, `review`, `close`, plus the
+recovery actions `diagnose` / `reconcile`); `i2c run` and the Telegram `/batch`
+command select the backend per action from it, falling back to `[run].backend`.
+(`tests` is the Build-only acceptance-suite action — pin it to a capable tier,
+D-tests-6.)
 
 > A consumer project installs the framework (`pip install`) and carries only
 > its own `.state/`, project docs, `i2c.toml`, and filled-in adapters — no

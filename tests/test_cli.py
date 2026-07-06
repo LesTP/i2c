@@ -14,6 +14,7 @@ I2C_ROOT = Path(__file__).resolve().parent.parent
 
 from i2c import cli  # noqa: E402
 from i2c import control  # noqa: E402
+from i2c import migrate  # noqa: E402
 from i2c import run_iteration  # noqa: E402
 from tests._fixtures import copy_fixture  # noqa: E402
 
@@ -604,7 +605,7 @@ class TestMigrateCli(unittest.TestCase):
             self.assertEqual(rc, 0, msg=err)
             self.assertIn("migrated", out)
             data = p.read_project()
-            self.assertEqual(data["schema_version"], 1)
+            self.assertEqual(data["schema_version"], migrate.CURRENT_SCHEMA_VERSION)
             self.assertNotIn("blocked", data)
             # Re-running is a no-op.
             rc2, out2, err2 = run_cli("migrate")

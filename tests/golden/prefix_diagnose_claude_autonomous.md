@@ -29,6 +29,7 @@ the exit signal, and the runner re-invokes you for the next action.
 | ACTION | What you do |
 |--------|-------------|
 | `PLAN` | Break the next phase into steps. Follow `instructions/plan.md`. |
+| `TESTS` | Author the phase's acceptance suite (Build only). Follow `instructions/tests.md`. |
 | `EXECUTE` | Do the next incomplete step. Follow `instructions/execute.md`. |
 | `REVIEW` | Review the phase against its contract. Follow `instructions/review.md`. |
 | `CLOSE` | Wrap up the phase. Follow `instructions/close.md`. |

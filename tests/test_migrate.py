@@ -50,12 +50,15 @@ class TestProjectVersion(unittest.TestCase):
 
 
 class TestMigrateProject(unittest.TestCase):
-    def test_legacy_zero_to_one(self):
+    def test_legacy_zero_to_current(self):
         legacy = {"phase": 1, "state": "audit_boundary", "blocked": True, "gotchas": []}
         with TempState(legacy) as root:
             result = migrate.migrate_project(root)
             self.assertTrue(result.migrated)
-            self.assertEqual((result.from_version, result.to_version), (0, 1))
+            self.assertEqual(
+                (result.from_version, result.to_version),
+                (0, migrate.CURRENT_SCHEMA_VERSION),
+            )
             self.assertTrue(
                 any("blocked" in c for c in result.changes),
                 msg=result.changes,
@@ -64,17 +67,40 @@ class TestMigrateProject(unittest.TestCase):
                 (root / ".state" / "project.json").read_text(encoding="utf-8")
             )
             self.assertNotIn("blocked", data)
-            self.assertEqual(data["schema_version"], 1)
+            self.assertEqual(data["schema_version"], migrate.CURRENT_SCHEMA_VERSION)
             # The migrated file passes schema validation.
             v.validate_state_file(root / ".state" / "project.json")
 
+    def test_one_to_two_noop(self):
+        # 1 → 2 is a pure no-op transform (forward-compat guard for the tests
+        # action): the only change is the version stamp.
+        v1 = {"schema_version": 1, "phase": 1, "state": "plan", "gotchas": []}
+        with TempState(v1) as root:
+            result = migrate.migrate_project(root)
+            self.assertTrue(result.migrated)
+            self.assertEqual((result.from_version, result.to_version), (1, 2))
+            # No field changes — only the stamp line.
+            self.assertTrue(all("blocked" not in c for c in result.changes))
+            self.assertTrue(any("schema_version=2" in c for c in result.changes))
+            data = json.loads(
+                (root / ".state" / "project.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(data["schema_version"], 2)
+            v.validate_state_file(root / ".state" / "project.json")
+
     def test_already_current_is_noop(self):
-        current = {"schema_version": 1, "phase": 1, "state": "plan", "gotchas": []}
+        current = {
+            "schema_version": migrate.CURRENT_SCHEMA_VERSION,
+            "phase": 1, "state": "plan", "gotchas": [],
+        }
         with TempState(current) as root:
             result = migrate.migrate_project(root)
             self.assertFalse(result.migrated)
             self.assertEqual(result.changes, [])
-            self.assertEqual((result.from_version, result.to_version), (1, 1))
+            self.assertEqual(
+                (result.from_version, result.to_version),
+                (migrate.CURRENT_SCHEMA_VERSION, migrate.CURRENT_SCHEMA_VERSION),
+            )
 
     def test_idempotent(self):
         legacy = {"phase": 1, "state": "plan", "blocked": False}
@@ -129,7 +155,10 @@ class TestNeedsMigration(unittest.TestCase):
             self.assertTrue(migrate.needs_migration(root))
 
     def test_false_for_current(self):
-        with TempState({"schema_version": 1, "phase": 1, "state": "plan"}) as root:
+        with TempState({
+            "schema_version": migrate.CURRENT_SCHEMA_VERSION,
+            "phase": 1, "state": "plan",
+        }) as root:
             self.assertFalse(migrate.needs_migration(root))
 
 

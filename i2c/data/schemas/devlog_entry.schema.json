@@ -18,8 +18,8 @@
     },
     "action": {
       "type": "string",
-      "enum": ["plan", "execute", "review", "close", "probe", "integration_check"],
-      "description": "Which action produced this entry. 'probe' = dependency probe result (conditional section in plan); 'integration_check' = cross-module integration verification (conditional section in close)."
+      "enum": ["plan", "tests", "execute", "review", "close", "probe", "integration_check"],
+      "description": "Which action produced this entry. 'tests' = phase-level acceptance-suite authoring (Build only, D-tests-*); 'probe' = dependency probe result (conditional section in plan); 'integration_check' = cross-module integration verification (conditional section in close)."
     },
     "outcome": {
       "type": "string",

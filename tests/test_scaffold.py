@@ -34,7 +34,8 @@ class TestInit(unittest.TestCase):
             project = v.validate_state_file(root / ".state" / "project.json")
             self.assertEqual(project["phase"], 0)
             self.assertEqual(project["state"], "plan")
-            self.assertEqual(project["schema_version"], 1)
+            from i2c.migrate import CURRENT_SCHEMA_VERSION
+            self.assertEqual(project["schema_version"], CURRENT_SCHEMA_VERSION)
             for arr in ("phases.json", "steps.json", "decisions.json"):
                 self.assertEqual(v.validate_state_file(root / ".state" / arr), [])
             v.validate_devlog_jsonl(root / ".state" / "devlog.jsonl")
@@ -130,7 +131,7 @@ class TestEject(unittest.TestCase):
             self.assertEqual(
                 names,
                 ["close.md", "diagnose.md", "execute.md", "plan.md",
-                 "reconcile.md", "review.md"],
+                 "reconcile.md", "review.md", "tests.md"],
             )
 
     def test_eject_refuses_overwrite(self):

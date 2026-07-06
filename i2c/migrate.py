@@ -14,9 +14,11 @@ Model (per the approved §8 clarifications):
   - Runtime tools are **not** gated on the version; drift is opt-in via
     ``i2c migrate --check``.
 
-The only shipped migration today is ``0 → 1``: drop the removed ``blocked``
-field (retired in DESIGN_state_lifecycle_v1) and stamp ``schema_version``.
-The registry is the extension point for future versions.
+The ``0 → 1`` migration drops the removed ``blocked``
+field (retired in DESIGN_state_lifecycle_v1) and stamps ``schema_version``.
+The ``1 → 2`` migration is a no-op that only bumps the stamp — a forward-compat
+guard for the ``tests`` action's additive enum values (DESIGN_tests_action_v1.md
+§10, D-tests-7). The registry is the extension point for future versions.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from i2c import state as _state
 from i2c import validate as v
 
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 class MigrationError(Exception):
@@ -106,10 +108,25 @@ def _migrate_0_to_1(state_dir: Path, *, dry_run: bool = False) -> list[str]:
     return changes
 
 
+def _migrate_1_to_2(state_dir: Path, *, dry_run: bool = False) -> list[str]:
+    """1 → 2: no-op transform (forward-compat guard for the ``tests`` action).
+
+    The ``tests`` action (DESIGN_tests_action_v1.md, D-tests-7) adds only
+    additive enum values (a new ``state``/``action`` value), so existing
+    ``.state/`` files keep validating with no data transform. The version bump
+    exists purely so an *older* i2c hitting a ``state=tests`` project fails the
+    ``migrate_project`` newer-than-current guard cleanly ("upgrade i2c") instead
+    of crashing in the state machine. The ``schema_version`` stamp is applied
+    centrally by ``migrate_project``.
+    """
+    return []
+
+
 # Ordered registry: from-version → step. Sequential application from the
 # project's current version up to (but not including) CURRENT_SCHEMA_VERSION.
 _MIGRATIONS: dict[int, Callable[..., list[str]]] = {
     0: _migrate_0_to_1,
+    1: _migrate_1_to_2,
 }
 
 

@@ -1,9 +1,23 @@
 # DESIGN — `tests` Action (test/impl separation) v1
 
-> **Status:** Draft / proposed (spec only; no code). Adds a regime-conditional,
+> **Status:** Implemented (2026-07-06). Adds a regime-conditional,
 > phase-level acceptance-test authoring step so the implementation is graded
 > against tests it did not write — turning the increment-2 `tests_pass` field
 > from a self-graded signal into a real oracle. Decisions tagged D-tests-*.
+>
+> **Implementation notes (2026-07-06):**
+> - **Runner correction to §8.** §8 said "Runner — no change," but that predates
+>   FU-40 (the runner now owns per-action commits). A TESTS worker's suite files
+>   would otherwise be left uncommitted and then fenced out of EXECUTE's commit
+>   (they're in EXECUTE's `pre_dirty` snapshot), so the suite would never land in
+>   its own commit — breaking the oracle. The runner therefore gained a **TESTS
+>   commit block** mirroring the REVIEW block, committing the suite as
+>   `N.tests: <summary>` (distinct prefix so the benchmark/integrity check can
+>   find it).
+> - **Soft integrity for v1 (D-tests-4).** `execute.md` prohibits editing the
+>   frozen suite and `review.md` flags weakening as a Must-fix; the deterministic
+>   CLOSE invariant (§7 bullet 2) is **deferred** to a follow-up FU (needs a
+>   TESTS-commit marker in the pure-`.state/` `invariants.py` + git access).
 >
 > **One-line goal:** freeze a contract-derived acceptance suite **before**
 > EXECUTE and **independently of** it, so "did the implementation work" becomes
@@ -119,20 +133,20 @@ matches the benchmark's per-phase clean oracle (`DESIGN_benchmark_v1.md` §5), i
 cheaper (one extra loop call per phase, not per step), and keeps tests
 decomposition-independent.
 
-**Identification (D-tests-3, open).** The oracle and the benchmark must know
-*which* tests are the frozen acceptance suite vs. EXECUTE's incidental unit
-tests. Options:
+**Identification (D-tests-3, RESOLVED — path convention).** The oracle and the
+benchmark must know *which* tests are the frozen acceptance suite vs. EXECUTE's
+incidental unit tests. Options considered:
 
 - **(a) Path convention** — acceptance tests live under a known dir, e.g.
-  `tests/acceptance/phase_<N>/` (recommended: simplest; the oracle runs that dir,
+  `tests/acceptance/phase_<N>/` (chosen: simplest; the oracle runs that dir,
   the integrity check watches it).
 - **(b) Marker** — a pytest marker / naming convention (`test_acc_*`).
 - **(c) Recorded path** — TESTS records the suite path(s) in the phase record or
   a sidecar; the oracle reads it.
 
-Recommend **(a)**; it makes both the `tests_pass` oracle target and the §7
-integrity check trivial. The bundled `instructions/tests.md` codifies the
-convention; projects can override.
+**Chosen: (a) path convention** (`tests/acceptance/phase_<N>/`); it makes both
+the `tests_pass` oracle target and the §7 integrity check trivial. The bundled
+`instructions/tests.md` codifies the convention; projects can override.
 
 **"Red" caveat.** Phases build on prior phases, so a fresh acceptance suite may
 be *partially* green already (shared infra). TESTS writes tests for *this
@@ -307,18 +321,23 @@ for the guard.
 
 ---
 
-## 12. Open questions
+## 12. Resolved questions
+
+All open questions are resolved as of the v1 implementation (2026-07-06).
 
 - **Q-tests-1 (ordering, D-tests-1):** ✅ **RESOLVED (2026-07-03): `plan → tests → execute`** — PLAN creates the phase/regime record + steps, so tests can't precede it. Literal `tests → plan` declined.
-- **Q-tests-2 (suite identification, D-tests-3):** path convention
-  (`tests/acceptance/phase_<N>/`) vs marker vs recorded path. (Lean path.)
-- **Q-tests-3:** does the `tests_pass` oracle run *only* the acceptance suite, or
-  the whole suite? (Lean: acceptance suite for the oracle; whole suite at CLOSE.)
-- **Q-tests-4:** integrity enforcement — REVIEW-only, or also a CLOSE invariant?
-  (Lean both.)
-- **Q-tests-5:** should `tests` ever apply to Refine (e.g. regression tests for a
-  refactor)? (Lean: no in v1; Build-only, D-tests-5.)
-- **Q-tests-6:** version bump vs leave-unchanged (D-tests-7).
+- **Q-tests-2 (suite identification, D-tests-3):** ✅ **RESOLVED: path convention**
+  (`tests/acceptance/phase_<N>/`), codified in `instructions/tests.md`.
+- **Q-tests-3 (oracle scope):** does the `tests_pass` oracle run *only* the
+  acceptance suite, or the whole suite? **Decided: acceptance suite for the oracle,
+  whole suite at CLOSE.** Implementation deferred to the benchmark era (the
+  `[telemetry].test_cmd` scoping is a follow-up FU); the *decision* stands.
+- **Q-tests-4 (integrity enforcement):** ✅ **RESOLVED: soft for v1 (D-tests-4)** —
+  REVIEW flags weakening as a Must-fix and `execute.md` prohibits editing the
+  frozen suite; the deterministic CLOSE invariant is deferred to a follow-up FU.
+- **Q-tests-5 (tests for Refine?):** ✅ **RESOLVED: no in v1; Build-only (D-tests-5).**
+- **Q-tests-6 (version bump):** ✅ **RESOLVED: bump `CURRENT_SCHEMA_VERSION` 1→2
+  with a no-op migration (D-tests-7)** — forward-compat guard.
 
 ---
 

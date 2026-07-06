@@ -24,7 +24,7 @@ CONFIG_FILENAME = "i2c.toml"
 _BACKENDS = ("claude", "codex")
 # Lifecycle actions plus the out-of-band recovery actions; [run.backends] may
 # map a backend for any of them (e.g. diagnose = claude).
-_RUN_ACTIONS = ("plan", "execute", "review", "close", "diagnose", "reconcile")
+_RUN_ACTIONS = ("plan", "tests", "execute", "review", "close", "diagnose", "reconcile")
 
 
 class ConfigError(Exception):
@@ -40,7 +40,9 @@ class RunConfig:
     max_budget_usd: float | None = None
     backends: dict[str, str] = field(default_factory=dict)
     """Optional per-action backend overrides from ``[run.backends]`` — maps a
-    worker action (plan/execute/review/close) to a backend. Empty when unset."""
+    worker action (plan/tests/execute/review/close) to a backend. Empty when
+    unset. ``tests`` (Build-only acceptance-suite authoring, D-tests-6) should
+    be pinned to a capable tier, not the cheapest."""
 
 
 @dataclass

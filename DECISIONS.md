@@ -37,7 +37,7 @@ for the framework). Implementation commits reference the decision IDs.
 | D5 | Cold start = `project.json` + `PROJECT.md` | Active |
 | D6 | Gotchas live in `project.json` | Active |
 | D7 | No devlog compaction | Active |
-| D8 | Four instruction files with conditional sections | Active |
+| D8 | One instruction file per action (`plan`/`tests`/`execute`/`review`/`close`) with conditional sections | Active |
 | D9 | State machine in bash + jq | **Superseded** — rewritten as `state_machine.py` (Phase 3.A) |
 | D10 | WORKER_SPEC and adapter kept separate | Active |
 | D11 | No standalone GOVERNANCE.md | Active |
@@ -112,6 +112,24 @@ for the framework). Implementation commits reference the decision IDs.
 |----|------------------|--------|
 | D-run-1 | One worker invocation performs exactly one ACTION; the runner re-invokes for the next. No worker-side multi-step loop and no `--step-budget` flag (both removed). | Active |
 | D-run-2 | Cross-action multi-step is rejected: one invocation is one backend, so it is incompatible with per-action routing (`[run.backends]`). The only coherent unit - a single invocation running several EXECUTE steps for continuous context - is deferred pending model-benchmark evidence, since it forfeits the per-step commit and per-(action, step) telemetry granularity FU-40 established. | Active |
+
+### tests action (test/impl separation) — `DESIGN_tests_action_v1.md` (D-tests-1..7)
+
+> Phase-level, Build-only `tests` action authoring a contract-derived acceptance
+> suite **before** and **independently of** EXECUTE, so "did the implementation
+> work" is objectively answerable (the linchpin of the model-benchmark thread,
+> and a quality gate). Implemented 2026-07-06.
+
+| ID | Decision (short) | Status |
+|----|------------------|--------|
+| D-tests-1 | Ordering is `plan → tests → execute → review → close` (Build only); the literal `tests → plan` variant is declined. | Active |
+| D-tests-1a | `plan→tests` is set by the **PLAN worker** (regime is unknown at plan-dispatch); `decide()` keeps `plan→execute` advisory and only adds the `tests→execute` hop. | Active |
+| D-tests-2 | Granularity is **phase-level**: one acceptance suite per Build phase derived from the module contract, not per-step test/impl pairs. | Active |
+| D-tests-3 | Suite identity is a **path convention**: `tests/acceptance/phase_<N>/`. | Active |
+| D-tests-4 | Integrity is **soft** for v1 — `execute.md` prohibits editing the frozen suite; `review.md` flags weakening as a Must-fix. The deterministic CLOSE invariant is deferred to a follow-up (needs git + a TESTS-commit marker in the pure-`.state/` `invariants.py`). | Active (hard invariant deferred) |
+| D-tests-5 | Build-only: no `tests` action for Refine/Explore in v1. | Active |
+| D-tests-6 | `[run.backends].tests` defaults to the general default; pin to a capable tier per project. Do not pre-optimize to a cheap model. | Active |
+| D-tests-7 | Bump `CURRENT_SCHEMA_VERSION` 1→2 with a no-op migration (forward-compat guard so an older i2c hitting `state=tests` gets a clean "upgrade i2c" exit 2). | Active |
 
 ---
 

@@ -49,7 +49,7 @@ EMDASH = "—"  # U+2014
 
 PLACEHOLDER_EMPTY = "<!-- empty -->"
 
-ACTIONS = ("plan", "execute", "review", "close", "diagnose", "reconcile")
+ACTIONS = ("plan", "tests", "execute", "review", "close", "diagnose", "reconcile")
 # Out-of-band recovery actions (archive/DESIGN_recovery_v1.md): dispatched by
 # `i2c run --action <a> --target N`, not by the state machine. They share the
 # assembly machinery (ACTIONS / EJECTABLE pick them up) but use a failure-context
@@ -64,6 +64,7 @@ MODES = ("autonomous", "supervised")
 # `blocked: true` halts the loop until the human clears the gate.
 _NEXT_BY_ACTION: dict[str, str] = {
     "plan": "execute",
+    "tests": "execute",
     "execute": "execute",  # loop within execute; transitions to review on last step
     "review": "close",
     "close": "plan",
@@ -1028,6 +1029,18 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         render_architecture,
         render_decisions,
     ],
+    "tests": [
+        render_module_contract,
+        render_project_state,
+        render_gotchas,
+        render_current_phase,
+        render_current_phase_steps_table,
+        render_recent_activity_5,
+        # Modeled on EXECUTE: the ARCH module contract is the primary input for
+        # authoring the phase-level acceptance suite (D-tests-2). The planned
+        # step table is present but the suite is written contract-level, not
+        # per-step (see instructions/tests.md).
+    ],
     "execute": [
         render_module_contract,
         render_project_state,
@@ -1086,9 +1099,9 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
 
 # Actions where Available Modules adds value (i.e., Architecture isn't already
 # in the prompt). For PLAN and REVIEW the Component Map inside Architecture
-# covers the same ground; rendering both is pure duplication. EXECUTE and
-# CLOSE don't get Architecture, so Available Modules earns its place there.
-_AVAILABLE_MODULES_ACTIONS = ("execute", "close")
+# covers the same ground; rendering both is pure duplication. EXECUTE, TESTS,
+# and CLOSE don't get Architecture, so Available Modules earns its place there.
+_AVAILABLE_MODULES_ACTIONS = ("tests", "execute", "close")
 
 
 def _stable_prefix_parts(ctx: AssemblerContext) -> list[str]:

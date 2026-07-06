@@ -621,6 +621,46 @@ class TestActionContextRenderers(unittest.TestCase):
             self.assertNotIn("Pre-plan: Dependency Probe", out)
 
 
+class TestTestsAction(unittest.TestCase):
+    """The Build-only TESTS action (D-tests-*): recipe wiring + assembly."""
+
+    def test_tests_recipe_registered(self):
+        self.assertIn("tests", ac._PROJECT_CONTEXT_BY_ACTION)
+        self.assertIn("tests", ac.ACTIONS)
+
+    def test_tests_available_modules(self):
+        # Mirrors execute: TESTS gets the Available Modules section.
+        self.assertIn("tests", ac._AVAILABLE_MODULES_ACTIONS)
+
+    def test_next_state_tests_is_execute(self):
+        with TempProject():
+            ctx = build_ctx(action="tests", phase=2, mode="autonomous")
+            self.assertEqual(ac.render_next_state(ctx), "## Next State: execute")
+
+    def test_tests_action_assembles_end_to_end(self):
+        with TempProject(
+            with_framework=True,
+            with_extra={
+                "ARCH_event_store.md": "# Event Store\n\nIntro.\n\n"
+                "## Surface\n\nappend/read.\n",
+            },
+        ):
+            rc, out, err = run_cli(
+                "--action", "tests", "--phase", "2", "--mode", "autonomous"
+            )
+            self.assertEqual(rc, 0, msg=err)
+            # Contract is the primary input, and the tests.md procedure is present.
+            self.assertIn("## Module Contract: event_store", out)
+            self.assertIn("acceptance", out.lower())
+
+    def test_tests_cli_choice_accepted(self):
+        with TempProject(with_framework=True):
+            # --action tests is a valid CLI choice (auto from ACTIONS).
+            parser = ac.build_parser()
+            ns = parser.parse_args(["--action", "tests", "--phase", "2"])
+            self.assertEqual(ns.action, "tests")
+
+
 class TestModuleContract(unittest.TestCase):
     def test_module_contract_required_when_module_present(self):
         # Phase 2 module is event_store; no ARCH_event_store.md ⇒ exit 1.

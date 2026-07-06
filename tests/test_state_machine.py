@@ -146,6 +146,16 @@ class TestDecideMatrix(unittest.TestCase):
         action, nxt = sm.decide(proj, [])
         self.assertEqual((action, nxt), ("PLAN", "execute"))
 
+    # ---- tests ------------------------------------------------------------
+
+    def test_tests_dispatches_tests(self):
+        proj = self._project(state="tests")
+        action, nxt = sm.decide(proj, [])
+        self.assertEqual((action, nxt), ("TESTS", "execute"))
+
+    def test_tests_in_valid_states(self):
+        self.assertIn("tests", sm.VALID_STATES)
+
     # ---- execute: >1 pending → loop --------------------------------------
 
     def test_execute_with_many_pending_loops(self):
@@ -227,6 +237,13 @@ class TestStateMachineCli(unittest.TestCase):
             rc, out, err = run_main()
             self.assertEqual(rc, 0, msg=err)
             self.assertEqual(parse_output(out), ("PLAN", "execute"))
+
+    def test_tests_state_dispatches_tests(self):
+        with TempProject() as p:
+            p.set_project(state="tests")
+            rc, out, err = run_main()
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(parse_output(out), ("TESTS", "execute"))
 
     def test_close_state_dispatches_close(self):
         with TempProject() as p:

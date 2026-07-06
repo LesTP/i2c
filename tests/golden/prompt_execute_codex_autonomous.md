@@ -29,6 +29,7 @@ the exit signal, and the runner re-invokes you for the next action.
 | ACTION | What you do |
 |--------|-------------|
 | `PLAN` | Break the next phase into steps. Follow `instructions/plan.md`. |
+| `TESTS` | Author the phase's acceptance suite (Build only). Follow `instructions/tests.md`. |
 | `EXECUTE` | Do the next incomplete step. Follow `instructions/execute.md`. |
 | `REVIEW` | Review the phase against its contract. Follow `instructions/review.md`. |
 | `CLOSE` | Wrap up the phase. Follow `instructions/close.md`. |
@@ -175,7 +176,7 @@ Append-only event storage with atomic writes.
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "phase": 2,
   "state": "execute",
   "steps_remaining": 3,
@@ -363,6 +364,31 @@ than being pre-listed. Budget is wall-clock, not step count
      Emit exit signal with outcome=`blocked`. The state machine returns
      EXIT on the next dispatch; human/wrapper resolves the escalation and
      restores `state=execute` to resume.
+
+---
+
+## Acceptance-suite integrity (Build phases)
+
+If this phase ran a TESTS action before EXECUTE, a **frozen acceptance suite**
+lives under `tests/acceptance/phase_<N>/` (committed as `<phase>.tests: …`). It
+encodes the phase's contract-level success criteria and is the oracle that
+grades your work.
+
+- **Implement against it.** Your goal is to make that suite **green** (it was
+  authored red). Run it as you go.
+- **Do not edit the frozen acceptance suite.** Do not weaken, delete, `xfail`,
+  or loosen its assertions to make it pass. That defeats the entire point of
+  test/impl separation (D-tests-4). You may (and should) add your own
+  fine-grained unit tests elsewhere — those are *not* the oracle.
+- **If an acceptance test is genuinely wrong** (contradicts the contract, or the
+  contract itself changed): do not silently fix it. Either log a decision record
+  (`i2c state append-record decisions.json`) with the rationale for the change,
+  or — if it points to a contract problem — **escalate** (`state=audit_escalation`,
+  `EXIT 2`). Changes to the suite must be surfaced and justified, never hidden.
+
+If no `tests/acceptance/phase_<N>/` dir exists, this phase had no TESTS action
+(e.g. a Refine phase, or a project that hasn't adopted the action) — proceed
+normally.
 
 ---
 

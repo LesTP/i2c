@@ -132,7 +132,9 @@ i2c assemble --section module --module event_store
 ```mermaid
 stateDiagram-v2
     [*] --> plan: phase starts
-    plan --> execute: steps defined
+    plan --> tests: steps defined (Build regime)
+    plan --> execute: steps defined (Refine / Explore)
+    tests --> execute: acceptance suite authored
     execute --> execute: steps remaining > 1
     execute --> review: all steps complete
     review --> close: fixes applied
@@ -140,9 +142,15 @@ stateDiagram-v2
     audit_boundary --> [*]: awaiting human audit
 ```
 
+The `tests` hop is **Build-only**: the PLAN worker sets `state=tests` when the
+phase regime is Build (so a contract-derived acceptance suite is frozen before
+EXECUTE), and `state=execute` for Refine/Explore. See
+`DESIGN_tests_action_v1.md` (D-tests-*).
+
 | State | Assembled into prompt | Worker reads directly | Worker writes |
 |-------|----------------------|----------------------|---------------|
 | **plan** | instructions/plan.md, PROJECT.md, ARCHITECTURE.md, ARCH_module.md | — | steps.json, project.json, devlog.jsonl |
+| **tests** | instructions/tests.md, ARCH_module.md, steps.json, recent devlog | — | tests/acceptance/phase_N/ (suite), devlog.jsonl, project.json |
 | **execute** | instructions/execute.md, ARCH_module.md, steps.json, recent devlog | source files, test files | steps.json, devlog.jsonl, project.json |
 | **review** | instructions/review.md, ARCH_module.md, ARCHITECTURE.md, phase devlog, decisions | source files | devlog.jsonl, project.json |
 | **close** | instructions/close.md, ARCH_module.md, phase devlog, decisions | source/test files | phases.json, project.json (gotchas; state→audit_boundary) |
@@ -155,11 +163,11 @@ After CLOSE the worker leaves the project in `audit_boundary`; the human (or an 
 
 ## Detailed Action Map
 
-The per-action procedure — what each of PLAN / EXECUTE / REVIEW / CLOSE reads,
-does, and writes, step by step — is the **canonical** content of
-`instructions/{plan,execute,review,close}.md` (the same text the assembler puts
-in the worker's prompt). See those files for the authoritative steps; the
-README's "four worker actions" table is the one-line summary. The diagrams
+The per-action procedure — what each of PLAN / TESTS / EXECUTE / REVIEW / CLOSE
+reads, does, and writes, step by step — is the **canonical** content of
+`instructions/{plan,tests,execute,review,close}.md` (the same text the assembler
+puts in the worker's prompt). See those files for the authoritative steps; the
+README's "five worker actions" table is the one-line summary. The diagrams
 above show how the runner wraps each action and what the assembler reads.
 
 **Boundary clearing (after CLOSE):** the worker leaves the project in
