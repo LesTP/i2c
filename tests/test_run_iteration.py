@@ -999,5 +999,56 @@ class TestCloseDocsCommitWiring(unittest.TestCase):
             self.assertEqual(state_calls, [])  # state commit gated on exit 0
 
 
+class TestBackendRateLimit(unittest.TestCase):
+    """Backend rate-limit / infra error surfaces as exit 3 (distinct from the
+    worker's exit 2), and lands nothing."""
+
+    CLAUDE_429 = json.dumps({
+        "type": "result", "is_error": True, "api_error_status": 429,
+        "result": "You're out of extra usage - resets 7:50am (UTC)",
+        "usage": {"input_tokens": 2, "output_tokens": 508,
+                  "cache_read_input_tokens": 17145,
+                  "cache_creation_input_tokens": 26563},
+    })
+
+    def test_detect_claude_429(self):
+        r = ri.detect_rate_limit("claude", self.CLAUDE_429)
+        self.assertIsNotNone(r)
+        self.assertIn("429", r)
+        self.assertIn("rate-limited", r)
+
+    def test_detect_other_http_error(self):
+        raw = json.dumps({"type": "result", "is_error": True,
+                          "api_error_status": 529, "result": "overloaded"})
+        self.assertIn("529", ri.detect_rate_limit("claude", raw))
+
+    def test_detect_none_on_normal_result(self):
+        raw = json.dumps({"type": "result", "result": "ok", "is_error": False})
+        self.assertIsNone(ri.detect_rate_limit("claude", raw))
+
+    def test_detect_none_on_plaintext(self):
+        self.assertIsNone(ri.detect_rate_limit("claude", "just some text"))
+
+    def test_detect_codex_returns_none(self):
+        self.assertIsNone(ri.detect_rate_limit("codex", "anything", "jsonl"))
+
+    def test_run_iteration_returns_3_and_skips_commit(self):
+        with TempProject() as tp:
+            calls = []
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(self.CLAUDE_429),
+                    execute_committer=lambda r, **kw: (
+                        calls.append(kw) or (True, "x", "y")),
+                )
+            self.assertEqual(rc, 3)
+            self.assertEqual(calls, [])  # nothing landed -> no commit
+            summary = read_summary(tp.root)
+            self.assertIn("exit=3", summary)
+            self.assertIn("rate-limited", summary)
+
+
 if __name__ == "__main__":
     unittest.main()

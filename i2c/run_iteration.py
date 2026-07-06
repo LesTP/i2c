@@ -22,7 +22,10 @@ Pipeline (per the plan):
    it; codex sends one combined prompt (server-side prefix cache).
 8. Parse the 2-line exit signal from the captured output; validate
    against ``schemas/exit_signal.schema.json``. Malformed signal →
-   treated as ``exit_code: 2`` (halt-and-surface).
+   treated as ``exit_code: 2`` (halt-and-surface). A backend rate-limit /
+   HTTP error (e.g. claude's 429 usage cap) is detected structurally and
+   surfaced as ``exit_code: 3`` (retryable backend-unavailable) — distinct
+   from a worker/code error so operators/scripts can branch on it.
 9. If ``ACTION == CLOSE``, run ``check_post_action(root, "close")``;
    failure → halt-and-surface (exit 2).
 10. Write a summary line to ``logs/loop/summary.log`` and exit with the
@@ -389,6 +392,45 @@ def parse_claude_output(raw: str) -> tuple[str, dict | None]:
         "output": out,
         "cached": cache_read,
     }
+
+
+def detect_rate_limit(
+    backend: str, captured: str, jsonl_raw: str | None = None
+) -> str | None:
+    """Return a human reason if the *backend itself* refused (rate-limit / HTTP
+    error), else None.
+
+    Distinct from a worker error: nothing the worker did — the provider returned
+    an error envelope with no result. Drives the runner's exit-code-3 path so an
+    operator can tell a retryable quota hit from a real worker/code failure.
+    claude (``--output-format json``) carries this structurally as
+    ``is_error: true`` + ``api_error_status`` (429 = usage/rate limit). codex
+    detection is a follow-up (no confirmed sample yet).
+    """
+    if backend == "claude":
+        return _claude_backend_error(captured)
+    return None  # codex: best-effort TODO — needs a real 429 sample to match on.
+
+
+def _claude_backend_error(raw: str) -> str | None:
+    """Detect a claude backend infra error from the JSON result envelope.
+
+    HTTP 429 = usage/rate limit; any other ``api_error_status`` = backend error.
+    Returns None for a normal (worker) result or non-JSON output.
+    """
+    try:
+        obj = json.loads(raw.strip())
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(obj, dict) or not obj.get("is_error"):
+        return None
+    status = obj.get("api_error_status")
+    msg = str(obj.get("result") or "").strip() or "backend error"
+    if status == 429:
+        return f"backend rate-limited (HTTP 429): {msg}"
+    if status is not None:
+        return f"backend error (HTTP {status}): {msg}"
+    return None
 
 
 def parse_codex_usage(jsonl_raw: str) -> dict | None:
@@ -863,6 +905,24 @@ def run_iteration(
             )
         except Exception as e:  # noqa: BLE001 - telemetry must never break a run
             sys.stderr.write(f"NOTE: telemetry skipped ({e}).\n")
+
+    # 7b. Backend rate-limit / infra-error short-circuit (exit 3). When the
+    #     backend refused (claude JSON is_error + api_error_status, e.g. the
+    #     HTTP 429 usage cap) there is no worker result — surface it distinctly
+    #     as exit 3 ("backend unavailable, retry later") instead of the generic
+    #     exit=2 malformed-signal path, so an operator/script can tell a quota
+    #     hit from a real worker/code error. Nothing landed → skip invariants +
+    #     commits.
+    rl_reason = detect_rate_limit(
+        backend, captured, jsonl_raw if backend == "codex" else None)
+    if rl_reason is not None:
+        line = write_summary_line(
+            log_dir, iteration=iteration, backend=backend, action=action,
+            exit_code=3, reason=rl_reason, tokens=usage)
+        sys.stdout.write(line + "\n")
+        sys.stderr.write(f"ERROR: {rl_reason}\n")
+        _emit_telemetry(3)
+        return 3
 
     # 8. CLOSE invariants.
     if action == "CLOSE":

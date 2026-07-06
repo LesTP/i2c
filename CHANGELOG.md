@@ -8,6 +8,19 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ## [Unreleased]
 
+### Added
+
+- **Backend rate-limit / infra-error exit code (`exit 3`).** The runner now
+  detects when the *backend itself* refused — claude's `--output-format json`
+  carries `is_error: true` + `api_error_status` (429 = usage/rate limit) — and
+  surfaces it distinctly: a clear summary reason (`backend rate-limited
+  (HTTP 429): …`) plus runner **exit code 3** ("backend unavailable, retryable"),
+  instead of the generic `exit=2 "exit signal missing or malformed"` that made a
+  quota hit indistinguishable from a real worker error. Nothing lands on a
+  rate-limit (invariants + commits skipped). The worker exit-signal schema (0|2)
+  is unchanged — this is a runner-level infra outcome. codex detection and
+  bot-side `/batch` handling of exit 3 are follow-ups.
+
 ### Changed
 
 - **Runner owns all git commits (FU-40 complete).** The deterministic runner

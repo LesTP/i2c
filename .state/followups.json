@@ -231,5 +231,18 @@
     "refs": [
       "1fd85f7"
     ]
+  },
+  {
+    "id": "FU-42",
+    "title": "Complete rate-limit exit-3 signal: codex detection + bot /batch handling",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-07-05",
+    "context": "Runner exit-3 for a backend rate-limit/infra error shipped for claude (detected structurally via is_error + api_error_status; 429 = rate limit). Two follow-ups: (a) codex backend detection -- detect_rate_limit returns None for codex today; needs a real codex 429/quota sample to match its --json error-event shape; (b) the i2c bot /batch loop should recognize runner exit=3 and halt-and-report 'backend rate-limited, retry after reset' instead of treating it as a phase error (today it would look like a generic failure to the bot). Origin: clankercourts 2026-07-06 phase-16 claude usage-cap stumble (iters 109-110).",
+    "trigger": "Next time a codex rate-limit is observed (capture the sample), or next i2c-bot batch-UX touch.",
+    "priority": "next",
+    "files": [
+      "i2c/run_iteration.py"
+    ]
   }
 ]
