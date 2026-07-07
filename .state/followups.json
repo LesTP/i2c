@@ -205,7 +205,7 @@
     "id": "FU-20",
     "title": "Templates assume `.claude/commands/` autoloads in Devmate; project-level `.llms/commands/` also doesn't get picked up in the workflows seen so far — operator-global `~/.llms/commands/` is the only reliable surface",
     "kind": "other",
-    "status": "open",
+    "status": "closed",
     "priority": "eventually",
     "context": "`templates/README.md` states \"Devmate / Claude Code picks up the project's `.claude/commands/` automatically — no extra configuration step.\" True for Claude Code, false for Devmate. Devmate's `agent_customization` skill documents `.llms/commands/` as the project-level convention. **CC pilot (2026-06-05/06) found both don't work in practice for the current Devmate session:** the operator's Devmate session is reading commands from `C:\\Users\\myeluashvili\\.llms\\commands\\` only; neither `p:\\shared\\clankercourts\\.claude\\commands\\*.md` nor `p:\\shared\\clankercourts\\.llms\\commands\\*.md` showed up in the personal_context skills list. Possible causes: network-share path not scanned, workspace-root mismatch, requires Devmate restart to pick up new project-level commands, or project-level scanning not actually implemented for this Devmate build. **Workaround applied:** copied the 5 i2c slash commands to `~/.llms/commands/i2c-*.md` (operator-global with `i2c-` prefix). Now `/i2c-phase-plan`, `/i2c-cold-start`, etc. are available in any Devmate session; global `/phase-plan` continues to call e2e (Diplomat workflow unaffected). The commands shell out to `python tools/...` so they only do useful work inside an i2c project root; elsewhere they fail with a clear error.",
     "trigger": "Address before next i2c bootstrap: **(a)** update templates to ship the `i2c-` prefixed commands at both `templates/.claude/commands/` (for Claude Code) and `templates/.llms/commands/` (for Devmate at project-level if/when that works), AND document a manual copy-to-global step for Devmate users (`xcopy templates\\.llms\\commands\\* %USERPROFILE%\\.llms\\commands\\`); **(b)** investigate whether Devmate project-level `.llms/commands/` actually loads — may be a config / workspace setup question, or a network-share limitation. If (b) confirms project-level works under some setup, document the prerequisites.",
@@ -214,7 +214,9 @@
     ],
     "files": [
       "templates/README.md"
-    ]
+    ],
+    "closed": "2026-07-06",
+    "resolution": "Investigated (part b): Devmate loads slash commands ONLY from global ~/.llms/commands/ — project-level .claude/commands/ AND .llms/commands/ do not load (only .llms/rules/ does); Claude Code (which auto-loaded .claude) is retired. Resolution: refreshed the canonical i2c-* command set (i2c CLI; incl. Build tests-action fork, review acceptance-suite integrity check, audit_boundary gate) and ship it under templates/.llms/commands/ as the copy-to-global source; documented the xcopy-to-global bootstrap in templates/README (supersedes D-prose-4's per-project premise in practice); built the working set in ~/.llms/commands/i2c-*; removed stale per-project copies from clankercourts."
   },
   {
     "id": "FU-41",

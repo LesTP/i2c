@@ -1,73 +1,83 @@
 # i2c Project Templates
 
 Starter material the framework ships for projects to copy on bootstrap.
-Nothing here is consumed by the framework itself — these files only
-matter once they live inside a real project directory.
+Nothing here is consumed by the framework itself — these files only matter once
+they live where the agent harness loads them.
 
 ## What's here
 
 | Path | Purpose |
 |------|---------|
-| `.claude/commands/` | Per-project Devmate slash-command wrappers for supervised mode. Each wrapper is a thin shell around an `i2c assemble …` or `i2c state …` invocation. |
+| `.llms/commands/i2c-*.md` | Supervised-mode slash-command wrappers (`/i2c-cold-start`, `/i2c-phase-plan`, `/i2c-phase-complete`, `/i2c-phase-review`, `/i2c-step-done`). Each is a thin shell around an `i2c assemble …` / `i2c state …` / `i2c status` invocation. The `i2c-` prefix keeps them alongside any existing e2e-flavored global commands. |
 
-## Bootstrap pattern
+## Where these load — read this first (FU-20)
 
-`i2c init` scaffolds the rest of a new project (`.state/`, `PROJECT.md`,
-`ARCHITECTURE.md`, adapters, `.gitignore`); this directory only adds the
-supervised-mode slash-command wrappers. Copy it into the project root:
+**Devmate loads slash commands only from the operator-global `~/.llms/commands/`.**
+Project-level command directories — **both** `.llms/commands/` *and*
+`.claude/commands/` — are **not** picked up by Devmate today (FU-20). (Project
+`.llms/rules/` *does* load; commands do not.) Claude Code, which did auto-load
+`.claude/commands/`, is retired.
+
+So there is one working surface: **global**. Copy this set there once:
 
 ```powershell
 # Windows / PowerShell
-xcopy /E /I p:\shared\i2c\templates\.claude\commands  <project>\.claude\commands
+xcopy /E /I p:\shared\i2c\templates\.llms\commands  $env:USERPROFILE\.llms\commands
 ```
 
 ```bash
 # POSIX
-cp -r p:/shared/i2c/templates/.claude/commands <project>/.claude/commands
+cp p:/shared/i2c/templates/.llms/commands/i2c-*.md ~/.llms/commands/
 ```
 
-After copying, the slash commands are available in Claude Code / Codex
-sessions when working in the project directory. **Devmate** does not load
-project-level commands today (FU-20) — for Devmate, copy the wrappers to the
-operator-global `~/.llms/commands/` (an `i2c-` prefix keeps them alongside any
-existing e2e-flavored global commands).
+After copying, `/i2c-phase-plan`, `/i2c-step-done`, etc. appear in the Devmate
+command picker (type `/` to confirm) for **every** i2c project — they read the
+current project's `.state/` at invocation time, so one global copy serves the
+whole fleet.
 
-## Why per-project, not personal-level
+## Bootstrap pattern
 
-Per `D-prose-4` (in the i2c rollout plan):
+`i2c init` scaffolds the rest of a new project (`.state/`, `PROJECT.md`,
+`ARCHITECTURE.md`, adapters, `i2c.toml`, `.gitignore`) — it does **not** copy
+these commands. They are operator-global (above), authored once, not re-seeded
+per project. (Historically some projects carried per-project copies; those are
+inert in Devmate and have been removed.)
 
-- The framework owns the canonical template; future CLI changes can
-  evolve the template once and projects copy when they want the change.
-- Each project keeps its own copy; e2e projects keep their e2e-flavored
-  slash commands. No cross-framework detection logic in personal config.
-- Claude Code / Codex sessions pick up the project's `.claude/commands/`
-  automatically when working in the project directory. **Devmate** does not
-  load project-level `.claude/commands/` (or `.llms/commands/`) today
-  (FU-20); use the `~/.llms/commands/` workaround above for Devmate.
+## Why global, not per-project (supersedes D-prose-4 in practice)
 
-## What each slash command does
+`D-prose-4` originally chose *per-project* command copies (framework owns the
+canonical template; each project keeps its own; Claude Code / Codex auto-load
+`.claude/commands/`). Two facts changed that in practice:
+
+- **Devmate is the active harness** and does not load project-level commands
+  (FU-20); Claude Code (which did) is retired.
+- Per-project copies drift — divergent stale copies (pre-packaging `tools/*.py`
+  invocations) are exactly what FU-20 surfaced.
+
+So the canonical set now lives here (framework-owned, one source of truth) and
+is copied to the **operator-global** surface. The `i2c-` prefix lets it coexist
+with e2e-flavored global commands, so no cross-framework detection is needed —
+the property D-prose-4 was protecting.
+
+## What each command does
 
 | Command | Purpose | Underlying CLI |
 |---------|---------|----------------|
-| `/cold-start` | Orient on current project state | `i2c status` |
-| `/phase-plan` | Plan the next phase (supervised) | `i2c assemble --action plan --phase N --mode supervised` |
-| `/step-done` | Mark a step complete, log to devlog, transition if last | `i2c state complete`, `i2c state append devlog.jsonl`, `i2c state set` |
-| `/phase-review` | Run end-of-phase review (supervised) | `i2c assemble --action review --phase N --mode supervised` |
-| `/phase-complete` | Close the phase, gate to human (supervised) | `i2c assemble --action close --phase N --mode supervised` |
+| `/i2c-cold-start` | Orient on current project state | `i2c status` / `i2c next-action` |
+| `/i2c-phase-plan` | Plan the next phase (supervised); Build forks to the `tests` action | `i2c assemble --action plan …` (+ `--action tests` for Build) |
+| `/i2c-step-done` | Mark a step complete, log to devlog, transition if last | `i2c state complete` / `append` / `set` |
+| `/i2c-phase-review` | End-of-phase review (supervised) + acceptance-suite integrity check | `i2c assemble --action review …` |
+| `/i2c-phase-complete` | Close the phase, set the human gate (supervised) | `i2c assemble --action close …` |
 
-`/step-done` is the only pure write-side command — the others are
-read-side (they assemble context the agent reads to perform the action).
-
-## Status note
-
-The `--mode` flag and per-section subcommands are implemented and ship in the
-`i2c` package; all five wrappers run today once the framework is installed
-(`pip install`). Each wrapper invokes the `i2c` console command.
+`/i2c-step-done` is the only pure write-side command; the others assemble
+context the agent reads to perform the action. All five reflect the current
+lifecycle (`plan → tests → execute → review → close → audit_boundary`) and the
+Build-only `tests` action.
 
 ## Where the contracts live
 
 - Assembler CLI surface: `ARCH_assembler.md` §3
 - State CLI surface: `i2c state --help` (or `i2c state SUBCOMMAND --help`)
-- Per-action procedures: `instructions/{plan,execute,review,close}.md` (ship in
-  the `i2c` package; a project may override per-file with a local copy)
+- Per-action procedures: `instructions/{plan,tests,execute,review,close}.md`
+  (ship in the `i2c` package; a project may override per-file with a local copy)
 - Schemas for every write: `i2c/data/schemas/*.schema.json`
