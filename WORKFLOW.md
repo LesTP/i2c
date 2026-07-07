@@ -145,7 +145,7 @@ stateDiagram-v2
 The `tests` hop is **Build-only**: the PLAN worker sets `state=tests` when the
 phase regime is Build (so a contract-derived acceptance suite is frozen before
 EXECUTE), and `state=execute` for Refine/Explore. See
-`DESIGN_tests_action_v1.md` (D-tests-*).
+`archive/DESIGN_tests_action_v1.md` (D-tests-*).
 
 | State | Assembled into prompt | Worker reads directly | Worker writes |
 |-------|----------------------|----------------------|---------------|

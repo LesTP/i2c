@@ -1,5 +1,11 @@
-# DESIGN — `tests` Action (test/impl separation) v1
+# DESIGN - `tests` Action (test/impl separation) v1
 
+> **ARCHIVED (2026-07-07)** — historical *why* record; the current *what* lives in
+> [`../README.md`](../README.md) (the five worker actions), [`../DECISIONS.md`](../DECISIONS.md)
+> (D-tests-1..7), [`../WORKFLOW.md`](../WORKFLOW.md) (lifecycle), and
+> `i2c/data/instructions/tests.md` (the procedure). Remaining work is tracked as
+> FU-43/44/45 (`i2c fu`).
+>
 > **Status:** Implemented (2026-07-06). Adds a regime-conditional,
 > phase-level acceptance-test authoring step so the implementation is graded
 > against tests it did not write — turning the increment-2 `tests_pass` field

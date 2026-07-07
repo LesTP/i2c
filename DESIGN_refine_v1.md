@@ -324,7 +324,7 @@ from Build steps to refine work too.
   a separate log. **FU-9 is folded into D-refine-8:** the same `devlog_entry` change
   adds an optional `iteration: int`, so a null-`step` entry (Refine-regime or
   refine-tier) can name its iteration. FU-9 is therefore closed as superseded.
-- **Telemetry (`DESIGN_telemetry_v1.md`)** — Q-refine-3 adds a `refine`
+- **Telemetry (`archive/DESIGN_telemetry_v1.md`)** — Q-refine-3 adds a `refine`
   action_type to the existing envelope; no new mechanism.
 - **FU-40** — B's runner-owned refine commit is the same committer-centralization
   direction, extended to the refine tier.

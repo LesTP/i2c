@@ -113,7 +113,7 @@ for the framework). Implementation commits reference the decision IDs.
 | D-run-1 | One worker invocation performs exactly one ACTION; the runner re-invokes for the next. No worker-side multi-step loop and no `--step-budget` flag (both removed). | Active |
 | D-run-2 | Cross-action multi-step is rejected: one invocation is one backend, so it is incompatible with per-action routing (`[run.backends]`). The only coherent unit - a single invocation running several EXECUTE steps for continuous context - is deferred pending model-benchmark evidence, since it forfeits the per-step commit and per-(action, step) telemetry granularity FU-40 established. | Active |
 
-### tests action (test/impl separation) — `DESIGN_tests_action_v1.md` (D-tests-1..7)
+### tests action (test/impl separation) — `archive/DESIGN_tests_action_v1.md` (D-tests-1..7)
 
 > Phase-level, Build-only `tests` action authoring a contract-derived acceptance
 > suite **before** and **independently of** EXECUTE, so "did the implementation

@@ -237,7 +237,7 @@ explicitly autonomous to count.
 
 ## 8. Telemetry schema (the instrumentation)
 
-> **Full spec:** `DESIGN_telemetry_v1.md` realizes this section. Key refinements
+> **Full spec:** `archive/DESIGN_telemetry_v1.md` realizes this section. Key refinements
 > there: a runner-authored **sidecar `.state/telemetry.jsonl`** (not enriched
 > devlog records, since devlog is worker-authored + `additionalProperties:false`
 > + append-only); cost is **derived/best-effort**; `review_findings` is deferred;

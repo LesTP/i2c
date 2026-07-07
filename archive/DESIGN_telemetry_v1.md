@@ -1,5 +1,10 @@
-# DESIGN — Telemetry (`.state/telemetry.jsonl`) v1
+# DESIGN - Telemetry (`.state/telemetry.jsonl`) v1
 
+> **ARCHIVED (2026-07-07)** — historical *why* record; the current *what* lives in
+> [`../STATUS.md`](../STATUS.md) §7 (telemetry track) and the live impl/schema
+> (`i2c/telemetry.py` + `i2c/data/schemas/telemetry_entry.schema.json`). Deferred
+> additive items remain noted below.
+>
 > **Status:** Implemented (increments 1 + 2). The sidecar, schema, runner
 > capture, scaffolding, cost/tier derivation (bundled pricing + `[telemetry.pricing]`
 > overrides), and the opt-in `tests_pass` oracle are shipped and tested. Still
