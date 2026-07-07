@@ -77,10 +77,11 @@ and the per-kind checklists in §6.
 | **test-hardening** | an invariant is asserted in prose but nothing checks it | add a targeted test + a floor/guard against regression | FU-11 (instruction-example validation), FU-17 (arg rejection) |
 | **structural-refactor** | duplicated/overloaded machinery has accreted; a cleaner single form exists | design memo + decisions + a coordinated multi-commit stack | FU-39 (single projection layer), the 7-state lifecycle redesign (D-state-1..7, 5 commits), `retire predecessor-dialect` |
 | **experiment-log** | a run/experiment produced a result or finding worth recording | append the finding to a log/notes, often with a numbered writeup; no code change | *(diplomat)* `Run 21 …`, `Run 18 writeup`, `TUNING_LOG Run 15 findings`, `RESEARCH_NOTES Note 1`; i2c's own benchmark thread (§7) will generate these |
+| **bugfix** | a Build iteration fails with a `code`-class defect `reconcile` can't touch (from recovery's `diagnose(code)`) | single-shot repair on the diagnosed target: read the diagnosis → minimal fix → run tests → **don't** touch phase state (the Build loop re-attempts the failed step) | *(recovery)* the automated `fix` — D-recovery-7; see `FUTURE_recovery.md` |
 
-Note the last row is the bridge to §3: **structural-refactor is refine done at
-phase scale** — it already gets a memo + decisions + a commit stack. The other
-six kinds are *sub-phase* and today get nothing but an FU-table row and a commit.
+Note **structural-refactor is the bridge to §3: refine done at phase scale** —
+it already gets a memo + decisions + a commit stack. The other kinds are
+*sub-phase* and today get nothing but an FU-table row and a commit.
 
 **Validated against a second corpus (2026-07-02).** A skim of diplomat's recent
 250 of 533 commits — a research/negotiation project, not tooling — found every
@@ -89,8 +90,11 @@ reason-first lens` mirrors i2c's FU-36). It independently reproduced the **drift
 class** (recurring `NEXT_STEPS` / `TUNING_LOG` cleanup / reorg / sync commits — the
 exact motivation for Proposal A) and surfaced **`experiment-log`** as a
 generalizable seventh kind (added above; i2c's own benchmark thread §7 will produce
-these). Watch-items not adopted: `bugfix` (standalone fixes — may fold into
-test-hardening); viz / output-polish (diplomat-specific presentation work).
+these). Watch-items: `bugfix` was **subsequently adopted** as the automated
+code-repair kind (= recovery's `fix`, D-recovery-7; see §9 + `FUTURE_recovery.md`)
+— *not* folded into test-hardening, since "repair a diagnosed defect" and "add a
+guard test" are different triggers. Not adopted: viz / output-polish
+(diplomat-specific presentation work).
 
 ---
 
@@ -141,7 +145,7 @@ resolution note:
 {
   "id": "FU-41",
   "title": "…",
-  "kind": "prose | dead-surface | doc-reconciliation | cli-ergonomics | test-hardening | structural-refactor | experiment-log | other",
+  "kind": "prose | dead-surface | doc-reconciliation | cli-ergonomics | test-hardening | structural-refactor | experiment-log | bugfix | other",
   "status": "open | accepted | partially-closed | closed | wontfix",
   "context": "…",
   "trigger": "…",
@@ -332,11 +336,12 @@ from Build steps to refine work too.
   *out-of-band, targeted, single-shot dispatch* family as `i2c run --action
   reconcile --target N`; the loop should **reuse that dispatch**, not reinvent it.
   `reconcile` stays separate — its executor is *deterministic* state-repair (no
-  worker). But the deferred **`fix` code-repair agent (`FUTURE_recovery.md`) is the
-  same executor as refine** — a single-shot LLM worker on a targeted item, i.e. the
-  automated **`bugfix`** kind: `diagnose(code)` captures a `followups.json` item,
-  the refine loop repairs it (human-gated). So `fix` can ride the refine substrate
-  rather than a parallel `diagnoses.json` / `fix.md` / dispatch stack.
+  worker). **Decided (D-recovery-7): `fix` *is* the `bugfix` refine kind** — a
+  single-shot LLM worker on a targeted item. `diagnose(code)` files a `bugfix`
+  FU (the diagnosis as its `context` / `refs`); `i2c refine <fu-id>` repairs it,
+  human-gated. Recovery keeps only the code-class *capture* + gate/scope policy;
+  the *executor* is refine's. The parallel `diagnoses.json` / `fix.md` /
+  separate-dispatch stack is dropped.
 - **DECISIONS.md** — D-refine-* land there on ratification; this memo is the
   authoritative rationale until then.
 
@@ -403,7 +408,7 @@ Envelope: draft-2020-12, `type: array`, `items.additionalProperties: false`.
 |---|---|---|
 | `id` | string | `^FU-\d+$`, **required** |
 | `title` | string | **required** |
-| `kind` | enum | `prose · dead-surface · doc-reconciliation · cli-ergonomics · test-hardening · structural-refactor · experiment-log · other`, **required** |
+| `kind` | enum | `prose · dead-surface · doc-reconciliation · cli-ergonomics · test-hardening · structural-refactor · experiment-log · bugfix · other`, **required** |
 | `status` | enum | `open · accepted · partially-closed · closed · wontfix`, **required** |
 | `context`, `trigger`, `resolution` | string | optional |
 | `refs`, `files` | array[string] | optional |
@@ -533,6 +538,13 @@ One invocation — no `plan→execute→review→close`, no `audit_boundary`. Th
   whole-tree, source-reading, and feeds the `fu` backlog by judgment. Per D-refine-7
   they stay **separate lifecycles** but may share the finding/proposal reporting
   shape. Later facet — execute mode is v1.
+- **Q-B7 — backend / tier per item. Resolved (D-recovery-7).** No per-kind
+  backend config. Refine is single-shot (one FU per call), so the per-call
+  `--backend` / `--model` flags (mirroring `i2c run`) already give per-item tier
+  control; `[run.backends].refine` is the coarse default for unattended dispatch,
+  and an orchestrator / bot may choose the backend by the FU's `kind` (e.g.
+  `bugfix` → codex / a stronger model). Subsumes FUTURE_recovery's
+  `[run.backends].fix = codex` — there is no separate `fix` action.
 
 ### 12.4 Build loop vs refine loop
 

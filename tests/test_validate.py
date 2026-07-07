@@ -336,12 +336,12 @@ class TestFollowupsSchema(unittest.TestCase):
     def test_all_kinds_accepted(self):
         for kind in ("prose", "dead-surface", "doc-reconciliation",
                      "cli-ergonomics", "test-hardening", "structural-refactor",
-                     "experiment-log", "other"):
+                     "experiment-log", "bugfix", "other"):
             v.validate_json_schema(self._fu(kind=kind), self.schema)
 
     def test_invalid_kind_rejected(self):
         with self.assertRaisesRegex(ValueError, "kind"):
-            v.validate_json_schema(self._fu(kind="bugfix"), self.schema)
+            v.validate_json_schema(self._fu(kind="not-a-kind"), self.schema)
 
     def test_all_statuses_accepted(self):
         for status in ("open", "accepted", "partially-closed", "closed",

@@ -711,5 +711,70 @@ class TestFollowups(unittest.TestCase):
             self.assertEqual(len(result), 3)
 
 
+# ---------------------------------------------------------------------------
+# dashboard_model()
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardModel(unittest.TestCase):
+    @staticmethod
+    def _make_portfolio(root: Path, names: list[str]) -> None:
+        for name in names:
+            copy_fixture(root / name)
+
+    def test_project_mode_against_fixture(self):
+        model = c.dashboard_model(FIXTURE)
+        self.assertEqual(model.mode, "project")
+        self.assertIsNone(model.portfolio)
+        self.assertIsNotNone(model.project)
+        self.assertEqual(model.project.phase, 2)
+        self.assertEqual(model.project.state, "execute")
+        # run_config present (dict with the four [run] keys), health is a list.
+        self.assertIsInstance(model.run_config, dict)
+        self.assertIn("backend", model.run_config)
+        self.assertIn("backends", model.run_config)
+        self.assertIsInstance(model.health, list)
+        self.assertTrue(model.health)  # doctor always yields checks
+
+    def test_portfolio_mode_with_root(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_dash_") as tmp:
+            root = Path(tmp)
+            self._make_portfolio(root, ["one", "two"])
+            model = c.dashboard_model(root)
+            self.assertEqual(model.mode, "portfolio")
+            self.assertIsNone(model.project)
+            self.assertIsNotNone(model.portfolio)
+            names = {p.name for p in model.portfolio.projects}
+            self.assertEqual(names, {"one", "two"})
+
+    def test_force_portfolio_override(self):
+        # portfolio=True forces portfolio mode even against a single project dir.
+        model = c.dashboard_model(FIXTURE, portfolio=True)
+        self.assertEqual(model.mode, "portfolio")
+        self.assertIsNotNone(model.portfolio)
+
+    def test_allowlist_excludes_telegram_admins(self):
+        # D-dash-3: an i2c.toml [telegram] block must never leak into the model.
+        with tempfile.TemporaryDirectory(prefix="i2c_dash_") as tmp:
+            root = Path(tmp) / "project"
+            copy_fixture(root)
+            (root / "i2c.toml").write_text(
+                "[run]\nbackend = \"claude\"\n\n"
+                "[telegram]\nadmins = [111222333, 444555666]\n"
+                "root = \"/secret/portfolio\"\n",
+                encoding="utf-8",
+            )
+            from dataclasses import asdict
+
+            model = c.dashboard_model(root)
+            blob = json.dumps(asdict(model))
+            self.assertNotIn("111222333", blob)
+            self.assertNotIn("444555666", blob)
+            self.assertNotIn("telegram", blob.lower())
+            self.assertNotIn("/secret/portfolio", blob)
+            # But the allowlisted [run] value did come through.
+            self.assertEqual(model.run_config["backend"], "claude")
+
+
 if __name__ == "__main__":
     unittest.main()

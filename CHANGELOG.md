@@ -10,6 +10,20 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Added
 
+- **`i2c dashboard` — self-contained HTML snapshot (v0, tables-only).** A new
+  subcommand emits a single offline `dashboard.html` (no server, no auth, no
+  network) that opens in any browser and syncs over the shared disk. It follows
+  the design's frozen-shell / bound-data split (D-dash-6..10): a human-owned,
+  frozen Pico.css shell (`i2c/data/dashboard/{shell.html,style.css,bind.js}`)
+  into which the generator only binds an allowlisted `control.DashboardModel`
+  (JSON → DOM). Modes: **single-project** when run inside a project (or given a
+  project dir), **portfolio** over a parent folder; `--out` chooses the path
+  (default `dashboard.html`, gitignored), `--json` prints the model. The model
+  is the single allowlist seam — it reads only `.state/` (portfolio/status), the
+  non-secret `[run]` config, and `doctor`, and **never** `[telegram]` or the
+  environment (D-dash-3). Panels: portfolio table, per-project drill, health.
+  The telemetry aggregator + Chart.js charts are the tracked v0.1 follow-up.
+
 - **Backend rate-limit / infra-error exit code (`exit 3`).** The runner now
   detects when the *backend itself* refused — claude's `--output-format json`
   carries `is_error: true` + `api_error_status` (429 = usage/rate limit) — and

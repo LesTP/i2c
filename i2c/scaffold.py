@@ -30,7 +30,7 @@ BACKENDS = tuple(_ADAPTER_TARGET)
 # token "instructions" expands to every per-action procedure.
 EJECTABLE = ("WORKER_SPEC.md", *(f"instructions/{a}.md" for a in ACTIONS))
 
-_GITIGNORE_LINE = "logs/loop/"
+_GITIGNORE_LINES = ("logs/loop/", "dashboard.html")
 
 
 class ScaffoldError(Exception):
@@ -69,16 +69,17 @@ def _write_text(
 def _ensure_gitignore(root: Path, report: list[str]) -> None:
     path = root / ".gitignore"
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
-    lines = existing.splitlines()
-    if _GITIGNORE_LINE in (ln.strip() for ln in lines):
-        report.append("skipped .gitignore (logs/loop/ already present)")
+    present = {ln.strip() for ln in existing.splitlines()}
+    missing = [ln for ln in _GITIGNORE_LINES if ln not in present]
+    if not missing:
+        report.append("skipped .gitignore (entries already present)")
         return
     new = existing
     if new and not new.endswith("\n"):
         new += "\n"
-    new += _GITIGNORE_LINE + "\n"
+    new += "".join(line + "\n" for line in missing)
     path.write_text(new, encoding="utf-8")
-    report.append(("updated .gitignore" if existing else "created .gitignore"))
+    report.append("updated .gitignore" if existing else "created .gitignore")
 
 
 # ---------------------------------------------------------------------------

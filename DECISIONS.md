@@ -100,7 +100,8 @@ for the framework). Implementation commits reference the decision IDs.
 | D-recovery-3 | Drift audit is deterministic, reusing `invariants._check_close` + `state_machine` + `control.load_state`; extends detect-and-halt into detect-and-reconcile | Active |
 | D-recovery-4 | `reconcile` is human-gated (dry-run default) and mutates only via the `state.py` path; never marks a code-blocked step complete | Active |
 | D-recovery-5 | Recovery actions dispatch out-of-band (`i2c run --action … --target N`), bypassing the state machine and emitting no Next State | Active |
-| D-recovery-6 | Full `fix` code-repair agent deferred | Roadmap (see `FUTURE_recovery.md`) |
+| D-recovery-6 | Full `fix` code-repair agent deferred | Roadmap (reframed by D-recovery-7) |
+| D-recovery-7 | `fix` is **not** a standalone stack: it *is* the **`bugfix` refine kind**. Split by executor — `reconcile` (deterministic state-repair) untouched; the single-shot LLM executor is the refine loop (`i2c refine`, Proposal B). Recovery keeps only code-class **capture** (`diagnose(code)` → files a `bugfix` FU) + gate/scope policy. Drops `diagnoses.json` / `fix.md` / separate dispatch; no per-kind backend config (per-call flags / orchestrator by `kind`). | Roadmap (see `FUTURE_recovery.md`, `DESIGN_refine_v1.md` §9/§12) |
 
 ### Runner / iteration model - `ARCH_assembler.md` (section 10) (D-run-1..2)
 

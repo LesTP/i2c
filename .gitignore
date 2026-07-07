@@ -6,3 +6,5 @@ build/
 dist/
 # Scratch files - convention: prefix one-off scratch with .tmp_
 .tmp_*
+# Regenerable dashboard artifact (i2c dashboard)
+dashboard.html

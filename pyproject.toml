@@ -69,4 +69,7 @@ i2c = [
     "data/adapters/*.md",
     "data/templates/*.md",
     "data/templates/*.toml",
+    "data/dashboard/*.html",
+    "data/dashboard/*.css",
+    "data/dashboard/*.js",
 ]

@@ -19,6 +19,7 @@ Subcommands::
     i2c reconcile [--apply]          # apply deterministic workflow-drift fixes
     i2c logs [--iter N] [--limit N]  # iteration index, or one transcript via --iter
     i2c portfolio [--root PATH]       # cross-project 'which needs me?' view
+    i2c dashboard [--root PATH] [--out FILE]  # self-contained HTML snapshot (--json for model)
     i2c serve telegram [--root PATH]  # run the Telegram surface (needs i2c[telegram])
     i2c clear-boundary [--terminate] # advance past / terminate an audit_boundary
     i2c run [--backend ...] ...      # one cold-start worker iteration
@@ -201,6 +202,29 @@ def cmd_portfolio(args: argparse.Namespace) -> int:
     except control.ControlError as e:
         return _fail(e)
     _emit(report, as_json=args.json, renderer=_render_portfolio)
+    return 0
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    from dataclasses import asdict
+    from pathlib import Path
+
+    from i2c import dashboard
+
+    root = Path(args.root) if args.root else None
+    try:
+        model = control.dashboard_model(root=root)
+    except control.ControlError as e:
+        return _fail(e)
+    # HTML is the primary output, so branch rather than route through `_emit`
+    # (precedent: cmd_migrate). --json prints the allowlisted model instead.
+    if args.json:
+        sys.stdout.write(
+            json.dumps(asdict(model), indent=2, ensure_ascii=False) + "\n"
+        )
+        return 0
+    out = dashboard.write_html(model, Path(args.out))
+    sys.stdout.write(f"wrote {out}\n")
     return 0
 
 
@@ -413,7 +437,7 @@ def cmd_import(args: argparse.Namespace) -> int:
 
 _FU_KINDS = (
     "prose", "dead-surface", "doc-reconciliation", "cli-ergonomics",
-    "test-hardening", "structural-refactor", "experiment-log", "other",
+    "test-hardening", "structural-refactor", "experiment-log", "bugfix", "other",
 )
 
 _FU_HORIZONS = ("now", "next", "eventually", "icebox")
@@ -700,6 +724,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Parent folder to scan for projects. Default: current directory.",
     )
     p_pf.set_defaults(func=cmd_portfolio)
+
+    p_dash = sub.add_parser(
+        "dashboard",
+        parents=[json_parent],
+        help="Emit a self-contained HTML snapshot (portfolio by default, "
+        "single-project when run inside a project). --json prints the model.",
+    )
+    p_dash.add_argument(
+        "--root", default=None,
+        help="Directory to render: a project dir shows that project; a parent "
+        "folder shows the portfolio. Default: single-project when inside one, "
+        "else portfolio of the current dir.",
+    )
+    p_dash.add_argument(
+        "--out", default="dashboard.html",
+        help="Output HTML path. Default: dashboard.html in the current dir.",
+    )
+    p_dash.set_defaults(func=cmd_dashboard)
 
     p_cb = sub.add_parser(
         "clear-boundary",

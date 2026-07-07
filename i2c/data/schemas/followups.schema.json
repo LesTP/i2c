@@ -28,9 +28,10 @@
           "test-hardening",
           "structural-refactor",
           "experiment-log",
+          "bugfix",
           "other"
         ],
-        "description": "Refine kind (DESIGN_refine_v1.md §2 taxonomy)."
+        "description": "Refine kind (DESIGN_refine_v1.md §2 taxonomy). 'bugfix' is the automated code-repair kind (recovery's `fix`, D-recovery-7)."
       },
       "status": {
         "type": "string",

@@ -312,6 +312,44 @@ class TestPortfolioCli(unittest.TestCase):
             self.assertIn("No i2c projects found", out)
 
 
+class TestDashboardCli(unittest.TestCase):
+    def test_json_project_mode(self):
+        with ChdirFixture(FIXTURE):
+            rc, out, err = run_cli("dashboard", "--json")
+        self.assertEqual(rc, 0, msg=err)
+        data = json.loads(out)
+        self.assertEqual(data["mode"], "project")
+        self.assertEqual(data["project"]["phase"], 2)
+
+    def test_writes_self_contained_html(self):
+        with TempProject() as p:
+            rc, out, err = run_cli("dashboard", "--out", "d.html")
+            self.assertEqual(rc, 0, msg=err)
+            out_file = p.root / "d.html"
+            self.assertTrue(out_file.is_file())
+            self.assertIn("wrote", out)
+            html = out_file.read_text(encoding="utf-8")
+            self.assertIn("window.__I2C__", html)
+            self.assertNotIn("src=", html)
+            self.assertNotIn("__I2C_STYLE__", html)
+
+    def test_json_portfolio_mode_with_root(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_dash_cli_") as tmp:
+            root = Path(tmp)
+            copy_fixture(root / "a")
+            copy_fixture(root / "b")
+            rc, out, err = run_cli("dashboard", "--root", str(root), "--json")
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads(out)
+            self.assertEqual(data["mode"], "portfolio")
+            self.assertEqual(len(data["portfolio"]["projects"]), 2)
+
+    def test_dashboard_in_help(self):
+        rc, out, err = run_cli("--help")
+        self.assertEqual(rc, 0, msg=err)
+        self.assertIn("dashboard", out)
+
+
 # ---------------------------------------------------------------------------
 # clear-boundary (write; temp copy)
 # ---------------------------------------------------------------------------
@@ -740,7 +778,7 @@ class TestFuCli(unittest.TestCase):
     def test_add_invalid_kind_rejected(self):
         with TempProject():
             rc, out, err = run_cli(
-                "fu", "add", "--kind", "bugfix", "--title", "x",
+                "fu", "add", "--kind", "not-a-kind", "--title", "x",
             )
             self.assertEqual(rc, 2)  # argparse choices rejection
 

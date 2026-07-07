@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from i2c import config as _config
 from i2c import run_iteration as _runner
 from i2c import state as _state
 from i2c import state_machine as _sm
@@ -254,6 +255,29 @@ class ProjectBrief:
 class PortfolioReport:
     root: str
     projects: list[ProjectBrief]
+
+
+@dataclass
+class DashboardModel:
+    """The allowlisted composition backing ``i2c dashboard`` (design §10, v0).
+
+    The single auditable allowlist seam: it composes only the four permitted
+    sources — ``.state/`` (via ``portfolio``/``status``), the non-secret
+    ``[run]`` config, and ``doctor`` — and **never** touches ``[telegram]`` or
+    ``os.environ`` (D-dash-3, deny-by-default). Serializes for free via
+    ``dataclasses.asdict`` (nested dataclasses included), so it is both the
+    ``--json`` payload and the data inlined into the frozen HTML shell.
+
+    Timestamp-free by design (determinism levers, §): the state-derived slice
+    is byte-goldable; any "generated at" string is a render-time HTML detail,
+    not a model field.
+    """
+
+    mode: str  # "portfolio" | "project"
+    portfolio: PortfolioReport | None = None
+    project: StatusReport | None = None
+    run_config: dict[str, Any] | None = None
+    health: list[Any] = field(default_factory=list)  # doctor.Check items
 
 
 # ---------------------------------------------------------------------------
@@ -715,6 +739,83 @@ def portfolio(root: Path | None = None) -> PortfolioReport:
     briefs = [_project_brief(p) for p in discover_projects(root)]
     briefs.sort(key=_attention_rank)
     return PortfolioReport(root=str(root), projects=briefs)
+
+
+# Alias so ``dashboard_model`` can call this function without its ``portfolio``
+# parameter shadowing the name inside the function body.
+_portfolio_report = portfolio
+
+
+def _run_config_dict(start: Path | None = None) -> dict[str, Any] | None:
+    """Map ``config.load_run_config()`` to a plain, non-secret dict for the
+    dashboard. Only the ``[run]`` table is read — never ``[telegram]`` / env
+    (D-dash-3). Wraps ``ConfigError`` into ``ControlError`` for a single typed
+    surface."""
+    try:
+        cfg = _config.load_run_config(start)
+    except _config.ConfigError as e:
+        raise ControlError(str(e)) from e
+    return {
+        "backend": cfg.backend,
+        "model": cfg.model,
+        "max_budget_usd": cfg.max_budget_usd,
+        "backends": dict(cfg.backends),
+    }
+
+
+def dashboard_model(
+    root: Path | None = None, *, portfolio: bool | None = None
+) -> DashboardModel:
+    """Compose the allowlisted dashboard model (design §10, v0).
+
+    Mode resolution (both modes supported):
+    1. ``root`` given and is itself a project → **single-project** mode.
+    2. ``root`` given and is a parent folder → **portfolio** mode over it.
+    3. ``root`` omitted, a project root discoverable from CWD → **single-project**.
+    4. else → **portfolio** mode over CWD.
+    ``portfolio=True|False`` forces a mode, overriding the rules (unused by the
+    CLI; a testing/embedding lever).
+
+    Only the four allowed sources are read here — this function is the single
+    auditable allowlist seam. It never calls ``load_telegram_config`` and never
+    reads ``os.environ``.
+    """
+    # Lazy import breaks a control <-> doctor import edge (doctor imports control
+    # inside its project check).
+    from i2c import doctor as _doctor
+
+    if portfolio is True:
+        mode = "portfolio"
+    elif portfolio is False:
+        mode = "project"
+    elif root is not None:
+        # A project dir renders that project; a parent (folder of projects)
+        # renders the portfolio.
+        is_project = (Path(root) / ".state" / "project.json").is_file()
+        mode = "project" if is_project else "portfolio"
+    else:
+        try:
+            find_project_root()
+            mode = "project"
+        except NotFoundError:
+            mode = "portfolio"
+
+    portfolio_view: PortfolioReport | None = None
+    project_view: StatusReport | None = None
+    if mode == "portfolio":
+        config_start = root if root is not None else Path.cwd()
+        portfolio_view = _portfolio_report(config_start)
+    else:
+        config_start = root if root is not None else find_project_root()
+        project_view = status(config_start)
+
+    return DashboardModel(
+        mode=mode,
+        portfolio=portfolio_view,
+        project=project_view,
+        run_config=_run_config_dict(config_start),
+        health=_doctor.run_checks().checks,
+    )
 
 
 # ---------------------------------------------------------------------------

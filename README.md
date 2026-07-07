@@ -50,7 +50,8 @@ in-place `.state/` upgrades (see
 On top of the state model sits a **single structured command layer**
 (`i2c.control`) with an operator CLI — `i2c status` / `portfolio` /
 `phase-summary` / `decisions` / `devlog` / `escalation` / `logs` / `diagnose`
-(all with a `--json` mode) plus the `clear-boundary` and `reconcile` actions —
+(all with a `--json` mode) plus the `clear-boundary` and `reconcile` actions,
+a static-HTML `dashboard` —
 and an optional **Telegram surface** (see [Chat surface](#chat-surface-telegram)).
 Both are thin, deterministic adapters over the same command API.
 
@@ -376,6 +377,30 @@ Commands:
   per-action from `[run.backends]`; `/reconcile [proj] [apply]` — apply
   workflow-drift fixes (dry-run unless `apply`); `/endphase [proj] [last]` —
   clear the `audit_boundary` (advance, or `last` to terminate).
+
+---
+
+## Dashboard (static HTML)
+
+`i2c dashboard` emits a **self-contained HTML snapshot** — no server, no auth,
+no network — that opens in any browser and syncs over the shared disk. It is
+the visual sibling of `i2c status` / `i2c portfolio`: a human-owned, frozen
+shell (Pico.css, classless) into which the generator only *binds* an
+allowlisted model (JSON → DOM).
+
+```bash
+i2c dashboard                      # single-project snapshot when inside a project
+i2c dashboard --root /projects     # portfolio of every project under a folder
+i2c dashboard --out board.html     # choose the output path (default dashboard.html)
+i2c dashboard --json               # print the allowlisted model instead of HTML
+```
+
+The model composes only four sources — `.state/` (portfolio/status), the
+non-secret `[run]` config, and `doctor` output — and **never** reads
+`[telegram]` or the environment (deny-by-default). `dashboard.html` is a
+regenerable artifact (gitignored); regenerate it on demand. v0 renders
+tables/text (portfolio, per-project drill, health); telemetry charts arrive in
+v0.1.
 
 ---
 

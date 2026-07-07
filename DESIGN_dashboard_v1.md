@@ -6,9 +6,11 @@
 > scope (operator, 2026-07-01): read-only; static-first; LAN-sufficient now, but
 > engineered so a **future remote user** is an additive extension. Waymark is
 > deferred indefinitely (this subsumes its read-only scope). Decisions: D-dash-*.
-> **v0 build approach specified 2026-07-07 — see §10 (frozen shell + JSON
-> binding, D-dash-6..10): the visual design is a one-time frozen Refine artifact;
-> the model only binds data.**
+> **v0 shipped 2026-07-07 (tables-only; Pico.css; charts + telemetry = v0.1) —
+> see §10 (frozen shell + JSON binding, D-dash-6..10): the visual design is a
+> one-time frozen Refine artifact; the model only binds data.** `i2c dashboard`
+> emits a self-contained HTML snapshot (portfolio / per-project drill / health);
+> the telemetry aggregator + Chart.js panels are the tracked v0.1 follow-up.
 
 ---
 
@@ -245,6 +247,12 @@ Ship the cheap, text/table + basic-chart panels first: **portfolio** table,
 **telemetry** line charts (cost / tokens / outcome over iterations), **health**
 (`doctor`). Topology (§6) is additive later (Q-dash-4). Fancier panels are
 purely additive — they add JSON keys + shell mount points, no rework.
+
+> **As shipped (v0, 2026-07-07):** portfolio + per-project drill + health
+> (tables/text only). The **telemetry** charts (and the `i2c telemetry`
+> aggregator they need, plus vendoring Chart.js) were split out to **v0.1** to
+> keep v0 a thin generator over projections that already exist — additive, per
+> D-dash-2.
 
 ### Testing
 
