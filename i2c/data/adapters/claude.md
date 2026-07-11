@@ -18,7 +18,13 @@ projects that wrap i2c with additional rules, name the wrapper. -->
 ## Available Modules
 <!-- List tracks and modules. This gives the worker high-level orientation
 without loading PROJECT.md or ARCHITECTURE.md (both of which the assembler
-includes when an action needs them — PLAN, REVIEW). Example:
+includes when an action needs them — PLAN, REVIEW).
+
+Pattern A (per-module ARCH files): list the modules, one per ARCH_<module>.md.
+Pattern B (single-document, project.json.pattern="B"): there are no per-module
+files — list the ARCHITECTURE.md layers/components (or a brief file list), or
+leave this minimal, since scope comes from ARCHITECTURE.md's Implementation
+Sequence. Example:
 
 **Track A — Core Logic:**
 - `event_store`: append-only durable storage with cursor reader

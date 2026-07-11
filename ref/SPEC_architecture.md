@@ -45,8 +45,9 @@ the other. PLAN bridges them.
 
 ARCHITECTURE.md is loaded for PLAN and REVIEW for every project.
 Per-module ARCH files (Pattern A only) are loaded whenever
-`phases.json[].module` is set to point at one. Pattern B projects leave
-`module` absent; PLAN works from ARCHITECTURE.md alone.
+`phases.json[].module` is set to point at one. Pattern B projects declare
+`project.json.pattern = "B"`, leave `module` absent, and PLAN works from
+ARCHITECTURE.md alone.
 
 Progress tracking is in `.state/phases.json` (each record carries
 `status: pending | complete`). ARCHITECTURE.md's Implementation
@@ -446,20 +447,38 @@ verbatim in the worker's prompt.
 
 ## Pattern choice and i2c machinery
 
-The schema and assembler handle both patterns transparently:
+The pattern is recorded explicitly in `.state/project.json` as
+`pattern` (`"A"` or `"B"`; **absent ⇒ `"A"`** for back-compat). `i2c init
+--pattern A|B` stamps it; set it later with `i2c state set project.json
+pattern=B`. This flag is the authoritative signal the assembler keys off:
 
 | Aspect | Pattern A | Pattern B |
 |---|---|---|
-| `.state/phases.json[].module` | Set per phase | Absent |
-| Assembler loads `ARCH_<module>.md` | Yes | N/A |
-| Assembler omits Module Contract section | Only when module absent | Always |
+| `project.json.pattern` | `"A"` (or absent) | `"B"` |
+| `.state/phases.json[].module` | Set per phase | Omitted |
+| Assembler loads `ARCH_<module>.md` | When `module` set | Never (even if a stray `module` is present) |
+| Assembler omits Module Contract section | Only when `module` absent | Always |
 | Assembler loads ARCHITECTURE.md | For PLAN + REVIEW | For PLAN + REVIEW |
 | PLAN reads phase decomposition from | `ARCH_<module>.md` `## Phasing in This Pilot` | `ARCHITECTURE.md` `## Implementation Sequence` |
 | `## Escalation Triggers` lives in | Per-module ARCH | ARCHITECTURE.md (or per-Layer Contract) |
 
-No schema changes, no assembler changes needed for either pattern. The
-distinction is entirely in *where the content lives* and *how PLAN
-finds it*.
+Under Pattern B the assembler ignores any `module` on a phase record — so a
+`module` PLAN wrote by mistake no longer wedges TESTS/EXECUTE/CLOSE at prompt
+assembly (FU-48). PLAN, in turn, must **not** set `module` under Pattern B
+(`instructions/plan.md` step 4). Under Pattern A a `module` set with a missing
+`ARCH_<module>.md` remains a hard error (it catches typos).
+
+The `pattern` field is the only schema/assembler surface the distinction adds;
+everything else is *where the content lives* and *how PLAN finds it*.
+
+> **D-pattern-1 (Active, FU-48).** `project.json.pattern` (`"A"` | `"B"`,
+> absent ⇒ `"A"`) is the authoritative A/B signal. The assembler omits the
+> per-module contract whenever `pattern == "B"` — ignoring a stray `module`
+> rather than hard-failing — so a single-document project cannot be wedged by an
+> erroneous `module` write; under Pattern A a `module` with a missing
+> `ARCH_<module>.md` stays a hard error. Supersedes the earlier "no schema
+> changes needed for either pattern" claim (the additive `pattern` field +
+> `schema_version` 2→3 no-op migration).
 
 ---
 
@@ -467,16 +486,17 @@ finds it*.
 
 Projects can start in one pattern and migrate:
 
-- **B → A (extract a module):** create a new `ARCH_<module>.md` carrying
-  the extracted content; update the relevant phases.json record to set
-  `module: "<module>"`; trim the source content from ARCHITECTURE.md
-  (or leave it as a stub summary). Useful when one component grows
-  enough to deserve its own document.
-- **A → B (collapse modules):** consolidate the per-module ARCH file
-  content into ARCHITECTURE.md (either flat or as a Layer Contract);
-  remove the `module` field from the relevant phases.json records;
-  delete the per-module file. Useful when modules turn out to be more
-  coupled than the original split anticipated.
+- **B → A (extract a module):** set `project.json.pattern=A` (or remove it),
+  create a new `ARCH_<module>.md` carrying the extracted content; update the
+  relevant phases.json record to set `module: "<module>"`; trim the source
+  content from ARCHITECTURE.md (or leave it as a stub summary). Useful when one
+  component grows enough to deserve its own document.
+- **A → B (collapse modules):** set `project.json.pattern=B`; consolidate the
+  per-module ARCH file content into ARCHITECTURE.md (either flat or as a Layer
+  Contract); the `module` field on phase records becomes inert (the assembler
+  ignores it under Pattern B) — stop setting it on new phases; delete the
+  per-module file. Useful when modules turn out to be more coupled than the
+  original split anticipated.
 
 Neither migration is structural. The cost is the doc edit; nothing in
 the assembler, runner, or state machine changes.

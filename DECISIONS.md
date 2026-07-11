@@ -145,6 +145,7 @@ authority (the same anti-duplication principle behind D-pkg-14).
 | `D-impl-*` | `ARCH_assembler.md` | Assembler implementation choices (e.g. D-impl-3 NEXT-state table, D-impl-4 single-file module organization) |
 | `D-arch-*` | `ARCH_assembler.md` | Assembler contract decisions (e.g. D-arch-12, the `--emit` split per FU-35) |
 | `D-prose-*` | `instructions/*.md`, `templates/README.md` | Worker-facing prose / template choices (e.g. D-prose-4 per-project slash commands, D-prose-8 retained production-incident anecdotes) |
+| `D-pattern-*` | `ref/SPEC_architecture.md` | Architecture pattern A/B choice + machinery (e.g. D-pattern-1: explicit `project.json.pattern` flag is the authoritative A/B signal; assembler ignores a stray `module` under Pattern B — FU-48) |
 
 ---
 

@@ -689,6 +689,31 @@ class TestModuleContract(unittest.TestCase):
             ctx = build_ctx(action="execute", phase=2)
             self.assertEqual(ac.render_module_contract(ctx), "")
 
+    def test_module_contract_omitted_under_pattern_b(self):
+        # Pattern B: a stray `module` on a phase record is ignored (FU-48), so no
+        # ARCH_<module>.md is required and no error is raised — even though phase
+        # 2 carries module=event_store and no ARCH file exists.
+        with TempProject() as root:
+            proj_path = root / ".state" / "project.json"
+            proj = json.loads(proj_path.read_text())
+            proj["pattern"] = "B"
+            proj_path.write_text(json.dumps(proj))
+            ctx = build_ctx(action="execute", phase=2)
+            self.assertEqual(ac.render_module_contract(ctx), "")
+
+    def test_module_contract_pattern_a_explicit_still_errors(self):
+        # Explicit pattern=A keeps the hard-require (typo-catch) behavior for a
+        # module whose ARCH file is missing.
+        with TempProject() as root:
+            proj_path = root / ".state" / "project.json"
+            proj = json.loads(proj_path.read_text())
+            proj["pattern"] = "A"
+            proj_path.write_text(json.dumps(proj))
+            ctx = build_ctx(action="execute", phase=2)
+            with self.assertRaises(SystemExit) as cm:
+                ac.render_module_contract(ctx)
+            self.assertEqual(cm.exception.code, 1)
+
 
 class TestProjectContextRenderers(unittest.TestCase):
     def test_project_state_is_json_block(self):

@@ -287,15 +287,22 @@ def cmd_init(args: argparse.Namespace) -> int:
     backends = ("claude", "codex") if args.backend == "both" else (args.backend,)
     try:
         report = scaffold.init_project(
-            root, name=name, backends=backends, force=args.force
+            root, name=name, backends=backends, pattern=args.pattern,
+            force=args.force,
         )
     except scaffold.ScaffoldError as e:
         return _fail(e)
     for line in report:
         sys.stdout.write(f"  {line}\n")
+    arch_hint = (
+        "add ARCH_<module>.md per module; "
+        if args.pattern == "A"
+        else "(Pattern B: no per-module ARCH files — keep it all in ARCHITECTURE.md); "
+    )
     sys.stdout.write(
         "\nNext steps: fill in PROJECT.md, ARCHITECTURE.md, and the adapter(s); "
-        "add ARCH_<module>.md per module; then\n"
+        f"{arch_hint}"
+        "seed phases.json (one append-record per phase); then\n"
         "  i2c assemble --action plan --phase 1 --mode supervised\n"
     )
     return 0
@@ -810,6 +817,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument(
         "--backend", choices=("claude", "codex", "both"), default="both",
         help="Which adapter(s) to scaffold. Default: both.",
+    )
+    p_init.add_argument(
+        "--pattern", choices=("A", "B"), default="A",
+        help="Architecture pattern: A = per-module ARCH files; "
+        "B = single-document ARCHITECTURE.md. Default: A. "
+        "Change later with `i2c state set project.json pattern=...`.",
     )
     p_init.add_argument(
         "--force", action="store_true",

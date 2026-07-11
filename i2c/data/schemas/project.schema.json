@@ -12,6 +12,11 @@
       "minimum": 1,
       "description": "Framework schema version this .state/ targets. Absent ⇒ legacy (pre-versioning, treated as version 0) → run `i2c migrate`. i2c init stamps the current version."
     },
+    "pattern": {
+      "type": "string",
+      "enum": ["A", "B"],
+      "description": "Architecture-authoring pattern (ref/SPEC_architecture.md). 'A' = per-module ARCH_<module>.md contracts (phases carry a `module`); 'B' = single-document ARCHITECTURE.md, no per-module files (phases omit `module`). Absent ⇒ treated as 'A' (back-compat). Under 'B' the assembler never loads a per-module contract, even if a phase carries a stray `module`. i2c init stamps this; set it explicitly for single-document projects with `i2c state set project.json pattern=B`."
+    },
     "phase": {
       "type": "integer",
       "minimum": 0,

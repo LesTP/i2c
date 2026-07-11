@@ -746,9 +746,21 @@ def render_module_contract(ctx: AssemblerContext) -> str:
 
     Per ARCH §11.1: required if phases.json[current].module is set;
     omitted entirely if not.
+
+    Pattern B (project.json.pattern == "B"): single-document architecture has
+    no per-module contracts, so this section is always omitted — even if a phase
+    carries a stray ``module`` (e.g. one PLAN wrote in error, FU-48). The omit is
+    silent: this renderer runs on every action, and ``module`` is meaningless
+    under Pattern B, so a per-invocation warning would be pure noise; the PLAN
+    procedure (instructions/plan.md) is the place the stray write is prevented.
+
+    Pattern A / absent: ``module`` set ⇒ ARCH_<module>.md is required; a missing
+    file is a hard error (catches typos like module="orchestratr").
     """
     record = ctx.current_phase_record()
     if record is None:
+        return ""
+    if ctx.project.get("pattern") == "B":
         return ""
     module = record.get("module")
     if not module:
@@ -758,7 +770,9 @@ def render_module_contract(ctx: AssemblerContext) -> str:
         error_exit(
             "module contract missing",
             str(path),
-            f"ARCH_{module}.md not found for current phase's module",
+            f"ARCH_{module}.md not found for current phase's module. "
+            "If this is a single-document project, set project.json.pattern=B "
+            "(then the per-module contract is not required).",
         )
     text = path.read_text(encoding="utf-8")
     body = _extract_after_first_h2(text) or text

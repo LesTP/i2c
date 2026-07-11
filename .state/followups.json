@@ -286,5 +286,77 @@
     "refs": [
       "DESIGN_tests_action_v1.md §9 (Supervised command surface)"
     ]
+  },
+  {
+    "id": "FU-46",
+    "title": "Bootstrap doc: add explicit seed-phases.json step",
+    "kind": "doc-reconciliation",
+    "status": "closed",
+    "opened": "2026-07-10",
+    "context": "README Bootstrap a new i2c project jumps from (i2c init seeds empty phases) straight to (i2c assemble --action plan --phase 1) but never says to append phase records. The assembler hard-requires a record for the current phase (assemble_context.py ~L702: phases.json must list current phase), so following the documented steps verbatim errors out. Add a step after fill-scaffolded-files to append one phases.json record per phase via i2c state append-record phases.json, then set the gate via i2c state set project.json phase=1 state=plan.",
+    "trigger": "Standing up build-a-stew on the share: i2c assemble failed until phases.json was seeded by hand.",
+    "priority": "next",
+    "files": [
+      "README.md",
+      "examples/README.md"
+    ],
+    "closed": "2026-07-10",
+    "resolution": "Fixed in README bootstrap: added an explicit seed-phases.json step and choose-pattern-at-init guidance (Pattern A sets module; Pattern B omits it), so following the steps verbatim no longer errors at first i2c assemble. Done alongside FU-48."
+  },
+  {
+    "id": "FU-47",
+    "title": "Bootstrap doc: phase module field is optional and requires ARCH_<module>.md",
+    "kind": "doc-reconciliation",
+    "status": "closed",
+    "opened": "2026-07-10",
+    "context": "Bootstrap step 4 says author ARCH_<module>.md for each module that needs a contract, but does not state that setting the module field on a phase record makes ARCH_<module>.md mandatory (render_module_contract error_exit in assemble_context.py ~L757). Single-document Pattern B projects must omit module from phase records or assemble fails with (module contract missing). Document the module-optional rule plus Pattern B guidance in the bootstrap section.",
+    "trigger": "build-a-stew (Pattern B) assemble failed with (module contract missing: ARCH_bootstrap.md); needed an init --force redo to drop the module field.",
+    "priority": "next",
+    "files": [
+      "README.md",
+      "i2c/assemble_context.py",
+      "ref/SPEC_architecture.md"
+    ],
+    "closed": "2026-07-10",
+    "resolution": "Upgraded and superseded by FU-48 : reclassified from doc-reconciliation to a bugfix because PLAN silently sets the phase module, which then hard-breaks single-document (Pattern B) assembles. Doc note still folded into the new FU."
+  },
+  {
+    "id": "FU-48",
+    "title": "PLAN silently sets phase module, breaking single-document (Pattern B) projects",
+    "kind": "bugfix",
+    "status": "closed",
+    "opened": "2026-07-10",
+    "context": "During PLAN the worker writes module (and dependencies) onto the current phase record even for single-document projects that have no ARCH_<module>.md. The assembler then hard-requires ARCH_<module>.md for every following action (render_module_contract error_exit, assemble_context.py ~L757), so TESTS and EXECUTE fail at prompt assembly. Observed on build-a-stew: phases were seeded module-less, PLAN added module=bootstrap, then /batch exited exit=2 at the TESTS assemble (module contract missing: ARCH_bootstrap.md) with no iter-2 transcript. Fix options: (a) PLAN should not set module unless the project opts into per-module contracts or ARCH_<module>.md already exists; (b) auto-scaffold a stub ARCH_<module>.md when PLAN sets module; or (c) assembler degrades to ARCHITECTURE.md when module is set but no contract file exists. Upgrades FU-47 from a doc fix to a behavior fix.",
+    "trigger": "build-a-stew autonomous /batch exited exit=2 at TESTS assembly: PLAN had set module=bootstrap but ARCH_bootstrap.md does not exist (Pattern B).",
+    "priority": "now",
+    "files": [
+      "i2c/assemble_context.py",
+      "i2c/data/instructions/plan.md",
+      "i2c/data/adapters/claude.md",
+      "README.md"
+    ],
+    "refs": [
+      "FU-46",
+      "FU-47"
+    ],
+    "closed": "2026-07-10",
+    "resolution": "Fixed via explicit project.json.pattern flag (D-pattern-1). Schema adds optional pattern enum [A,B] (absent=A); assembler render_module_contract omits the module contract under pattern=B and ignores a stray module (no more exit=2); plan.md step 4 sets module only under Pattern A; i2c init --pattern stamps it; schema_version 2->3 no-op migration; Pattern A missing-file error now hints pattern=B. Verified: build-a-stew TESTS assembly now exits 0. 644 tests + smoke green."
+  },
+  {
+    "id": "FU-49",
+    "title": "Pattern B: load ARCHITECTURE.md as module-contract source in EXECUTE/CLOSE",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-07-10",
+    "context": "In Pattern B (module absent) render_module_contract returns empty, so EXECUTE and CLOSE receive no architecture doc at all - ARCHITECTURE.md is assembled only for PLAN and REVIEW, while Pattern A gets ARCH_<module>.md in all five actions. Proposal: when project.json.pattern==B, use ARCHITECTURE.md as the module-contract source for EXECUTE/CLOSE (and possibly TESTS), loaded via the real path with correct first-h2 extraction, and skipped in PLAN/REVIEW to avoid double-loading the doc already present there. Open question: does this help or just bloat the EXECUTE prompt, given the frozen acceptance suite already encodes the contract? Rejected the ARCH_ITECTURE.md filename-pun (module=ITECTURE) as too fragile/surprising.",
+    "trigger": "Surfaced while planning FU-48 (explicit project.json.pattern flag). Blocked on FU-48 landing - the pattern flag is the prerequisite signal. Decide on merits once a Pattern B project (build-a-stew) has run EXECUTE/CLOSE and we can see whether missing arch context actually hurts.",
+    "priority": "eventually",
+    "files": [
+      "i2c/assemble_context.py"
+    ],
+    "refs": [
+      "FU-48",
+      "ref/SPEC_architecture.md"
+    ]
   }
 ]

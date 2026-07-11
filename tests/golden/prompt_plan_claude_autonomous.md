@@ -330,7 +330,21 @@ mix regimes in one phase, split it.
 
 ### 4. Write or update the phase record
 
-If the phase record does not yet exist in `phases.json`, append it:
+**First, determine the project's architecture pattern** from the `pattern`
+field in your assembled `Project State` section (`project.json.pattern`):
+
+- **Pattern `"B"` (or the project is otherwise single-document)** — do **not**
+  set a `module`. Pattern B has no per-module `ARCH_<module>.md` files; scope
+  comes from `ARCHITECTURE.md`'s `## Implementation Sequence` row for this
+  phase. Setting `module` here points the assembler at a contract file that does
+  not exist and wedges every later action (TESTS/EXECUTE/CLOSE) at prompt
+  assembly (FU-48).
+- **Pattern `"A"` (or `pattern` absent, the default)** — set `module` to the
+  per-module ARCH file this phase targets, as shown below.
+
+If the phase record does not yet exist in `phases.json`, append it.
+
+Pattern A (per-module contract):
 
 ```bash
 i2c state append-record phases.json '{
@@ -343,8 +357,21 @@ i2c state append-record phases.json '{
 }'
 ```
 
-Required fields: `id`, `title`, `regime`, `status`. Recommended: `module`,
-`dependencies`. See `schemas/phases.schema.json` for the full surface.
+Pattern B (single-document — no `module`):
+
+```bash
+i2c state append-record phases.json '{
+  "id": 3,
+  "title": "Interactive Composer",
+  "regime": "build",
+  "dependencies": [],
+  "status": "pending"
+}'
+```
+
+Required fields: `id`, `title`, `regime`, `status`. `module` is **Pattern A
+only** (omit it under Pattern B); `dependencies` is recommended. See
+`schemas/phases.schema.json` for the full surface.
 
 `dependencies` lists other module names this phase's module reads or calls.
 Use an empty array for leaf modules. Non-empty `dependencies` triggers the

@@ -18,7 +18,12 @@ The ``0 → 1`` migration drops the removed ``blocked``
 field (retired in DESIGN_state_lifecycle_v1) and stamps ``schema_version``.
 The ``1 → 2`` migration is a no-op that only bumps the stamp — a forward-compat
 guard for the ``tests`` action's additive enum values (DESIGN_tests_action_v1.md
-§10, D-tests-7). The registry is the extension point for future versions.
+§10, D-tests-7). The ``2 → 3`` migration is likewise a no-op stamp bump — a
+forward-compat guard for the additive optional ``project.json.pattern`` field
+(FU-48): an older i2c whose schema is ``additionalProperties: false`` would
+otherwise reject a ``pattern``-stamped project with an opaque validation error
+instead of a clean "upgrade i2c". The registry is the extension point for future
+versions.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from i2c import state as _state
 from i2c import validate as v
 
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 class MigrationError(Exception):
@@ -122,11 +127,26 @@ def _migrate_1_to_2(state_dir: Path, *, dry_run: bool = False) -> list[str]:
     return []
 
 
+def _migrate_2_to_3(state_dir: Path, *, dry_run: bool = False) -> list[str]:
+    """2 → 3: no-op transform (forward-compat guard for ``project.json.pattern``).
+
+    FU-48 adds an optional ``pattern`` field to ``project.json``. Existing
+    ``.state/`` files omit it and keep validating (absent ⇒ Pattern A), so there
+    is no data transform. The version bump exists so an *older* i2c — whose
+    project schema is ``additionalProperties: false`` and has no ``pattern``
+    property — rejects a ``pattern``-stamped project via the newer-than-current
+    guard ("upgrade i2c") rather than an opaque validation failure. The
+    ``schema_version`` stamp is applied centrally by ``migrate_project``.
+    """
+    return []
+
+
 # Ordered registry: from-version → step. Sequential application from the
 # project's current version up to (but not including) CURRENT_SCHEMA_VERSION.
 _MIGRATIONS: dict[int, Callable[..., list[str]]] = {
     0: _migrate_0_to_1,
     1: _migrate_1_to_2,
+    2: _migrate_2_to_3,
 }
 
 

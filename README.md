@@ -144,7 +144,7 @@ Diffs of these files cleanly show every state transition.
 
 | File | Shape | What it holds |
 |------|-------|---------------|
-| `project.json` | JSON object | Current phase number, lifecycle state, gotchas, step or time budget |
+| `project.json` | JSON object | Current phase number, lifecycle state, architecture `pattern` (A/B), gotchas, step or time budget |
 | `phases.json` | Array of objects | One record per phase — id, module, title, regime (build/refine/explore), dependencies, status |
 | `steps.json` | Array of objects | One record per step across all phases — (phase, step), title, status, commit hash |
 | `devlog.jsonl` | One JSON object per line | Append-only history of every action's outcome |
@@ -427,21 +427,27 @@ v0.1.
 3. **Scaffold the project** with `i2c init` (run in the project root):
 
    ```bash
-   i2c init                      # or: i2c init --name MyProject --backend both
+   i2c init                               # Pattern A (per-module ARCH files) by default
+   # or: i2c init --name MyProject --backend both --pattern B
    ```
 
-   This seeds `.state/` (`project.json` at phase 0 / state plan, empty
-   `phases`/`steps`/`decisions`, empty `devlog.jsonl`), writes `PROJECT.md` and
-   `ARCHITECTURE.md` templates, scaffolds the adapter(s)
-   (`CLAUDE.md` / `CODEX.md`), and adds `logs/loop/` to `.gitignore`. It refuses
-   to clobber an existing project unless you pass `--force`.
+   This seeds `.state/` (`project.json` at phase 0 / state plan, with the
+   architecture `pattern` stamped; empty `phases`/`steps`/`decisions`; empty
+   `devlog.jsonl`), writes `PROJECT.md` and `ARCHITECTURE.md` templates,
+   scaffolds the adapter(s) (`CLAUDE.md` / `CODEX.md`), and adds `logs/loop/` to
+   `.gitignore`. It refuses to clobber an existing project unless you pass
+   `--force`. Choose the pattern now (`A` = per-module `ARCH_<module>.md`
+   contracts; `B` = single-document `ARCHITECTURE.md`; see
+   [`ref/SPEC_architecture.md`](ref/SPEC_architecture.md)) — you can change it
+   later with `i2c state set project.json pattern=A|B`.
 
 4. **Fill in the scaffolded files:**
    - `PROJECT.md` — scope, constraints, success criteria
    - `ARCHITECTURE.md` — component map, implementation sequence
    - `CLAUDE.md` / `CODEX.md` — adapter Available Modules + project notes
-   - `ARCH_<module>.md` for each module that needs a contract (see
-     [`ref/SPEC_architecture.md`](ref/SPEC_architecture.md))
+   - **Pattern A only:** `ARCH_<module>.md` for each module that needs a
+     contract (see [`ref/SPEC_architecture.md`](ref/SPEC_architecture.md)).
+     Pattern B keeps everything in `ARCHITECTURE.md` — no per-module files.
 
    To customize a packaged procedure, eject it into the project and edit the
    local copy (it then wins over the packaged default, §5.3):
@@ -450,13 +456,25 @@ v0.1.
    i2c eject instructions/plan.md     # or: i2c eject WORKER_SPEC.md / instructions
    ```
 
-5. **Run the smoke test** to confirm the toolchain works in your environment:
+5. **Seed the phase list** into `.state/phases.json` from your
+   `ARCHITECTURE.md` Implementation Sequence — one `append-record` per phase, so
+   the assembler has a record for the phase you plan. Set `module` **only** under
+   Pattern A; omit it under Pattern B:
+
+   ```bash
+   # Pattern A (per-module contract):
+   i2c state append-record phases.json '{"id":1,"module":"bootstrap","title":"Project scaffolding","regime":"build","dependencies":[],"status":"pending"}'
+   # Pattern B (single-document — no module):
+   i2c state append-record phases.json '{"id":1,"title":"Project scaffolding","regime":"build","dependencies":[],"status":"pending"}'
+   ```
+
+6. **Run the smoke test** to confirm the toolchain works in your environment:
 
    ```bash
    python3 examples/smoke_test.py
    ```
 
-6. **Begin Phase 1** in supervised mode:
+7. **Begin Phase 1** in supervised mode:
 
    ```bash
    i2c assemble --action plan --phase 1 --mode supervised

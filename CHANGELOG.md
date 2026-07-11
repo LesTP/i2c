@@ -10,6 +10,14 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Added
 
+- **`project.json.pattern` — explicit architecture pattern (A/B).** New optional
+  field recording whether a project uses per-module `ARCH_<module>.md` contracts
+  (`"A"`) or a single-document `ARCHITECTURE.md` (`"B"`); **absent ⇒ `"A"`**
+  (back-compat). `i2c init` stamps it (new `--pattern A|B` flag, default `A`);
+  change it later with `i2c state set project.json pattern=A|B`. It is the
+  authoritative signal the assembler uses to decide whether a per-module
+  contract is required. See `ref/SPEC_architecture.md`.
+
 - **`i2c dashboard` — self-contained HTML snapshot (v0, tables-only).** A new
   subcommand emits a single offline `dashboard.html` (no server, no auth, no
   network) that opens in any browser and syncs over the shared disk. It follows
@@ -64,6 +72,32 @@ This is the public counterpart to `STATUS.md` (internal tracking).
   model-benchmark evidence, since it would forfeit the per-step commit and
   per-(action, step) telemetry granularity FU-40 established. Contract docs
   (`ARCH_assembler.md`, `WORKFLOW.md`) simplified to match.
+
+### Fixed
+
+- **PLAN no longer wedges single-document (Pattern B) projects (FU-48).**
+  Previously PLAN could write a `module` onto a phase record even for a project
+  with no `ARCH_<module>.md`, after which the assembler hard-required that file
+  and every later action (TESTS/EXECUTE/CLOSE) failed at prompt assembly with an
+  opaque `exit=2`. Now: (1) the assembler omits the Module Contract section
+  whenever `project.json.pattern == "B"`, ignoring any stray `module` (so a
+  corrupted `.state/` no longer crashes the loop); (2) `instructions/plan.md`
+  step 4 tells the worker to set `module` only under Pattern A; and (3) the
+  Pattern A "contract missing" error now hints at setting `pattern=B` for
+  single-document projects.
+- **Bootstrap docs: seed `phases.json` + choose the pattern explicitly (FU-46).**
+  The README bootstrap now includes an explicit "seed the phase list" step and
+  documents choosing Pattern A/B at `i2c init` time, so following the steps
+  verbatim no longer errors out at first `i2c assemble`.
+
+### Migrations
+
+- **`schema_version` 2 → 3 (no-op stamp).** Guards the additive optional
+  `project.json.pattern` field: an older i2c (whose `project.json` schema is
+  `additionalProperties: false`) rejects a newer, `pattern`-stamped project via
+  the newer-than-current guard ("upgrade i2c") rather than an opaque validation
+  error. Existing `.state/` files keep validating unchanged; run `i2c migrate`
+  to re-stamp (no data transform).
 
 ## [0.2.0] - 2026-06-30
 

@@ -92,14 +92,21 @@ def init_project(
     *,
     name: str,
     backends: tuple[str, ...] = BACKENDS,
+    pattern: str = "A",
     force: bool = False,
 ) -> list[str]:
     """Scaffold a new i2c project in ``root``. Returns a report of actions.
+
+    ``pattern`` stamps ``project.json.pattern`` ("A" per-module ARCH files, or
+    "B" single-document ARCHITECTURE.md; see ref/SPEC_architecture.md). It can be
+    changed later with ``i2c state set project.json pattern=...``.
 
     Raises ``ScaffoldError`` if ``.state/project.json`` already exists and
     ``force`` is not set.
     """
     root = Path(root)
+    if pattern not in ("A", "B"):
+        raise ScaffoldError(f"unknown pattern {pattern!r}; expected 'A' or 'B'")
     for b in backends:
         if b not in _ADAPTER_TARGET:
             raise ScaffoldError(f"unknown backend {b!r}; expected one of {BACKENDS}")
@@ -120,6 +127,7 @@ def init_project(
         project_json,
         {
             "schema_version": CURRENT_SCHEMA_VERSION,
+            "pattern": pattern,
             "phase": 0,
             "state": "plan",
             "gotchas": [],

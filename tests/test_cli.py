@@ -673,7 +673,8 @@ class TestMigrateCli(unittest.TestCase):
             self.assertNotIn("schema_version", data)
 
     def test_migrate_current_reports_already(self):
-        with TempProject():  # fixture is already at schema v1
+        with TempProject() as p:  # pin the fixture at the current schema
+            p.patch_project(schema_version=migrate.CURRENT_SCHEMA_VERSION)
             rc, out, err = run_cli("migrate")
             self.assertEqual(rc, 0, msg=err)
             self.assertIn("already", out)
