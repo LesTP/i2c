@@ -128,6 +128,7 @@
 
   var subtitle = document.getElementById("subtitle");
   if (model.mode === "portfolio" && model.portfolio) {
+    document.title = "i2c portfolio dashboard";
     if (subtitle) {
       subtitle.textContent =
         "Portfolio snapshot — " +
@@ -135,7 +136,12 @@
     }
     renderPortfolio(model.portfolio);
   } else if (model.project) {
-    if (subtitle) { subtitle.textContent = "Single-project snapshot."; }
+    var pname = model.project_name;
+    document.title = (pname ? pname + " — " : "") + "i2c dashboard";
+    if (subtitle) {
+      subtitle.textContent =
+        (pname ? pname + " — single-project snapshot." : "Single-project snapshot.");
+    }
     renderProject(model.project);
   }
 

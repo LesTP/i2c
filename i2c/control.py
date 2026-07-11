@@ -276,6 +276,7 @@ class DashboardModel:
     mode: str  # "portfolio" | "project"
     portfolio: PortfolioReport | None = None
     project: StatusReport | None = None
+    project_name: str | None = None  # single-project mode: the project dir name
     run_config: dict[str, Any] | None = None
     health: list[Any] = field(default_factory=list)  # doctor.Check items
 
@@ -474,9 +475,10 @@ def _compute_budget(project: dict[str, Any]) -> dict[str, int] | None:
 # ---------------------------------------------------------------------------
 
 
-def status(root: Path | None = None) -> StatusReport:
+def status(root: Path | None = None, *, recent_limit: int = 3) -> StatusReport:
     """Project-wide snapshot: current phase/state, current-phase steps,
-    gotchas, open decisions, and the recent devlog tail (last 3)."""
+    gotchas, open decisions, and the recent devlog tail (last ``recent_limit``,
+    default 3; the dashboard requests more for context)."""
     root = root or find_project_root()
     st = load_state(root)
     project = st.project
@@ -494,7 +496,7 @@ def status(root: Path | None = None) -> StatusReport:
     open_decisions = [
         _decision_view(d) for d in st.decisions if d.get("status") == "open"
     ]
-    recent = [_devlog_view(e) for e in st.devlog[-3:][::-1]]
+    recent = [_devlog_view(e) for e in st.devlog[-recent_limit:][::-1]]
 
     return StatusReport(
         phase=phase,
@@ -802,17 +804,22 @@ def dashboard_model(
 
     portfolio_view: PortfolioReport | None = None
     project_view: StatusReport | None = None
+    project_name: str | None = None
     if mode == "portfolio":
         config_start = root if root is not None else Path.cwd()
         portfolio_view = _portfolio_report(config_start)
     else:
         config_start = root if root is not None else find_project_root()
-        project_view = status(config_start)
+        project_view = status(config_start, recent_limit=5)
+        # Name the project by its directory (matches the portfolio's `name`),
+        # so the dashboard title can say which project it is.
+        project_name = Path(config_start).absolute().name or None
 
     return DashboardModel(
         mode=mode,
         portfolio=portfolio_view,
         project=project_view,
+        project_name=project_name,
         run_config=_run_config_dict(config_start),
         health=_doctor.run_checks().checks,
     )

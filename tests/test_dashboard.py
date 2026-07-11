@@ -67,6 +67,23 @@ class TestRenderHtmlSelfContained(unittest.TestCase):
     def test_lf_only(self):
         self.assertNotIn("\r", self.html)
 
+    def test_project_name_populated_and_inlined(self):
+        # Single-project mode carries the project dir name so bind.js can put it
+        # in the page/tab title.
+        model = control.dashboard_model(FIXTURE)
+        self.assertEqual(model.mode, "project")
+        self.assertEqual(model.project_name, "initial_state")
+        # Inlined into the model so the frozen shell's title binding can use it.
+        self.assertIn("initial_state", self.html)
+
+    def test_recent_activity_window_wider_than_status_default(self):
+        # The dashboard requests a wider recent-activity window (5) than the
+        # terse `i2c status` default (3). The fixture has 4 devlog entries, so
+        # the dashboard shows all 4 while a default status() caps at 3.
+        dash_model = control.dashboard_model(FIXTURE)
+        self.assertEqual(len(dash_model.project.recent_activity), 4)
+        self.assertEqual(len(control.status(FIXTURE).recent_activity), 3)
+
 
 class TestModelGolden(unittest.TestCase):
     def test_project_slice_byte_golden(self):
