@@ -232,6 +232,72 @@ arm), but the bulk is the harness module + dep. Treat as its own DESIGN if pursu
   per-model benchmark attribution and mixed-backend projects.
 - **Q-or-coverage:** which OpenRouter models drive codex's (or a chosen CLI's)
   tool protocol acceptably?
+- **D-or-4:** opencode is the Option-B spike candidate; aider is fallback-only
+  (doc pre-pass 2026-07-11 — see §3.7).
+- **Q-or-signal:** does `opencode run` stdout preserve the worker's 2-line
+  `EXIT/REASON` block parseably? (the make-or-break unknown; §3.7 acceptance #3.)
+
+---
+
+## 3.7 Spike protocol — validate Option B with opencode (D-or-4)
+
+> **Status:** planned spike. Doc pre-pass done (2026-07-11, laptop); live smoke
+> pending on pirozhok. Time-boxed; produces a findings note + an A-vs-B call, not
+> production code.
+
+**Goal.** Answer whether **opencode** (a general tool-use agent CLI) slots into
+the §1.1 backend contract when pointed at OpenRouter — i.e., whether Option B is
+"one more CLI backend" (small code) or leaks. This is the FU-38b decision gate.
+
+**Why opencode over aider (doc pre-pass, D-or-4).** opencode matches the
+claude/codex *agent-with-a-shell* shape — a general tool-use agent with a **bash
+tool** (so the worker can run `i2c state …`) and no forced auto-commit. aider is a
+code-*editor* agent: its edit-format system prompt is always injected (breaks
+"worker reads only the assembled prompt") and it exposes no generic shell tool the
+model can call (can't write `.state/` via `i2c state`) — two hard-contract leaks.
+So opencode is the candidate; aider is fallback only. *(Pre-pass was from prior
+knowledge, not live docs — confirm opencode's `run` flags + OpenRouter provider
+config on the Pi first; opencode is under fast development.)*
+
+**Where.** The pirozhok `claude-code` container (creds + backend CLIs live there;
+the laptop can't run headless agents — FU-28). Use a throwaway git project (or a
+copy of the CC fixture), **not** a fleet project.
+
+**Pre-req (confirm before the run):**
+- opencode installed; `opencode run --help` confirms a non-interactive one-shot
+  mode and how it takes the prompt (stdin / arg / file).
+- OpenRouter provider configured (`OPENROUTER_API_KEY` + an OpenRouter model id);
+  confirm opencode targets it.
+- `i2c` on opencode's **login-shell** PATH (`bash -lc` check — the codex lesson,
+  README §Requirements).
+
+**Procedure.** Drive one real worker action (a single EXECUTE step on a trivial
+Build phase) through opencode instead of claude/codex:
+1. Assemble the prompt as usual: `i2c assemble --action execute --phase N`.
+2. Feed it to `opencode run` (headless), targeting an OpenRouter model.
+3. Observe whether opencode edits code, runs the test, calls `i2c state …`, and
+   emits the 2-line `EXIT/REASON` block to stdout.
+4. Capture stdout/stderr + the resulting `.state/` + git state.
+
+**Acceptance checklist (the empirical unknowns docs can't settle):**
+
+| # | Check | Contract seam |
+|---|-------|---------------|
+| 1 | `opencode run` accepts the full assembled prompt and acts on it (its own system prompt / `AGENTS.md` auto-read doesn't distort behavior) | prompt delivery |
+| 2 | Model calls `i2c state set/append/complete` successfully (bash tool + PATH) | agency / `i2c state` |
+| 3 | The 2-line `EXIT: 0\|2 / REASON:` survives to stdout and the runner parses it | exit signal (**highest risk**, Q-or-signal) |
+| 4 | An OpenRouter model returns usable output (no `reasoning`-vs-`content` hang, the R1 lesson) on ≥1 tool-capable model | heterogeneity (Q-or-coverage) |
+| 5 | model id + tokens/cost capturable into `telemetry.jsonl`; a cost/turn ceiling is enforceable | attribution/budget (Q-or-model) |
+
+**Decision rule.** *Pass* = all five green on ≥1 OpenRouter model → **adopt Option
+B**: add a `backend="opencode"` arm to the runner/adapter (small), promote D-or-2
+to "B adopted," and follow up with a phase for the backend arm + `pricing.json`
+OpenRouter rates. *Any hard leak* (especially #3 or #2) → record where the contract
+leaked and fall back to **Option A** (in-house harness, §3.5; its own DESIGN).
+
+**Deliverable.** A findings note — per-check pass/leak, the working `opencode run`
+invocation, a candidate model list, and the A-vs-B call — appended here or as the
+FU-38b resolution. No production code in the spike itself.
 
 ---
 
