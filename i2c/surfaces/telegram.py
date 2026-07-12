@@ -121,6 +121,21 @@ def build_application(token: str, root: Path, admins: frozenset[int], state_path
             chat_id = update.effective_chat.id
             args = list(context.args or [])
             current = chat_state.get(chat_id)
+
+            # Bridge core-thread heartbeats (/run, /batch --full) back to the
+            # event loop. Best-effort: a failed/slow notification never breaks
+            # the run. `.result` keeps messages ordered behind the worker.
+            loop = asyncio.get_running_loop()
+
+            def progress(text: str) -> None:
+                try:
+                    fut = asyncio.run_coroutine_threadsafe(
+                        update.message.reply_text(text), loop
+                    )
+                    fut.result(timeout=30)
+                except Exception:
+                    pass
+
             reply = await asyncio.to_thread(
                 tc.dispatch,
                 command,
@@ -129,6 +144,7 @@ def build_application(token: str, root: Path, admins: frozenset[int], state_path
                 root=root,
                 current=current,
                 run_iteration_fn=runner,
+                progress=progress,
             )
             if reply.set_current:
                 chat_state.set(chat_id, reply.set_current)

@@ -55,8 +55,8 @@ COMMAND_MENU: list[tuple[str, str]] = [
     ("portfolio", "Cross-project view — which project needs attention"),
     ("setdir", "Show or set the current project"),
     ("audit", "Audit a project: summary | phase N | decisions | devlog | escalation | logs"),
-    ("run", "Admin: run N iterations on one backend (default 1)"),
-    ("batch", "Admin: run a full phase to a halt (backend per action)"),
+    ("run", "Admin: run N iterations (default 1); add 'full' for per-step progress"),
+    ("batch", "Admin: run a full phase to a halt; add 'full' for per-step progress"),
     ("diagnose", "Diagnose a failed iteration: drift audit + classification (read-only)"),
     ("reconcile", "Admin: apply workflow-drift fixes (dry-run; 'apply' to write)"),
     ("endphase", "Admin: clear the audit_boundary (advance; 'last' to terminate)"),
@@ -74,8 +74,10 @@ _HELP = (
     " /setdir <proj> — Show or set the current project\n"
     "\n"
     "Admin:\n"
-    " /run [proj] [N] [backend] — Run N iterations (default 1) on one backend\n"
-    " /batch [proj] — Run a full phase to a halt; backend chosen per action\n"
+    " /run [proj] [N] [backend] [full] — Run N iterations (default 1) on one "
+    "backend; add 'full' to stream a per-iteration heartbeat\n"
+    " /batch [proj] [full] — Run a full phase to a halt; backend per action; "
+    "add 'full' to stream a per-iteration heartbeat\n"
     " /reconcile [proj] [apply] — Apply workflow-drift fixes; dry-run unless 'apply'\n"
     " /endphase [proj] [last] — Clear the audit_boundary (advance; last = terminate)\n"
     "\n"
@@ -130,6 +132,7 @@ def dispatch(
     root: Path,
     current: str | None = None,
     run_iteration_fn: Callable[[Path, str | None], int] | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> Reply:
     """Run one command and return a Reply. ``run_iteration_fn(proj, backend)``
     (the surface shells ``i2c run`` with the project as CWD; ``backend`` is an
@@ -165,7 +168,7 @@ def dispatch(
     if err:
         return Reply(err, ok=False)
     try:
-        return _dispatch_project(command, rest, proj, run_iteration_fn)
+        return _dispatch_project(command, rest, proj, run_iteration_fn, progress)
     except control.ControlError as e:
         return Reply(f"Error: {e}", ok=False)
 
@@ -181,6 +184,61 @@ def _parse_run_args(rest: list[str]) -> tuple[int, str | None]:
         elif a in _BACKENDS:
             backend = a
     return n, backend
+
+
+def _has_full(rest: list[str]) -> bool:
+    """True when the caller opted into the per-iteration heartbeat. Accepts the
+    bare token ``full`` (documented) or ``--full`` (alias)."""
+    return any(a.lower() in ("--full", "full") for a in rest)
+
+
+def _iter_desc(action: str, step_pos: str, new_state: str, rc: int) -> str:
+    """One-line description of a completed iteration (heartbeat + summary)."""
+    return f"{action}{step_pos} \u2192 {new_state} (exit {rc})"
+
+
+def _run_series(
+    proj: Path,
+    max_iters: int,
+    backend: str | None,
+    run_iteration_fn: Callable[[Path, str | None], int],
+    progress: Callable[[str], None] | None,
+    full: bool,
+) -> tuple[list[tuple[int, str, str, str, int]], int]:
+    """Run up to ``max_iters`` worker iterations, stopping at a halt (EXIT) or a
+    non-zero exit. Returns ``(records, last_rc)`` where each record is
+    ``(n, action, step_pos, new_state, rc)``. When ``full`` and ``progress`` is
+    set, emits a heartbeat line after each iteration (best-effort; the surface
+    bridges it to the chat)."""
+    records: list[tuple[int, str, str, str, int]] = []
+    last_rc = 0
+    for _ in range(max_iters):
+        na = control.next_action(proj)
+        if na.action == "EXIT":
+            break  # halt reached (boundary / escalation / done)
+        action = na.action
+        step_pos = ""
+        if action == "EXECUTE":
+            before = control.status(proj)
+            pend = sorted(s.step for s in before.steps if s.status == "pending")
+            if pend and before.steps:
+                step_pos = f" step {pend[0]} of {len(before.steps)}"
+        last_rc = run_iteration_fn(proj, backend)
+        n = len(records) + 1
+        new_state = control.status(proj).state
+        records.append((n, action, step_pos, new_state, last_rc))
+        if full and progress is not None:
+            progress(f"[{n}] {_iter_desc(action, step_pos, new_state, last_rc)}")
+        if last_rc != 0:
+            break  # escalation / failure halts the series
+    return records, last_rc
+
+
+def _enumerate(records: list[tuple[int, str, str, str, int]]) -> str:
+    """Numbered list of the iterations that ran, for the concluding message."""
+    return "\n".join(
+        f"{n}. {_iter_desc(a, sp, ns, rc)}" for (n, a, sp, ns, rc) in records
+    )
 
 
 def _audit(rest: list[str], proj: Path) -> Reply:
@@ -221,6 +279,7 @@ def _dispatch_project(
     rest: list[str],
     proj: Path,
     run_iteration_fn: Callable[[Path, str | None], int] | None,
+    progress: Callable[[str], None] | None = None,
 ) -> Reply:
     if command == "audit":
         return _audit(rest, proj)
@@ -242,38 +301,33 @@ def _dispatch_project(
     if command == "run":
         if run_iteration_fn is None:
             return Reply("run is not available on this surface.", ok=False)
+        full = _has_full(rest)
         n, backend = _parse_run_args(rest)
-        ran, last_rc = 0, 0
-        for _ in range(n):
-            if control.next_action(proj).action == "EXIT":
-                break  # reached a halt (boundary / escalation / done)
-            last_rc = run_iteration_fn(proj, backend)
-            ran += 1
-            if last_rc != 0:
-                break  # escalation / failure halts the series
+        records, last_rc = _run_series(
+            proj, n, backend, run_iteration_fn, progress, full
+        )
+        ran = len(records)
         state = control.status(proj).state
         be = backend or "project default/map"
         msg = f"Ran {ran}/{n} on {be}; now state={state} (last exit={last_rc})."
-        tail = control.logs(proj, limit=1)
-        if tail:
-            msg += f" {tail[-1].action} -> {tail[-1].reason}"
+        if records and not full:  # with 'full', heartbeats already showed each step
+            msg += "\n" + _enumerate(records)
         return Reply(msg, ok=(last_rc == 0))
 
     if command == "batch":
         if run_iteration_fn is None:
             return Reply("batch is not available on this surface.", ok=False)
-        ran, last_rc = 0, 0
-        for _ in range(_BATCH_MAX):
-            if control.next_action(proj).action == "EXIT":
-                break  # halt state reached
-            last_rc = run_iteration_fn(proj, None)  # None → per-action map
-            ran += 1
-            if last_rc != 0:
-                break  # escalation / failure halts the batch
+        full = _has_full(rest)
+        records, last_rc = _run_series(
+            proj, _BATCH_MAX, None, run_iteration_fn, progress, full
+        )  # None → per-action backend map
+        ran = len(records)
         state = control.status(proj).state
-        return Reply(
+        msg = (
             f"Batch done: {ran} iteration(s); now state={state} "
-            f"(last exit={last_rc}).",
-            ok=(last_rc == 0),
+            f"(last exit={last_rc})."
         )
+        if records and not full:  # with 'full', heartbeats already showed each step
+            msg += "\n" + _enumerate(records)
+        return Reply(msg, ok=(last_rc == 0))
     return Reply(f"Unhandled command: /{command}", ok=False)  # pragma: no cover

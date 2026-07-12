@@ -63,6 +63,16 @@ class _Counter:
         return self.rc
 
 
+class _Progress:
+    """Fake progress callback; records each heartbeat line."""
+
+    def __init__(self):
+        self.lines: list[str] = []
+
+    def __call__(self, text: str) -> None:
+        self.lines.append(text)
+
+
 class TestHelpAndUnknown(unittest.TestCase):
     def test_commands_help(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -319,6 +329,64 @@ class TestBatch(unittest.TestCase):
             r = tc.dispatch("batch", [], is_admin=True, root=root, run_iteration_fn=fake)
             self.assertEqual(fake.n, 0)  # already halted → nothing runs
             self.assertIn("0 iteration", r.text)
+
+
+class TestProgressAndEnumeration(unittest.TestCase):
+    def test_run_enumerates_without_full_and_no_heartbeat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            fake = _Counter(rc=0)
+            prog = _Progress()
+            r = tc.dispatch(
+                "run", ["2"], is_admin=True, root=root,
+                run_iteration_fn=fake, progress=prog,
+            )
+            self.assertEqual(fake.n, 2)
+            self.assertEqual(prog.lines, [])  # no heartbeat unless --full
+            # concluding message enumerates the iterations
+            self.assertIn("1. ", r.text)
+            self.assertIn("2. ", r.text)
+
+    def test_run_full_emits_one_heartbeat_per_iteration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            fake = _Counter(rc=0)
+            prog = _Progress()
+            r = tc.dispatch(
+                "run", ["2", "--full"], is_admin=True, root=root,
+                run_iteration_fn=fake, progress=prog,
+            )
+            self.assertEqual(fake.n, 2)
+            self.assertEqual(len(prog.lines), 2)
+            self.assertTrue(all(ln.startswith("[") for ln in prog.lines))
+            # --full streamed the steps live, so the closing does NOT re-enumerate
+            self.assertNotIn("1. ", r.text)
+            self.assertIn("Ran 2/2", r.text)
+
+    def test_batch_full_emits_heartbeat_per_iteration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            seen: list[str | None] = []
+            prog = _Progress()
+
+            def fake(p, backend=None):
+                seen.append(backend)
+                if len(seen) >= 2:
+                    _set_state(p, "audit_boundary")
+                return 0
+
+            r = tc.dispatch(
+                "batch", ["full"], is_admin=True, root=root,
+                run_iteration_fn=fake, progress=prog,
+            )
+            self.assertEqual(len(seen), 2)
+            self.assertEqual(len(prog.lines), 2)
+            self.assertIn("audit_boundary", r.text)
+            # --full streamed the steps live, so the closing does NOT re-enumerate
+            self.assertNotIn("1. ", r.text)
 
 
 class TestEndphase(unittest.TestCase):
