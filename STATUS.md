@@ -37,11 +37,11 @@ deferred initiative); this is the catch-all orientation + tracker.
 (`i2c diagnose` / `reconcile`) and the **telemetry sidecar** (`.state/telemetry.jsonl`)
 have landed. **FU-40 is complete (2026-07-04)** — the runner now owns *all* git commits (EXECUTE code, REVIEW fix-ups, CLOSE docs, and the .state/ tail); the worker no longer runs git for any action (also closes FU-8).
 The **refine tier** shipped — the ad-hoc backlog is now the `i2c fu` command;
-**Proposal B core also shipped** — the deterministic `i2c refine <fu-id>`
-single-shot loop (assembler `refine` recipe + `instructions/refine.md`,
-`run_refine.py`, the sub-phase invariant, `devlog`/`telemetry` refine support per
-D-refine-8, schema v4 guard, and the `i2c refine` CLI); the `/refine` bot command
-+ followups-only-repo dogfooding are the remaining deferred pieces.
+**Proposal B shipped** — the deterministic `i2c refine <fu-id>` single-shot loop
+(assembler `refine` recipe + `instructions/refine.md`, `run_refine.py`, the
+sub-phase invariant, `devlog`/`telemetry` refine support per D-refine-8, schema v4
+guard, the `i2c refine` CLI) **and the admin-gated `/refine` Telegram command**
+(FU-54); followups-only-repo dogfooding (FU-55) is the remaining deferred piece.
 The **`tests` action** (test/impl separation — the benchmark oracle) **shipped
 2026-07-06 (`a110138`)** and ran clean end-to-end on clankercourts Phase 17.
 **diplomat** migrated to i2c (2026-07-01), live at **phase 51** via the bot;
@@ -52,7 +52,7 @@ via `plan→tests→execute→review→close`; Phase 18 next).
 (telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is SHIPPED** (2026-07-06, `a110138`; validated on clankercourts Phase 17 — oracle integrity held, acceptance suite frozen at the `N.tests` commit). The next benchmark step is the **replay harness on clankercourts + routing v0**.
 See **Active Roadmap** below for tracks, priorities, and the current recommendation.
 
-**Next session (planned order).** (1) **FU-20** (ship `templates/.llms/commands/` for Devmate + the loading check) — *maybe*. (2) then the **benchmark replay harness + routing v0** (tests_action shipped 2026-07-06 — the oracle is now real; **FU-44** scopes `tests_pass` to the acceptance suite and rides the harness) *or* the remaining **Proposal B** surface (the `/refine` bot command; the `i2c refine` loop core is now shipped). B's loop already unlocks the fix/bugfix consolidation.
+**Next session (planned order).** (1) **FU-20** (ship `templates/.llms/commands/` for Devmate + the loading check) — *maybe*. (2) then the **benchmark replay harness + routing v0** (tests_action shipped 2026-07-06 — the oracle is now real; **FU-44** scopes `tests_pass` to the acceptance suite and rides the harness). Proposal B is now fully shipped (the `i2c refine` loop core + the `/refine` bot), so the fix/bugfix consolidation is unblocked.
 
 **Quick orientation** (from a project root with `.state/`, package installed):
 
@@ -124,7 +124,7 @@ Strategic thread: **find the cheapest model that still succeeds per kind of step
 - **Content (ready now):** the "agentic coding evals are self-graded" finding (oracle contamination; analysis done in `DESIGN_benchmark_v1`) is a standalone essay/talk section — it markets i2c without marketing it.
 
 ### Recommendation (updated 2026-07-03)
-0. **Refine tier — ✅ shipped** (Proposal A: the `i2c fu` backlog; **and Proposal B core**: the `i2c refine <fu-id>` single-shot loop). The drift class it targeted is closed; the remaining refine work is the `/refine` bot command + followups-only-repo dogfooding.
+0. **Refine tier — ✅ shipped** (Proposal A: the `i2c fu` backlog; **and Proposal B**: the `i2c refine <fu-id>` single-shot loop + the `/refine` bot command). The drift class it targeted is closed; the only remaining refine item is followups-only-repo dogfooding (FU-55).
 1. **Benchmark thread (§7) is the highest-leverage line.** Test isolation (the `tests` action) **is shipped** (2026-07-06) — the oracle linchpin. Next: the **replay harness on clankercourts + routing v0** (run on pirozhok — laptop cross-mount path bug), with **FU-44** (scope `tests_pass` to the acceptance suite) riding it. Diplomat is the forward telemetry firehose; the model panel rides FU-38.
 2. In parallel, **decide the backend via the §2 spike** (aider/opencode → OpenRouter) — it validates "backend-agnostic" and picks Option A vs B empirically. The **multi-iteration loop** is the alternate big track (after a cache-hit check).
 3. **Sleeper: the Discovery/Architecture interview kit (§5)** — the top *adoption* lever and a pre-release gate; don't leave it in the TBD bucket if public release is near-term.

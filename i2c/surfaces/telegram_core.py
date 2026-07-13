@@ -26,10 +26,13 @@ Command surface (DESIGN_surface_backends_v1.md §4):
 - ``/reconcile [proj] [apply]`` — apply deterministic workflow-drift fixes; dry-run
   by default, ``apply`` writes them (via ``state.py``). Admin-gated.
 - ``/endphase [proj] [last]`` — clear an ``audit_boundary`` (``last`` = terminate).
+- ``/refine [proj] <fu-id> [backend]`` — dispatch one refine worker against a
+  followup (Proposal B, DESIGN_refine_v1.md §12). Admin-gated.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -37,7 +40,7 @@ from typing import Callable
 from i2c import control, render
 
 READ_COMMANDS = frozenset({"audit", "diagnose", "portfolio", "setdir", "commands", "start"})
-MUTATING_COMMANDS = frozenset({"run", "batch", "reconcile", "endphase"})
+MUTATING_COMMANDS = frozenset({"run", "batch", "reconcile", "endphase", "refine"})
 ALL_COMMANDS = READ_COMMANDS | MUTATING_COMMANDS
 
 # Runaway guard for /batch (which has no explicit count). A phase always
@@ -46,6 +49,9 @@ ALL_COMMANDS = READ_COMMANDS | MUTATING_COMMANDS
 _BATCH_MAX = 50
 
 _BACKENDS = ("claude", "codex")
+
+# A followup id token (case-insensitive; normalized to upper-case FU-N).
+_FU_ID_RE = re.compile(r"^FU-\d+$", re.IGNORECASE)
 
 # Telegram slash-command menu (the "/" autocomplete + Menu button). Registered
 # on startup via set_my_commands (see surfaces/telegram._set_command_menu), so it
@@ -60,6 +66,7 @@ COMMAND_MENU: list[tuple[str, str]] = [
     ("diagnose", "Diagnose a failed iteration: drift audit + classification (read-only)"),
     ("reconcile", "Admin: apply workflow-drift fixes (dry-run; 'apply' to write)"),
     ("endphase", "Admin: clear the audit_boundary (advance; 'last' to terminate)"),
+    ("refine", "Admin: dispatch one refine worker against a followup (FU-N)"),
 ]
 
 _HELP = (
@@ -80,6 +87,8 @@ _HELP = (
     "add 'full' to stream a per-iteration heartbeat\n"
     " /reconcile [proj] [apply] — Apply workflow-drift fixes; dry-run unless 'apply'\n"
     " /endphase [proj] [last] — Clear the audit_boundary (advance; last = terminate)\n"
+    " /refine [proj] <fu-id> [backend] — Dispatch one refine worker against a "
+    "followup (FU-N); closes it + commits on success\n"
     "\n"
     "/start and /commands show this list. Most commands take an optional project "
     "name; otherwise the /setdir current project (or the only one) is used."
@@ -132,12 +141,15 @@ def dispatch(
     root: Path,
     current: str | None = None,
     run_iteration_fn: Callable[[Path, str | None], int] | None = None,
+    refine_fn: Callable[[Path, str, str | None], int] | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> Reply:
     """Run one command and return a Reply. ``run_iteration_fn(proj, backend)``
     (the surface shells ``i2c run`` with the project as CWD; ``backend`` is an
     optional single-backend override, else the project's per-action map applies)
-    backs ``/run`` and ``/batch``; it is injectable so tests can supply a fake."""
+    backs ``/run`` and ``/batch``; ``refine_fn(proj, fu_id, backend)`` (shells
+    ``i2c refine``) backs ``/refine``. Both are injectable so tests can supply a
+    fake."""
     command = command.lower().lstrip("/")
 
     if command in ("commands", "start"):
@@ -168,7 +180,9 @@ def dispatch(
     if err:
         return Reply(err, ok=False)
     try:
-        return _dispatch_project(command, rest, proj, run_iteration_fn, progress)
+        return _dispatch_project(
+            command, rest, proj, run_iteration_fn, refine_fn, progress
+        )
     except control.ControlError as e:
         return Reply(f"Error: {e}", ok=False)
 
@@ -274,11 +288,25 @@ def _audit(rest: list[str], proj: Path) -> Reply:
     )
 
 
+def _parse_refine_args(rest: list[str]) -> tuple[str | None, str | None]:
+    """From /refine's args (after project): a required followup id (``FU-N``,
+    case-insensitive) and an optional backend token (claude/codex)."""
+    fu_id: str | None = None
+    backend: str | None = None
+    for a in rest:
+        if _FU_ID_RE.match(a):
+            fu_id = a.upper()
+        elif a in _BACKENDS:
+            backend = a
+    return fu_id, backend
+
+
 def _dispatch_project(
     command: str,
     rest: list[str],
     proj: Path,
     run_iteration_fn: Callable[[Path, str | None], int] | None,
+    refine_fn: Callable[[Path, str, str | None], int] | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> Reply:
     if command == "audit":
@@ -330,4 +358,19 @@ def _dispatch_project(
         if records and not full:  # with 'full', heartbeats already showed each step
             msg += "\n" + _enumerate(records)
         return Reply(msg, ok=(last_rc == 0))
+
+    if command == "refine":
+        if refine_fn is None:
+            return Reply("refine is not available on this surface.", ok=False)
+        fu_id, backend = _parse_refine_args(rest)
+        if fu_id is None:
+            return Reply("Usage: /refine [proj] <fu-id> [backend]", ok=False)
+        rc = refine_fn(proj, fu_id, backend)
+        be = backend or "project default/map"
+        if rc == 0:
+            return Reply(f"Refined {fu_id} on {be}: FU closed + committed (exit 0).")
+        return Reply(
+            f"Refine {fu_id} on {be} did not complete (exit {rc}); FU left open.",
+            ok=False,
+        )
     return Reply(f"Unhandled command: /{command}", ok=False)  # pragma: no cover

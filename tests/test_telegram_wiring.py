@@ -51,6 +51,33 @@ class TestWiring(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("ERROR", err.getvalue())
 
+    def test_make_refine_runner_shells_refine_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "proj"
+            proj.mkdir()
+            fn = tg._make_refine_runner(Path(tmp))
+            with mock.patch.object(tg.subprocess, "run") as m:
+                m.return_value = mock.Mock(returncode=0)
+                rc = fn(proj, "FU-5", "codex")
+            self.assertEqual(rc, 0)
+            cmd, kwargs = m.call_args
+            argv = cmd[0]
+            self.assertEqual(argv[-4:], ["refine", "FU-5", "--backend", "codex"])
+            self.assertEqual(kwargs["cwd"], str(proj))
+
+    def test_make_refine_runner_without_backend(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proj = Path(tmp) / "proj"
+            proj.mkdir()
+            fn = tg._make_refine_runner(Path(tmp))
+            with mock.patch.object(tg.subprocess, "run") as m:
+                m.return_value = mock.Mock(returncode=2)
+                rc = fn(proj, "FU-9")
+            self.assertEqual(rc, 2)
+            argv = m.call_args[0][0]
+            self.assertEqual(argv[-2:], ["refine", "FU-9"])
+            self.assertNotIn("--backend", argv)
+
 
 if __name__ == "__main__":
     unittest.main()

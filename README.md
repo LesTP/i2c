@@ -391,9 +391,11 @@ Commands:
 - **Admin (gated to the `admins` in the `[telegram]` table of `i2c.toml`):**
   `/run [proj] [N] [backend]` — N iterations (default 1) on a single backend;
   `/batch [proj]` — run a whole phase to a halt, choosing the backend
-  per-action from `[run.backends]`; `/reconcile [proj] [apply]` — apply
-  workflow-drift fixes (dry-run unless `apply`); `/endphase [proj] [last]` —
-  clear the `audit_boundary` (advance, or `last` to terminate).
+  per-action from `[run.backends]`; `/refine [proj] <fu-id> [backend]` —
+  dispatch one refine worker against a followup (closes it + commits on
+  success); `/reconcile [proj] [apply]` — apply workflow-drift fixes (dry-run
+  unless `apply`); `/endphase [proj] [last]` — clear the `audit_boundary`
+  (advance, or `last` to terminate).
 
 ---
 

@@ -432,7 +432,7 @@
     "id": "FU-54",
     "title": "Telegram /refine command (Proposal B bot dispatch)",
     "kind": "cli-ergonomics",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-13",
     "context": "The i2c refine <fu-id> single-shot loop shipped (run_refine.py, DESIGN_refine_v1 §12 core). The remaining Proposal B surface is the admin-gated /refine bot command that shells i2c refine in the project cwd on a worker thread, mirroring /run: add 'refine' to telegram_core.MUTATING_COMMANDS + COMMAND_MENU + _HELP, a _dispatch_project branch resolving the FU-id from args, and a _make_refine_runner in telegram.py.",
     "trigger": "Next time the bot surface is extended, or when unattended refine dispatch on the pi is wanted.",
@@ -443,7 +443,9 @@
     "refs": [
       "DESIGN_refine_v1",
       "FU-40"
-    ]
+    ],
+    "closed": "2026-07-13",
+    "resolution": "Shipped: admin-gated /refine [proj] <fu-id> [backend] in telegram_core (dispatch branch + _parse_refine_args) + _make_refine_runner in telegram.py shelling 'i2c refine'; tests in test_telegram_core/test_telegram_wiring; docs (README/STATUS/DESIGN/rule) updated."
   },
   {
     "id": "FU-55",
