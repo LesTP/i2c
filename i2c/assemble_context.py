@@ -49,12 +49,18 @@ EMDASH = "—"  # U+2014
 
 PLACEHOLDER_EMPTY = "<!-- empty -->"
 
-ACTIONS = ("plan", "tests", "execute", "review", "close", "diagnose", "reconcile")
+ACTIONS = ("plan", "tests", "execute", "review", "close", "diagnose", "reconcile", "refine")
 # Out-of-band recovery actions (archive/DESIGN_recovery_v1.md): dispatched by
 # `i2c run --action <a> --target N`, not by the state machine. They share the
 # assembly machinery (ACTIONS / EJECTABLE pick them up) but use a failure-context
 # Region-3 recipe and emit no Next State (they don't drive linear progression).
 RECOVERY_ACTIONS = ("diagnose", "reconcile")
+# Refine-tier single-shot dispatch (DESIGN_refine_v1.md §12): `i2c refine <fu-id>`,
+# also out-of-band (not state-machine driven). It uses a followup-context Region-3
+# recipe and emits no Next State (sub-phase — there is no lifecycle to advance).
+# Actions that do NOT drive the linear plan→…→close progression share the
+# no-Next-State treatment.
+_NO_NEXT_STATE_ACTIONS = RECOVERY_ACTIONS + ("refine",)
 SECTIONS = ("architecture", "module")
 MODES = ("autonomous", "supervised")
 
@@ -413,6 +419,7 @@ class AssemblerContext:
     phase: int | None  # required for --action and --section devlog
     module: str | None  # required for --section module
     target: int | None = None  # recovery actions: which iteration to diagnose
+    fu: str | None = None  # refine action: which followup id to dispatch
     # State (lazy-populated; populated by build_context).
     project: dict[str, Any] = field(default_factory=dict)
     phases: list[dict[str, Any]] = field(default_factory=list)
@@ -447,6 +454,7 @@ def build_context(args: argparse.Namespace) -> AssemblerContext:
         phase=getattr(args, "phase", None),
         module=getattr(args, "module", None),
         target=getattr(args, "target", None),
+        fu=getattr(args, "fu", None),
     )
     ctx.project = _load_required_state(root, "project.json")
     ctx.phases = _load_required_state(root, "phases.json")
@@ -678,7 +686,11 @@ def render_next_state(ctx: AssemblerContext) -> str:
     do not drive the linear plan→execute→review→close progression, so there is
     no single NEXT to compute (the procedure tells the worker exactly what to do).
     """
-    if ctx.action is None or ctx.mode == "supervised" or ctx.action in RECOVERY_ACTIONS:
+    if (
+        ctx.action is None
+        or ctx.mode == "supervised"
+        or ctx.action in _NO_NEXT_STATE_ACTIONS
+    ):
         return ""
     return f"## Next State: {compute_next_state(ctx)}"
 
@@ -691,7 +703,11 @@ def render_phase_heading(ctx: AssemblerContext) -> str:
     procedure (``instructions/plan.md`` step 4) creates the record. Any
     other action hitting a missing record is a real misdispatch and still
     fails fast. See DESIGN_state_lifecycle_v1.md §6.4.
+
+    Refine is sub-phase (no lifecycle phase) — it renders no phase heading.
     """
+    if ctx.action == "refine":
+        return ""
     record = ctx.current_phase_record()
     if record is None:
         if ctx.action == "plan":
@@ -903,6 +919,50 @@ def render_failure_context(ctx: AssemblerContext) -> str:
     return "\n".join(lines)
 
 
+# --- Followup context (refine action) --------------------------------------
+
+
+def render_followup_context(ctx: AssemblerContext) -> str:
+    """## Refine Target — the followup record the refine worker acts on.
+
+    The Region-3 opener for the refine action (DESIGN_refine_v1.md §12). Resolves
+    the FU from ``.state/followups.json`` via a lazy ``control`` import
+    (assemble_context must not import control at module load — the control →
+    run_iteration → assemble_context cycle). The declared ``files`` are
+    read-hints; the worker still opens them itself. The run_refine driver has
+    already resolved the FU (open, exists) before assembly, so the unavailable
+    branches here are purely defensive.
+    """
+    from i2c import control as _control
+
+    if ctx.fu is None:  # pragma: no cover - _validate_args requires --fu
+        return "## Refine Target\n\n<!-- no --fu provided -->"
+    try:
+        fu = _control.resolve_followup(ctx.project_root, ctx.fu)
+    except _control.ControlError as e:
+        return f"## Refine Target\n\n<!-- followup unavailable: {e} -->"
+
+    lines = [
+        "## Refine Target",
+        "",
+        f"- ID: {fu.id}",
+        f"- Kind: {fu.kind}",
+        f"- Title: {fu.title}",
+    ]
+    if fu.priority:
+        lines.append(f"- Priority: {fu.priority}")
+    if fu.context:
+        lines += ["", "### Context", "", fu.context]
+    if fu.trigger:
+        lines += ["", "### Trigger", "", fu.trigger]
+    if fu.refs:
+        lines += ["", "### Refs", ""] + [f"- {r}" for r in fu.refs]
+    if fu.files:
+        lines += ["", "### Declared files (read-hints)", ""]
+        lines += [f"- {f}" for f in fu.files]
+    return "\n".join(lines)
+
+
 def render_prior_phase_summary(ctx: AssemblerContext) -> str:
     """## Prior Phase Summary — devlog for (current phase − 1), last 3 entries.
 
@@ -1107,6 +1167,11 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         render_current_phase,
         render_current_phase_steps_table,
         render_phase_devlog,
+    ],
+    # Refine-tier single-shot (DESIGN_refine_v1.md §12): the followup record is the
+    # ONLY project context — no phase/steps/decisions (sub-phase; D-refine-1).
+    "refine": [
+        render_followup_context,
     ],
 }
 
@@ -1322,6 +1387,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--fu",
+        default=None,
+        help=(
+            "Followup id (e.g. FU-42) for the refine action (--action refine). "
+            "Selects which .state/followups.json item the refine prompt targets."
+        ),
+    )
+    parser.add_argument(
         "--backend", choices=("claude", "codex"), default="claude",
         help="Which adapter to read for Tool Rules. Default: claude.",
     )
@@ -1344,11 +1417,21 @@ def build_parser() -> argparse.ArgumentParser:
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     """Cross-flag validation that argparse can't express directly. Exits 2 on failure."""
     if args.action is not None:
-        if args.phase is None:
-            parser.error("--phase is required with --action")
-        if args.phase < 1:
-            parser.error("--phase must be a positive integer")
-        # --mode is fine here (default autonomous).
+        if args.action == "refine":
+            if getattr(args, "fu", None) is None:
+                parser.error("--fu is required with --action refine")
+            if args.phase is not None:
+                parser.error("--phase is not valid with --action refine")
+            if getattr(args, "target", None) is not None:
+                parser.error("--target is not valid with --action refine")
+            # --mode is fine here (default autonomous).
+        else:
+            if args.phase is None:
+                parser.error("--phase is required with --action")
+            if args.phase < 1:
+                parser.error("--phase must be a positive integer")
+            if getattr(args, "fu", None) is not None:
+                parser.error("--fu is only valid with --action refine")
     else:  # --section path
         if args.mode is not None:
             parser.error("--mode is only valid with --action")
@@ -1356,6 +1439,8 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
             parser.error("--emit is only valid with --action")
         if getattr(args, "target", None) is not None:
             parser.error("--target is only valid with --action")
+        if getattr(args, "fu", None) is not None:
+            parser.error("--fu is only valid with --action refine")
         # Neither surviving section (architecture, module) consumes --phase;
         # accepting it would silently mislead the caller (FU-17).
         if args.phase is not None:

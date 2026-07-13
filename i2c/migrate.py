@@ -22,7 +22,12 @@ guard for the ``tests`` action's additive enum values (DESIGN_tests_action_v1.md
 forward-compat guard for the additive optional ``project.json.pattern`` field
 (FU-48): an older i2c whose schema is ``additionalProperties: false`` would
 otherwise reject a ``pattern``-stamped project with an opaque validation error
-instead of a clean "upgrade i2c". The registry is the extension point for future
+instead of a clean "upgrade i2c". The ``3 → 4`` migration is likewise a no-op
+stamp bump — a forward-compat guard for the refine tier's additive schema
+changes (D-refine-8: the ``devlog_entry`` ``action="refine"`` value, nullable
+``phase``, and the optional ``kind`` / ``iteration`` fields), so an older i2c
+rejects a refine-using project cleanly rather than failing opaquely on an
+unknown devlog ``action``. The registry is the extension point for future
 versions.
 """
 
@@ -37,7 +42,7 @@ from i2c import state as _state
 from i2c import validate as v
 
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 class MigrationError(Exception):
@@ -141,12 +146,30 @@ def _migrate_2_to_3(state_dir: Path, *, dry_run: bool = False) -> list[str]:
     return []
 
 
+def _migrate_3_to_4(state_dir: Path, *, dry_run: bool = False) -> list[str]:
+    """3 → 4: no-op transform (forward-compat guard for the refine tier).
+
+    Proposal B (DESIGN_refine_v1.md §12, D-refine-8) makes only additive schema
+    changes: ``devlog_entry`` gains the ``action="refine"`` enum value, a
+    nullable ``phase``, and optional ``kind`` / ``iteration`` fields; the
+    telemetry envelope gains the ``refine`` action + optional ``fu`` / ``kind``.
+    Existing ``.state/`` files keep validating with no data transform. The
+    version bump exists purely so an *older* i2c hitting a refine-using project
+    (whose devlog carries ``action="refine"`` under ``additionalProperties:
+    false``) fails the newer-than-current guard cleanly ("upgrade i2c") instead
+    of an opaque validation error. The ``schema_version`` stamp is applied
+    centrally by ``migrate_project``.
+    """
+    return []
+
+
 # Ordered registry: from-version → step. Sequential application from the
 # project's current version up to (but not including) CURRENT_SCHEMA_VERSION.
 _MIGRATIONS: dict[int, Callable[..., list[str]]] = {
     0: _migrate_0_to_1,
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
+    3: _migrate_3_to_4,
 }
 
 

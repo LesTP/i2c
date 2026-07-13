@@ -50,6 +50,7 @@ from i2c import config
 from i2c import control
 from i2c import migrate
 from i2c import run_iteration
+from i2c import run_refine
 from i2c import scaffold
 from i2c import state
 
@@ -264,6 +265,31 @@ def cmd_run(args: argparse.Namespace) -> int:
         max_budget_usd=max_budget_usd,
         action_override=args.action,
         target=args.target,
+    )
+
+
+def cmd_refine(args: argparse.Namespace) -> int:
+    # Single-shot refine dispatch (DESIGN_refine_v1.md §12). Backend/model/budget
+    # resolution mirrors `cmd_run`; the refine backend is chosen from
+    # [run.backends].refine, then [run].backend, then claude.
+    try:
+        cfg = config.load_run_config()
+    except config.ConfigError as e:
+        return _fail(e)
+    model = args.model or cfg.model or run_iteration.DEFAULT_MODEL
+    if args.max_budget_usd is not None:
+        max_budget_usd = args.max_budget_usd
+    elif cfg.max_budget_usd is not None:
+        max_budget_usd = cfg.max_budget_usd
+    else:
+        max_budget_usd = run_iteration.DEFAULT_MAX_BUDGET_USD
+    return run_refine.run_refine(
+        args.fu_id,
+        backend=args.backend,
+        backend_map=cfg.backends,
+        default_backend=cfg.backend or "claude",
+        model=model,
+        max_budget_usd=max_budget_usd,
     )
 
 
@@ -556,24 +582,16 @@ def cmd_fu_add(args: argparse.Namespace) -> int:
 
 
 def cmd_fu_close(args: argparse.Namespace) -> int:
-    import datetime
-
     try:
-        path = _fu_backlog_path()
+        root = control._find_followups_root()
+        control.close_followup(
+            root, args.id, resolution=args.resolution, status=args.status
+        )
+    except control.NotFoundError as e:
+        sys.stderr.write(f"ERROR: {e}\n")
+        return 1  # update-record no-match contract
     except control.ControlError as e:
         return _fail(e)
-    updates = [
-        f"status={args.status}",
-        f"closed={datetime.date.today().isoformat()}",
-    ]
-    if args.resolution:
-        updates.append(f"resolution={args.resolution}")
-    ns = argparse.Namespace(
-        file=str(path), match=f"id={args.id}", updates=updates, from_file=None
-    )
-    rc = _run_state_cmd(state.cmd_update_record, ns)
-    if rc != 0:
-        return rc
     sys.stdout.write(f"closed {args.id} ({args.status})\n")
     return 0
 
@@ -793,6 +811,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target iteration for the recovery --action (default: latest).",
     )
     p_run.set_defaults(func=cmd_run)
+
+    p_refine = sub.add_parser(
+        "refine",
+        help="Dispatch one refine worker against a followup (delegates to run_refine).",
+    )
+    p_refine.add_argument(
+        "fu_id", help="Followup id to refine, e.g. FU-42 (must be open).",
+    )
+    p_refine.add_argument(
+        "--backend", choices=("claude", "codex"), default=None,
+        help="Force the backend for this refine. Without it, [run.backends].refine "
+        "applies, then [run].backend, then claude.",
+    )
+    p_refine.add_argument(
+        "--model", default=None,
+        help="Model passed to the backend. Precedence: this flag > i2c.toml "
+        f"[run].model > {run_iteration.DEFAULT_MODEL}.",
+    )
+    p_refine.add_argument(
+        "--max-budget-usd", type=float, default=None,
+        help="Cost cap (claude). Precedence: this flag > i2c.toml "
+        f"[run].max_budget_usd > {run_iteration.DEFAULT_MAX_BUDGET_USD:.2f}.",
+    )
+    p_refine.set_defaults(func=cmd_refine)
 
     p_serve = sub.add_parser(
         "serve",

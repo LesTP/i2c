@@ -1,6 +1,11 @@
 # DESIGN — Formalizing Refine / ad-hoc work v1
 
-> **Status:** Draft / proposed (spec only; no code). Formalizes the *opportunistic
+> **Status:** Proposal A **shipped** (the `i2c fu` backlog). Proposal B **core
+> shipped** (the `i2c refine <fu-id>` single-shot loop — this doc §12): the
+> assembler `refine` recipe + `instructions/refine.md`, the `run_refine.py` driver,
+> the sub-phase invariant, the `devlog`/`telemetry` refine support (D-refine-8), and
+> the `i2c refine` CLI. **Deferred:** the `/refine` Telegram command and
+> followups-only-repo (i2c self-dogfooding) support. Formalizes the *opportunistic
 > refine* work — cleanups, prose passes, dead-surface removal, and the endless
 > doc/status reconciliation — that i2c does constantly but never structured. The
 > Build regime got dogfooded on the consumer repos; the Refine work got done
@@ -469,6 +474,14 @@ the `refine` telemetry action_type; `devlog_entry.schema.json` refine-row suppor
 ---
 
 ## 12. Sketch (B) — the `i2c refine` loop internals
+
+> **Implemented (core, this section).** The `i2c refine <fu-id>` loop shipped as
+> specified below, with two deliberate deltas from the sketch: (1) the sub-phase
+> invariant runs as a **guard before** close/commit (a lifecycle-violating or
+> unlogged run is surfaced and never committed), and (2) scope is projects with a
+> standard `.state/` (project.json present) — followups-only-repo support and the
+> `/refine` bot command are deferred. `control.resolve_followup` / `close_followup`
+> back the loop; `invariants.check_post_refine` enforces the sub-phase property.
 
 Proposal B, sketched (fuller than a mention, lighter than the §11 scope). Depends
 entirely on A (`followups.json` + `control.followups()`). Core idea: **`i2c refine

@@ -8,8 +8,9 @@
   "additionalProperties": false,
   "properties": {
     "phase": {
-      "type": "integer",
-      "minimum": 1
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Phase number, or null for phase-less entries (refine-tier work; D-refine-8)."
     },
     "step": {
       "type": ["integer", "null"],
@@ -18,8 +19,8 @@
     },
     "action": {
       "type": "string",
-      "enum": ["plan", "tests", "execute", "review", "close", "probe", "integration_check"],
-      "description": "Which action produced this entry. 'tests' = phase-level acceptance-suite authoring (Build only, D-tests-*); 'probe' = dependency probe result (conditional section in plan); 'integration_check' = cross-module integration verification (conditional section in close)."
+      "enum": ["plan", "tests", "execute", "review", "close", "probe", "integration_check", "refine"],
+      "description": "Which action produced this entry. 'tests' = phase-level acceptance-suite authoring (Build only, D-tests-*); 'probe' = dependency probe result (conditional section in plan); 'integration_check' = cross-module integration verification (conditional section in close); 'refine' = ad-hoc refine-tier work (sub-phase, phase/step null; D-refine-8)."
     },
     "outcome": {
       "type": "string",
@@ -47,6 +48,16 @@
     "commit": {
       "type": "string",
       "pattern": "^[0-9a-fA-F]{4,40}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["prose", "dead-surface", "doc-reconciliation", "cli-ergonomics", "test-hardening", "structural-refactor", "experiment-log", "bugfix", "other"],
+      "description": "Refine kind (D-refine-8), mirroring followups.json. Only set on 'refine' entries."
+    },
+    "iteration": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Which iteration a null-step entry belongs to (Refine-regime or refine-tier). Folds in FU-9 (D-refine-8)."
     }
   }
 }

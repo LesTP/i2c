@@ -45,7 +45,8 @@ def _fmt_decision(d: control.DecisionView) -> str:
     return body
 
 
-_OPEN_STATUSES = ("open", "accepted", "partially-closed")
+# Followup "open" statuses — single-sourced from control (Proposal B).
+_OPEN_STATUSES = control._OPEN_STATUSES
 
 
 def _md_cell(text: str | None) -> str:

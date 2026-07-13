@@ -350,13 +350,132 @@
     "opened": "2026-07-10",
     "context": "In Pattern B (module absent) render_module_contract returns empty, so EXECUTE and CLOSE receive no architecture doc at all - ARCHITECTURE.md is assembled only for PLAN and REVIEW, while Pattern A gets ARCH_<module>.md in all five actions. Proposal: when project.json.pattern==B, use ARCHITECTURE.md as the module-contract source for EXECUTE/CLOSE (and possibly TESTS), loaded via the real path with correct first-h2 extraction, and skipped in PLAN/REVIEW to avoid double-loading the doc already present there. Open question: does this help or just bloat the EXECUTE prompt, given the frozen acceptance suite already encodes the contract? Rejected the ARCH_ITECTURE.md filename-pun (module=ITECTURE) as too fragile/surprising.",
     "trigger": "Surfaced while planning FU-48 (explicit project.json.pattern flag). Blocked on FU-48 landing - the pattern flag is the prerequisite signal. Decide on merits once a Pattern B project (build-a-stew) has run EXECUTE/CLOSE and we can see whether missing arch context actually hurts.",
-    "priority": "eventually",
+    "priority": "next",
     "files": [
       "i2c/assemble_context.py"
     ],
     "refs": [
       "FU-48",
       "ref/SPEC_architecture.md"
+    ]
+  },
+  {
+    "id": "FU-50",
+    "title": "Sanctioned acceptance-oracle correction path (fix a buggy test is not weakening)",
+    "kind": "test-hardening",
+    "status": "open",
+    "opened": "2026-07-13",
+    "context": "The tests action freezes an acceptance suite as an independent oracle; D-tests-4 makes integrity soft (EXECUTE must not weaken it; REVIEW flags weakening as a Must-fix). But a genuinely BUGGY oracle needs legitimate correction, which is indistinguishable from weakening under the current model. build-a-stew Phase 3 step 2 (iter 25) burned 11.4M input tokens over 23 minutes fighting a wrong test (over-broad /low|medium|high/ matcher; a non-deterministic 30-iteration Tab scan in jsdom), attempted anti-patterns three times, then escalated and required a human steer (D-22) to authorize changing the frozen suite; D-23 cascaded one Must-fix into 14 test-query rewrites. Need a sanctioned oracle-correction lane: EXECUTE/REVIEW may fix a demonstrably broken acceptance test with a recorded justification (decision), kept distinct from weakening, and the CLOSE integrity check (FU-43) should treat a justified correction differently from an unexplained diff. Benchmark-critical: oracle integrity is the linchpin the benchmark rests on.",
+    "trigger": "Surfaced by the build-a-stew greenfield run; needed before the benchmark replay trusts tests_pass as an oracle.",
+    "priority": "next",
+    "files": [
+      "i2c/data/instructions/execute.md",
+      "i2c/data/instructions/review.md",
+      "i2c/data/instructions/tests.md"
+    ],
+    "refs": [
+      "FU-43",
+      "DESIGN_tests_action_v1.md",
+      "D-tests-4"
+    ]
+  },
+  {
+    "id": "FU-51",
+    "title": "TESTS action: contract-coverage checklist + oracle anti-pattern guidance",
+    "kind": "test-hardening",
+    "status": "open",
+    "opened": "2026-07-13",
+    "context": "The frozen acceptance suite is only a real oracle if it encodes the contract AND avoids fragile assertions; build-a-stew exposed both gaps. Contract-coverage: Phase 2 had two REVIEW escalations (iters 18 and 19) for contract drift the suite never checked - StewBuild dropped fields, and removeIngredient silently no-opped instead of throwing the ARCHITECTURE-guaranteed typed error - so EXECUTE passed tests while violating the contract and REVIEW was the only catch. Anti-patterns: TESTS authored fragile oracles (jsdom keyboard assumptions, an over-broad /low|medium|high/ matcher, a non-deterministic 30-iteration Tab scan) that cost 11.4M tokens at iter 25. Add to instructions/tests.md: (a) a contract-coverage checklist enumerating every ARCHITECTURE/ARCH guarantee including error modes and field-retention, asserting each; (b) an oracle anti-pattern list: no non-deterministic scans, scope matchers to the exact element, avoid environment-specific (jsdom) behavioral assumptions.",
+    "trigger": "build-a-stew Phase 2 contract-drift escalations plus the Phase 3 iter-25 fragile-test blowup.",
+    "priority": "next",
+    "files": [
+      "i2c/data/instructions/tests.md"
+    ],
+    "refs": [
+      "DESIGN_tests_action_v1.md",
+      "FU-49"
+    ]
+  },
+  {
+    "id": "FU-52",
+    "title": "Oracle telemetry: tests_pass null across a full run; seed test_cmd + include typecheck/build",
+    "kind": "test-hardening",
+    "status": "open",
+    "opened": "2026-07-13",
+    "context": "All 59 telemetry rows of build-a-stew (the flagship greenfield run) have tests_pass=null and tests_cmd=null: the benchmark linchpin metric recorded nothing across a complete project, making build-a-stew unusable as a benchmark substrate. Causes: (1) the telemetry test_cmd was never configured - i2c init / scaffold does not seed it and nothing warns when it is unset on an autonomous run; (2) the oracle excludes typecheck/build even when wired - Phase 4 iter 45 had green vitest but a broken tsc (replaceAll needs ES2021), so tests_pass would be a false green for a compiled project; (3) the suite could not run in the autonomous environment at all (NTFS node_modules and tsc-shim permission). Fixes: seed or prompt for test_cmd at init; for typed/compiled projects include the typecheck and build in the oracle, not just the test runner; warn when test_cmd is unset so tests_pass=null is not silent. Extends FU-44, which assumes test_cmd is set and only needs scoping to the acceptance directory.",
+    "trigger": "build-a-stew telemetry review: tests_pass null for all 59 iterations.",
+    "priority": "next",
+    "files": [
+      "i2c/scaffold.py",
+      "i2c/telemetry.py",
+      "i2c/data/templates/i2c.toml"
+    ],
+    "refs": [
+      "FU-44",
+      "FU-43"
+    ]
+  },
+  {
+    "id": "FU-53",
+    "title": "Per-iteration runaway guard (token/time ceiling) in the runner",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-07-13",
+    "context": "The max-budget-usd flag caps the run series, not a single iteration, and codex iterations are uncosted (cost_usd null), so a single runaway iteration has nothing to stop it but the worker three-strikes rule. build-a-stew iter 25 consumed 11.4M input tokens over 23 minutes on codex fighting a buggy test before it escalated. Add a per-iteration ceiling (token count and/or wall-clock) that aborts a single invocation cleanly with a distinct exit (mirroring the exit-3 rate-limit path), so a runaway cannot silently burn a large budget - especially important for codex where the dollar cap cannot fire.",
+    "trigger": "build-a-stew iter 25: a single iteration burned 11.4M tokens over 23 minutes.",
+    "priority": "next",
+    "files": [
+      "i2c/run_iteration.py"
+    ]
+  },
+  {
+    "id": "FU-54",
+    "title": "Telegram /refine command (Proposal B bot dispatch)",
+    "kind": "cli-ergonomics",
+    "status": "open",
+    "opened": "2026-07-13",
+    "context": "The i2c refine <fu-id> single-shot loop shipped (run_refine.py, DESIGN_refine_v1 §12 core). The remaining Proposal B surface is the admin-gated /refine bot command that shells i2c refine in the project cwd on a worker thread, mirroring /run: add 'refine' to telegram_core.MUTATING_COMMANDS + COMMAND_MENU + _HELP, a _dispatch_project branch resolving the FU-id from args, and a _make_refine_runner in telegram.py.",
+    "trigger": "Next time the bot surface is extended, or when unattended refine dispatch on the pi is wanted.",
+    "files": [
+      "i2c/surfaces/telegram_core.py",
+      "i2c/surfaces/telegram.py"
+    ],
+    "refs": [
+      "DESIGN_refine_v1",
+      "FU-40"
+    ]
+  },
+  {
+    "id": "FU-55",
+    "title": "i2c refine on followups-only repos (self-dogfooding, D-refine-3)",
+    "kind": "cli-ergonomics",
+    "status": "open",
+    "opened": "2026-07-13",
+    "context": "run_refine currently requires a standard .state/ (project.json) because assemble_context.find_project_root and telemetry regime/leaf derivation assume it. To let i2c dogfood its OWN backlog via i2c refine (a followups-only repo, no phase machine), extend find_project_root to also anchor on followups.json (mirror control._find_followups_root), make build_context load project/phases/steps optionally for --action refine, and make telemetry degrade gracefully without project.json.",
+    "trigger": "When wanting to run i2c refine inside the i2c repo itself, or on any non-phase-migrated repo.",
+    "files": [
+      "i2c/assemble_context.py",
+      "i2c/run_refine.py"
+    ],
+    "refs": [
+      "DESIGN_refine_v1",
+      "run_refine.py"
+    ]
+  },
+  {
+    "id": "FU-56",
+    "title": "run_iteration rate-limit (exit 3) telemetry row silently dropped",
+    "kind": "bugfix",
+    "status": "open",
+    "opened": "2026-07-13",
+    "context": "run_iteration._emit_telemetry(3) on the rate-limit path records exit_code=3, but telemetry_entry.schema.json exit_code enum is {0,2,null}, so append_validated_jsonl raises and the best-effort wrapper drops the row -> every rate-limited iteration produces zero telemetry (invisible to cost/quota analysis). run_refine.py was fixed to emit exit_code=None on this path (surfaced during Proposal B review); run_iteration.py:932 still has the original bug. Apply the same fix (pass None) for consistency.",
+    "trigger": "Surfaced by the Proposal B code review. Fix next time run_iteration telemetry is touched.",
+    "files": [
+      "i2c/run_iteration.py"
+    ],
+    "refs": [
+      "run_refine.py",
+      "telemetry_entry.schema.json"
     ]
   }
 ]

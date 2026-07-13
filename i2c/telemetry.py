@@ -268,6 +268,8 @@ def build_row(
     tests_cmd: str | None = None,
     drift_flag: bool | None = None,
     review_findings: dict[str, int] | None = None,
+    fu: str | None = None,
+    kind: str | None = None,
 ) -> dict[str, Any]:
     """Assemble a telemetry row. All keys are present (explicit nulls) so the
     JSONL stays columnar-friendly for analysis. Caller validates on write."""
@@ -303,6 +305,8 @@ def build_row(
         "tests_cmd": tests_cmd,
         "drift_flag": drift_flag,
         "review_findings": review_findings,
+        "fu": fu,
+        "kind": kind,
     }
 
 
@@ -326,6 +330,8 @@ def record_iteration(
     tests_pass: bool | None = None,
     tests_cmd: str | None = None,
     mode: str = "autonomous",
+    fu: str | None = None,
+    kind: str | None = None,
 ) -> dict[str, Any]:
     """Derive the remaining fields, build the row, validate, and append it.
 
@@ -334,6 +340,11 @@ def record_iteration(
     call so such a failure degrades to a skipped row, never a failed iteration.
     """
     regime, leaf = phase_meta(root, phase)
+    # Refine is a phase-less dispatch (phase=0 has no phases.json record, so
+    # phase_meta yields regime=None). Tag it as the refine regime so telemetry is
+    # bucketable by regime, not only by action/fu (D-refine-8, Q-refine-3).
+    if action == "refine":
+        regime = "refine"
 
     files_touched = loc_added = loc_removed = None
     if start_commit and end_commit and start_commit != end_commit:
@@ -380,6 +391,8 @@ def record_iteration(
         tests_pass=tests_pass,
         tests_cmd=tests_cmd,
         drift_flag=drift_flag,
+        fu=fu,
+        kind=kind,
     )
 
     path = Path(root) / ".state" / TELEMETRY_FILENAME

@@ -89,12 +89,13 @@ def build_ctx(
     mode: str | None = None,
     module: str | None = None,
     backend: str = "claude",
+    fu: str | None = None,
 ) -> ac.AssemblerContext:
     """Build a context against the current CWD's project."""
     import argparse
     ns = argparse.Namespace(
         action=action, section=section, phase=phase, mode=mode,
-        module=module, backend=backend,
+        module=module, backend=backend, fu=fu,
     )
     return ac.build_context(ns)
 
@@ -1249,6 +1250,75 @@ class TestAssetOverrideResolution(unittest.TestCase):
             resolved = ac.resolve_asset(root, "instructions/plan.md")
             self.assertEqual(resolved, ac.packaged_data_dir() / "instructions" / "plan.md")
             self.assertTrue(resolved.is_file())
+
+
+class TestRefineAction(unittest.TestCase):
+    """The refine single-shot action (DESIGN_refine_v1.md §12)."""
+
+    _FUS = json.dumps([
+        {"id": "FU-1", "title": "reason-first prose pass", "kind": "prose",
+         "status": "open", "context": "threat-framing drift in WORKER_SPEC",
+         "trigger": "worker text drifted verbose", "files": ["WORKER_SPEC.md"]},
+        {"id": "FU-2", "title": "already done", "kind": "other",
+         "status": "closed", "resolution": "done"},
+    ])
+
+    def test_refine_is_a_valid_action(self):
+        self.assertIn("refine", ac.ACTIONS)
+
+    def test_render_followup_context_has_fu_fields(self):
+        with TempProject(with_extra={".state/followups.json": self._FUS}):
+            ctx = build_ctx(action="refine", fu="FU-1", mode="autonomous")
+            out = ac.render_followup_context(ctx)
+            self.assertIn("## Refine Target", out)
+            self.assertIn("FU-1", out)
+            self.assertIn("reason-first prose pass", out)
+            self.assertIn("prose", out)
+            self.assertIn("WORKER_SPEC.md", out)  # declared file hint
+
+    def test_full_prompt_has_target_no_phase_no_next_state(self):
+        with TempProject(
+            with_extra={".state/followups.json": self._FUS}, with_framework=True
+        ):
+            rc, out, err = run_cli(
+                "--action", "refine", "--fu", "FU-1", "--backend", "claude",
+            )
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("## Action: REFINE", out)
+            self.assertIn("## Refine Target", out)
+            self.assertIn("## Instructions", out)
+            # Sub-phase: no phase heading, no Next State line.
+            self.assertNotIn("## Next State", out)
+            self.assertNotIn("## Phase:", out)
+
+    def test_emit_split_identity(self):
+        with TempProject(
+            with_extra={".state/followups.json": self._FUS}, with_framework=True
+        ):
+            ctx = build_ctx(action="refine", fu="FU-1", mode="autonomous")
+            full = ac.build_full_prompt(ctx)
+            stable = ac.build_stable_prefix(ctx)
+            volatile = ac.build_volatile_body(ctx)
+            self.assertEqual(full, stable.rstrip() + "\n\n" + volatile)
+            self.assertIn("## Refine Target", volatile)
+
+    def test_fu_required_with_refine(self):
+        with TempProject(with_extra={".state/followups.json": self._FUS}):
+            rc, out, err = run_cli("--action", "refine")
+            self.assertEqual(rc, 2)
+            self.assertIn("--fu is required", err)
+
+    def test_phase_rejected_with_refine(self):
+        with TempProject(with_extra={".state/followups.json": self._FUS}):
+            rc, out, err = run_cli("--action", "refine", "--fu", "FU-1", "--phase", "2")
+            self.assertEqual(rc, 2)
+            self.assertIn("--phase is not valid", err)
+
+    def test_fu_rejected_without_refine(self):
+        with TempProject():
+            rc, out, err = run_cli("--action", "plan", "--phase", "2", "--fu", "FU-1")
+            self.assertEqual(rc, 2)
+            self.assertIn("--fu is only valid", err)
 
 
 if __name__ == "__main__":

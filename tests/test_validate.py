@@ -292,6 +292,17 @@ class TestDevlogActionEnumExtensions(unittest.TestCase):
             self.schema,
         )
 
+    def test_refine_action_with_null_phase(self):
+        # Refine-tier rows are sub-phase: null phase + null step, carrying the
+        # refine kind and optionally the iteration (D-refine-8).
+        v.validate_json_schema(
+            self._entry(
+                action="refine", phase=None, step=None,
+                kind="prose", iteration=3,
+            ),
+            self.schema,
+        )
+
     def test_unknown_action_rejected(self):
         with self.assertRaisesRegex(ValueError, "action"):
             v.validate_json_schema(

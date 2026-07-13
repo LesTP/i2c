@@ -13,7 +13,7 @@
     "step": { "type": ["integer", "null"], "minimum": 1 },
     "action": {
       "type": "string",
-      "enum": ["plan", "tests", "execute", "review", "close", "probe", "integration_check", "diagnose", "reconcile"]
+      "enum": ["plan", "tests", "execute", "review", "close", "probe", "integration_check", "diagnose", "reconcile", "refine"]
     },
     "outcome": {
       "type": ["string", "null"],
@@ -43,6 +43,9 @@
 
     "regime": { "type": ["string", "null"], "enum": ["build", "refine", "explore", null] },
     "leaf": { "type": ["boolean", "null"] },
+
+    "fu": { "type": ["string", "null"], "pattern": "^FU-\\d+$" },
+    "kind": { "type": ["string", "null"], "enum": ["prose", "dead-surface", "doc-reconciliation", "cli-ergonomics", "test-hardening", "structural-refactor", "experiment-log", "bugfix", "other", null] },
 
     "tests_pass": { "type": ["boolean", "null"] },
     "tests_cmd": { "type": ["string", "null"] },

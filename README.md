@@ -277,6 +277,23 @@ This extends i2c's detect-and-halt post-action invariants into
 [`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md). The deferred
 `fix` code-repair agent is tracked in [`FUTURE_recovery.md`](FUTURE_recovery.md).
 
+### Refine tier (ad-hoc work)
+
+Alongside the phase lifecycle (Build), i2c has a low-ceremony **Refine tier** for
+opportunistic, sub-phase work — prose passes, dead-surface removal, doc
+reconciliation, small ergonomics (`DESIGN_refine_v1.md`). It has two parts:
+
+- **The backlog** — `i2c fu add|list|show|close|reopen|prioritize|render` over a
+  schema-validated `.state/followups.json`. It gates nothing; it's a queryable,
+  drift-proof replacement for a hand-maintained follow-ups markdown.
+- **The loop** — `i2c refine <fu-id>` is a **single-shot, sub-phase dispatch**
+  that bypasses the state machine: it assembles a refine prompt (the FU record +
+  `instructions/refine.md`, no phase context), invokes the worker once, and on
+  `EXIT:0` closes the FU and commits `refine(<kind>): <fu-id> <summary>`. A
+  structural invariant asserts the run left `project.json` / `phases.json` /
+  `steps.json` byte-unchanged — that is what keeps refine off the lifecycle.
+  Backend routing uses `[run.backends].refine`.
+
 ---
 
 ## Two execution modes

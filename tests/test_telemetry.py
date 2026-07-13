@@ -80,6 +80,14 @@ class TestSchema(unittest.TestCase):
         # First PLAN dispatches while project.phase is still 0.
         v.validate_json_schema(_valid_row(phase=0, action="plan"), self.schema)
 
+    def test_refine_action_row_valid(self):
+        # Refine-tier telemetry: action="refine" with the optional fu/kind
+        # columns (D-refine-8, Q-refine-3).
+        row = _valid_row(
+            phase=0, action="refine", regime="refine", fu="FU-42", kind="prose",
+        )
+        v.validate_json_schema(row, self.schema, label="row")
+
 
 # ---------------------------------------------------------------------------
 # Generalized validated JSONL append

@@ -22,9 +22,10 @@ except ModuleNotFoundError:  # pragma: no cover - 3.10 fallback
 
 CONFIG_FILENAME = "i2c.toml"
 _BACKENDS = ("claude", "codex")
-# Lifecycle actions plus the out-of-band recovery actions; [run.backends] may
-# map a backend for any of them (e.g. diagnose = claude).
-_RUN_ACTIONS = ("plan", "tests", "execute", "review", "close", "diagnose", "reconcile")
+# Lifecycle actions plus the out-of-band recovery actions and the refine-tier
+# single-shot dispatch; [run.backends] may map a backend for any of them
+# (e.g. diagnose = claude, refine = codex).
+_RUN_ACTIONS = ("plan", "tests", "execute", "review", "close", "diagnose", "reconcile", "refine")
 
 
 class ConfigError(Exception):

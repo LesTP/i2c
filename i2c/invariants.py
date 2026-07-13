@@ -147,6 +147,71 @@ def _check_execute(project: dict[str, Any]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Refine (sub-phase) invariant — DESIGN_refine_v1.md §12, Q-B2
+# ---------------------------------------------------------------------------
+
+# The lifecycle state files a refine run must NOT touch (refine is sub-phase).
+_PHASE_FILES = ("project.json", "phases.json", "steps.json")
+
+
+def snapshot_phase_files(project_root: Path) -> dict[str, str | None]:
+    """Capture the current contents of the lifecycle state files (or ``None``
+    when absent) so ``check_post_refine`` can assert a refine run left them
+    byte-unchanged. Best-effort read; the raw text is compared, not parsed."""
+    snap: dict[str, str | None] = {}
+    for name in _PHASE_FILES:
+        path = project_root / ".state" / name
+        snap[name] = path.read_text(encoding="utf-8") if path.is_file() else None
+    return snap
+
+
+def check_post_refine(
+    project_root: Path, *, pre_files: dict[str, str | None], pre_devlog_count: int
+) -> list[str]:
+    """Post-refine invariant (Proposal B). Returns failure messages (empty ⇒ pass).
+
+    Refine is a sub-phase, single-shot action: it must NOT advance the lifecycle.
+    This hard-asserts the two structural properties that keep it off the phase
+    machine (Q-B2):
+
+    1. ``project.json`` / ``phases.json`` / ``steps.json`` are byte-unchanged vs
+       the pre-invoke snapshot — the worker touched no lifecycle state.
+    2. The worker appended a ``devlog.jsonl`` entry with ``action == "refine"``
+       (the sub-phase outcome record; D-refine-8).
+
+    The runner calls this as a guard *before* closing the FU / committing, so a
+    lifecycle-violating or unlogged run is surfaced (exit 2) and never committed.
+    """
+    failures: list[str] = []
+
+    for name in _PHASE_FILES:
+        path = project_root / ".state" / name
+        now = path.read_text(encoding="utf-8") if path.is_file() else None
+        if now != pre_files.get(name):
+            failures.append(
+                f"post-REFINE invariant: {name} changed during the refine run; "
+                "refine is sub-phase and must not write lifecycle state"
+            )
+
+    devlog_path = project_root / ".state" / "devlog.jsonl"
+    try:
+        devlog = (
+            v.validate_devlog_jsonl(devlog_path) if devlog_path.is_file() else []
+        )
+    except ValueError as e:
+        failures.append(f"post-REFINE invariant: devlog schema-invalid: {e}")
+        return failures
+
+    appended = devlog[pre_devlog_count:]
+    if not any(entry.get("action") == "refine" for entry in appended):
+        failures.append(
+            "post-REFINE invariant: worker did not append a devlog entry with "
+            "action='refine' (the sub-phase outcome record)"
+        )
+    return failures
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 

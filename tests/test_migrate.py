@@ -72,9 +72,9 @@ class TestMigrateProject(unittest.TestCase):
             v.validate_state_file(root / ".state" / "project.json")
 
     def test_noop_chain_from_v1(self):
-        # Both 1 → 2 (tests action) and 2 → 3 (pattern field) are pure no-op
-        # transforms: the only change from v1 is the version stamp, no field
-        # transforms, all the way up to CURRENT.
+        # 1 → 2 (tests action), 2 → 3 (pattern field), and 3 → 4 (refine tier)
+        # are all pure no-op transforms: the only change from v1 is the version
+        # stamp, no field transforms, all the way up to CURRENT.
         v1 = {"schema_version": 1, "phase": 1, "state": "plan", "gotchas": []}
         with TempState(v1) as root:
             result = migrate.migrate_project(root)
@@ -99,18 +99,42 @@ class TestMigrateProject(unittest.TestCase):
 
     def test_two_to_three_noop(self):
         # 2 → 3 is a pure no-op stamp bump (pattern-field forward-compat guard,
-        # FU-48). A v2 project (e.g. one written before the pattern field) keeps
-        # all fields and only gains the new stamp.
+        # FU-48). migrate_project always drives to CURRENT, so a v2 project keeps
+        # all its fields and only gains the current stamp (CURRENT-relative so the
+        # test survives later version bumps).
         v2 = {"schema_version": 2, "phase": 1, "state": "plan", "gotchas": []}
         with TempState(v2) as root:
             result = migrate.migrate_project(root)
             self.assertTrue(result.migrated)
-            self.assertEqual((result.from_version, result.to_version), (2, 3))
+            self.assertEqual(
+                (result.from_version, result.to_version),
+                (2, migrate.CURRENT_SCHEMA_VERSION),
+            )
             self.assertTrue(all("blocked" not in c for c in result.changes))
             data = json.loads(
                 (root / ".state" / "project.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(data["schema_version"], 3)
+            self.assertEqual(data["schema_version"], migrate.CURRENT_SCHEMA_VERSION)
+            v.validate_state_file(root / ".state" / "project.json")
+
+    def test_three_to_four_noop(self):
+        # 3 → 4 is a pure no-op stamp bump (refine-tier forward-compat guard,
+        # D-refine-8: the additive devlog action="refine" / nullable phase /
+        # kind / iteration + telemetry refine action). A v3 project keeps all its
+        # fields and only gains the new stamp.
+        v3 = {"schema_version": 3, "phase": 1, "state": "plan", "gotchas": []}
+        with TempState(v3) as root:
+            result = migrate.migrate_project(root)
+            self.assertTrue(result.migrated)
+            self.assertEqual(
+                (result.from_version, result.to_version),
+                (3, migrate.CURRENT_SCHEMA_VERSION),
+            )
+            self.assertTrue(all("blocked" not in c for c in result.changes))
+            data = json.loads(
+                (root / ".state" / "project.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(data["schema_version"], migrate.CURRENT_SCHEMA_VERSION)
             v.validate_state_file(root / ".state" / "project.json")
 
     def test_already_current_is_noop(self):

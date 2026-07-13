@@ -131,7 +131,7 @@ class TestEject(unittest.TestCase):
             self.assertEqual(
                 names,
                 ["close.md", "diagnose.md", "execute.md", "plan.md",
-                 "reconcile.md", "review.md", "tests.md"],
+                 "reconcile.md", "refine.md", "review.md", "tests.md"],
             )
 
     def test_eject_refuses_overwrite(self):
