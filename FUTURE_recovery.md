@@ -61,9 +61,14 @@ Because the executor is refine's, the following — previously "Open items" here
 are **gone**, replaced by the refine substrate:
 
 - **`.state/diagnoses.json` + schema** → the diagnosis rides the `bugfix` FU's
-  `context` / `refs` in `followups.json`. (Caveat: prose `context` drops the
-  structured `class` / `confidence` fields; acceptable for a human-gated v1.
-  Revisit only if confidence-gated *auto*-dispatch is ever wanted.)
+  `context` / `refs` in `followups.json`. Prose `context` drops the structured
+  `class` / `confidence` fields, which is fine for a human-gated v1. **Middle
+  path for the self-healing endgame (2026-07-13):** rather than reviving a
+  separate `diagnoses.json`, add *optional* `class` / `confidence` fields to
+  `followups.schema.json` on `bugfix` FUs — this keeps confidence-gated
+  *auto*-dispatch on the table without a parallel diagnosis store. Additive and
+  nullable, so it is cheap to decide now and wire only when auto-dispatch is
+  actually built.
 - **`fix.md` instruction file + separate dispatch** → `instructions/refine.md`
   (+ optional per-kind guidance, Proposal C) and `i2c refine` / `/refine`.
 - **Resume-after-recovery semantics** → the refine sub-phase invariant (Q-B2).
@@ -78,8 +83,12 @@ are **gone**, replaced by the refine substrate:
   output, commit diff, prior `bugfix` FUs for the phase, project gotchas) and
   emitting a well-specified `bugfix` FU. *Underspecified context is the main
   reliability risk* — this is where the effort concentrates.
-- **Scope discipline** — `diagnose` must not invent (same rule PLAN follows):
-  `class=spec` → "needs a human decision," never a fabricated `bugfix`.
+- **Scope discipline + the `class=spec` output path** — `diagnose` must not
+  invent (same rule PLAN follows): `class=spec` → "needs a human decision,"
+  never a fabricated `bugfix`. Open gap (2026-07-13): a spec-class finding needs
+  a **non-`bugfix` destination** — it is not a refine kind, so it should surface
+  as an escalation or a decision record, not a `followups.json` `bugfix` entry.
+  Settle that home when the capture worker is built.
 - **Dispatch gate for `bugfix`** — unlike a prose pass, a `bugfix` keeps a
   **mandatory human gate** at dispatch (a low-confidence diagnosis can be wrong):
   it is the one refine kind not freely routed to unattended `/refine`. Only chain
