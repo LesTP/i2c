@@ -3,9 +3,10 @@
 > **Status:** Proposal A **shipped** (the `i2c fu` backlog). Proposal B **shipped**
 > (this doc §12): the assembler `refine` recipe + `instructions/refine.md`, the
 > `run_refine.py` driver, the sub-phase invariant, the `devlog`/`telemetry` refine
-> support (D-refine-8), the `i2c refine` CLI, **and the admin-gated `/refine`
-> Telegram command** (FU-54). **Deferred:** followups-only-repo (i2c
-> self-dogfooding) support (FU-55). Formalizes the *opportunistic
+> support (D-refine-8), the `i2c refine` CLI, the admin-gated `/refine` Telegram
+> command (FU-54), **and the read-only `/audit fu` bot backlog facet** (§4.4).
+> **Deferred:** followups-only-repo (i2c self-dogfooding) support (FU-55).
+> Formalizes the *opportunistic
 > refine* work — cleanups, prose passes, dead-surface removal, and the endless
 > doc/status reconciliation — that i2c does constantly but never structured. The
 > Build regime got dogfooded on the consumer repos; the Refine work got done

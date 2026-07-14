@@ -385,7 +385,8 @@ Commands:
 
 - **Read (open):** `/audit [proj] [facet]` — the read hub; `facet` is
   `(none)` → summary, or `phase N` / `decisions [N]` / `devlog [N]` /
-  `escalation` / `logs [N]` / `logs iter N`. Plus `/diagnose [proj] [N]`
+  `escalation` / `logs [N]` / `logs iter N` / `fu [all|status|kind]` (the refine
+  backlog; defaults to open). Plus `/diagnose [proj] [N]`
   (recovery drift audit + classification), `/portfolio` (cross-project),
   `/setdir <proj>` (set the current project), `/commands`.
 - **Admin (gated to the `admins` in the `[telegram]` table of `i2c.toml`):**

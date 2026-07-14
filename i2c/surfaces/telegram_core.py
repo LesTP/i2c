@@ -14,7 +14,7 @@ Command surface (DESIGN_surface_backends_v1.md §4):
 
 - ``/audit [proj] [facet]`` — the read hub; ``facet`` ∈ {∅→summary, ``phase N``,
   ``decisions [N]``, ``devlog [N]``, ``escalation``, ``logs [N]`` /
-  ``logs iter N``}.
+  ``logs iter N``, ``fu [all|<status>|<kind>]``}.
 - ``/diagnose [proj] [N]`` — read-only recovery diagnosis of iteration N
   (default: latest): runs the drift audit and classifies the failure.
 - ``/portfolio`` — cross-project view.
@@ -53,6 +53,9 @@ _BACKENDS = ("claude", "codex")
 # A followup id token (case-insensitive; normalized to upper-case FU-N).
 _FU_ID_RE = re.compile(r"^FU-\d+$", re.IGNORECASE)
 
+# Followup statuses accepted by the /audit fu facet (mirrors followups.schema).
+_FU_STATUSES = ("open", "accepted", "partially-closed", "closed", "wontfix")
+
 # Telegram slash-command menu (the "/" autocomplete + Menu button). Registered
 # on startup via set_my_commands (see surfaces/telegram._set_command_menu), so it
 # stays in sync with the code. Names must be Telegram-legal (lowercase, <=32).
@@ -60,7 +63,7 @@ COMMAND_MENU: list[tuple[str, str]] = [
     ("commands", "Show all commands"),
     ("portfolio", "Cross-project view — which project needs attention"),
     ("setdir", "Show or set the current project"),
-    ("audit", "Audit a project: summary | phase N | decisions | devlog | escalation | logs"),
+    ("audit", "Audit a project: summary | phase N | decisions | devlog | escalation | logs | fu"),
     ("run", "Admin: run N iterations (default 1); add 'full' for per-step progress"),
     ("batch", "Admin: run a full phase to a halt; add 'full' for per-step progress"),
     ("diagnose", "Diagnose a failed iteration: drift audit + classification (read-only)"),
@@ -74,7 +77,8 @@ _HELP = (
     "\n"
     "Read:\n"
     " /audit [proj] [facet] — Project audit. facet: (none)=summary | phase N "
-    "| decisions [N] | devlog [N] | escalation | logs [N] | logs iter N\n"
+    "| decisions [N] | devlog [N] | escalation | logs [N] | logs iter N | "
+    "fu [all|status|kind]\n"
     " /diagnose [proj] [N] — Diagnose iteration N (default latest): drift audit "
     "+ classification (read-only)\n"
     " /portfolio — Cross-project view (which project needs me?)\n"
@@ -281,9 +285,26 @@ def _audit(rest: list[str], proj: Path) -> Reply:
             doc = rec.transcript if (rec.transcript and len(text) > 3500) else None
             return Reply(text, document=doc)
         return Reply(render._render_logs(control.logs(proj, limit=_int_arg(sub) or 10)))
+    if facet == "fu":
+        # Read-only backlog view. Defaults to open (the actionable set / valid
+        # /refine targets); `all` shows everything; a known status filters by
+        # status; anything else is treated as a kind filter (across all statuses).
+        status: str | None = "open"
+        kind: str | None = None
+        if sub:
+            token = sub[0].lower()
+            if token == "all":
+                status = None
+            elif token in _FU_STATUSES:
+                status = token
+            else:
+                status, kind = None, token
+        return Reply(
+            render._render_followups(control.followups(proj, status=status, kind=kind))
+        )
     return Reply(
         f"Unknown /audit facet {facet!r}. "
-        "Use: phase N | decisions | devlog | escalation | logs",
+        "Use: phase N | decisions | devlog | escalation | logs | fu",
         ok=False,
     )
 

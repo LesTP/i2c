@@ -49,6 +49,12 @@ def _complete_phase2(proj: Path) -> None:
     sp.write_text(json.dumps(steps, indent=2) + "\n", encoding="utf-8")
 
 
+def _write_backlog(proj: Path, records) -> None:
+    (proj / ".state" / "followups.json").write_text(
+        json.dumps(records), encoding="utf-8"
+    )
+
+
 class _Counter:
     """Fake run_iteration_fn(proj, backend) -> rc; records the backends seen."""
 
@@ -217,6 +223,69 @@ class TestAudit(unittest.TestCase):
             r = tc.dispatch("audit", ["bogus"], is_admin=False, root=root)
             self.assertFalse(r.ok)
             self.assertIn("Unknown /audit facet", r.text)
+
+    def test_fu_facet_defaults_to_open(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            _write_backlog(root / "only", [
+                {"id": "FU-1", "title": "open one", "kind": "prose", "status": "open"},
+                {"id": "FU-2", "title": "done", "kind": "other",
+                 "status": "closed", "resolution": "x"},
+            ])
+            r = tc.dispatch("audit", ["fu"], is_admin=False, root=root)
+            self.assertTrue(r.ok)
+            self.assertIn("FU-1", r.text)
+            self.assertNotIn("FU-2", r.text)  # closed excluded by default
+
+    def test_fu_facet_all_shows_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            _write_backlog(root / "only", [
+                {"id": "FU-1", "title": "open one", "kind": "prose", "status": "open"},
+                {"id": "FU-2", "title": "done", "kind": "other",
+                 "status": "closed", "resolution": "x"},
+            ])
+            r = tc.dispatch("audit", ["fu", "all"], is_admin=False, root=root)
+            self.assertIn("FU-1", r.text)
+            self.assertIn("FU-2", r.text)
+
+    def test_fu_facet_status_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            _write_backlog(root / "only", [
+                {"id": "FU-1", "title": "open one", "kind": "prose", "status": "open"},
+                {"id": "FU-2", "title": "done", "kind": "other",
+                 "status": "closed", "resolution": "x"},
+            ])
+            r = tc.dispatch("audit", ["fu", "closed"], is_admin=False, root=root)
+            self.assertIn("FU-2", r.text)
+            self.assertNotIn("FU-1", r.text)
+
+    def test_fu_facet_kind_filter_spans_statuses(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            _write_backlog(root / "only", [
+                {"id": "FU-1", "title": "p", "kind": "prose", "status": "open"},
+                {"id": "FU-2", "title": "d", "kind": "prose",
+                 "status": "closed", "resolution": "x"},
+                {"id": "FU-3", "title": "o", "kind": "other", "status": "open"},
+            ])
+            r = tc.dispatch("audit", ["fu", "prose"], is_admin=False, root=root)
+            self.assertIn("FU-1", r.text)
+            self.assertIn("FU-2", r.text)  # kind filter is status-agnostic
+            self.assertNotIn("FU-3", r.text)
+
+    def test_fu_facet_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            r = tc.dispatch("audit", ["fu"], is_admin=False, root=root)
+            self.assertTrue(r.ok)
+            self.assertIn("no follow-ups", r.text)
 
 
 class TestAuth(unittest.TestCase):
