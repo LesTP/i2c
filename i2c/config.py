@@ -5,9 +5,9 @@ project root, rather than re-typing flags. Precedence is **CLI flag > i2c.toml >
 built-in default** (the resolution lives in ``cli.cmd_run``; this module only
 reads and validates the file).
 
-Only the ``[run]`` and ``[telegram]`` tables are read today. Unknown keys are
-ignored for forward-compatibility. Secrets / API keys (the bot token, provider
-keys) do **not** belong here — use environment variables.
+Only the ``[run]``, ``[telegram]``, and ``[telemetry]`` tables are read today.
+Unknown keys are ignored for forward-compatibility. Secrets / API keys (the bot
+token, provider keys) do **not** belong here — use environment variables.
 """
 
 from __future__ import annotations

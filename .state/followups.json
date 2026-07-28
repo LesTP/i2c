@@ -264,7 +264,7 @@
     "id": "FU-44",
     "title": "Scope tests_pass oracle to the acceptance suite (Q-tests-3)",
     "kind": "cli-ergonomics",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-06",
     "context": "The increment-2 tests_pass telemetry field is only meaningful once [telemetry].test_cmd points at the frozen acceptance suite (tests/acceptance/phase_<N>/) rather than the whole/self-written suite. tests action v1 authors the suite but does not yet scope the oracle to it.",
     "trigger": "Benchmark-era: when wiring the clean per-phase oracle, point test_cmd (or a new default) at the acceptance dir so tests_pass grades the contract; keep the whole-suite run at CLOSE.",
@@ -272,7 +272,9 @@
     "refs": [
       "DESIGN_tests_action_v1.md §6",
       "§12 Q-tests-3; DESIGN_telemetry_v1.md §6"
-    ]
+    ],
+    "closed": "2026-07-28",
+    "resolution": "Oracle supports {phase} interpolation to scope tests_pass to tests/acceptance/phase_<N>; records interpolated tests_cmd; graceful-skips (None, not false-red) when the scoped suite dir is absent."
   },
   {
     "id": "FU-45",
@@ -383,7 +385,7 @@
     "id": "FU-51",
     "title": "TESTS action: contract-coverage checklist + oracle anti-pattern guidance",
     "kind": "test-hardening",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-13",
     "context": "The frozen acceptance suite is only a real oracle if it encodes the contract AND avoids fragile assertions; build-a-stew exposed both gaps. Contract-coverage: Phase 2 had two REVIEW escalations (iters 18 and 19) for contract drift the suite never checked - StewBuild dropped fields, and removeIngredient silently no-opped instead of throwing the ARCHITECTURE-guaranteed typed error - so EXECUTE passed tests while violating the contract and REVIEW was the only catch. Anti-patterns: TESTS authored fragile oracles (jsdom keyboard assumptions, an over-broad /low|medium|high/ matcher, a non-deterministic 30-iteration Tab scan) that cost 11.4M tokens at iter 25. Add to instructions/tests.md: (a) a contract-coverage checklist enumerating every ARCHITECTURE/ARCH guarantee including error modes and field-retention, asserting each; (b) an oracle anti-pattern list: no non-deterministic scans, scope matchers to the exact element, avoid environment-specific (jsdom) behavioral assumptions.",
     "trigger": "build-a-stew Phase 2 contract-drift escalations plus the Phase 3 iter-25 fragile-test blowup.",
@@ -394,13 +396,15 @@
     "refs": [
       "DESIGN_tests_action_v1.md",
       "FU-49"
-    ]
+    ],
+    "closed": "2026-07-28",
+    "resolution": "Added contract-coverage checklist (assert every guarantee incl. error modes + field-retention) and oracle anti-pattern list to instructions/tests.md; goldens regenerated. 701 tests green."
   },
   {
     "id": "FU-52",
     "title": "Oracle telemetry: tests_pass null across a full run; seed test_cmd + include typecheck/build",
     "kind": "test-hardening",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-13",
     "context": "All 59 telemetry rows of build-a-stew (the flagship greenfield run) have tests_pass=null and tests_cmd=null: the benchmark linchpin metric recorded nothing across a complete project, making build-a-stew unusable as a benchmark substrate. Causes: (1) the telemetry test_cmd was never configured - i2c init / scaffold does not seed it and nothing warns when it is unset on an autonomous run; (2) the oracle excludes typecheck/build even when wired - Phase 4 iter 45 had green vitest but a broken tsc (replaceAll needs ES2021), so tests_pass would be a false green for a compiled project; (3) the suite could not run in the autonomous environment at all (NTFS node_modules and tsc-shim permission). Fixes: seed or prompt for test_cmd at init; for typed/compiled projects include the typecheck and build in the oracle, not just the test runner; warn when test_cmd is unset so tests_pass=null is not silent. Extends FU-44, which assumes test_cmd is set and only needs scoping to the acceptance directory.",
     "trigger": "build-a-stew telemetry review: tests_pass null for all 59 iterations.",
@@ -413,7 +417,9 @@
     "refs": [
       "FU-44",
       "FU-43"
-    ]
+    ],
+    "closed": "2026-07-28",
+    "resolution": "Runner warns when [telemetry].test_cmd unset (no longer silent null); i2c.toml template recommends test_cmd + documents typecheck/build chaining; config.py docstring fixed."
   },
   {
     "id": "FU-53",

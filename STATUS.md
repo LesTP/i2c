@@ -48,6 +48,23 @@ The **`tests` action** (test/impl separation — the benchmark oracle) **shipped
 clankercourts is driving the `state_manager` phases autonomously (Phase 17 done
 via `plan→tests→execute→review→close`; Phase 18 next).
 
+**Update (2026-07-28) — oracle signal group shipped (FU-51/52/44).** The first
+greenfield/typed/codex run, **build-a-stew** (`P:\shared\build-a-stew`, 59 iters),
+exposed that the shipped `tests` oracle wasn't *operationally* trustworthy: all 59
+telemetry rows had `tests_pass=null` (scaffold ships `test_cmd` commented, and unset
+was silent), the oracle ran an unscoped/whole-suite command (a compiled project could
+false-green on broken `tsc`), and TESTS authored fragile / contract-incomplete suites.
+Fixed the **signal group** in-session (i2c is followups-only, so by hand — not a phase
+or `i2c refine`, cf. FU-55): **FU-51** (contract-coverage checklist + oracle
+anti-patterns in `tests.md`), **FU-52** (runner warns when `test_cmd` unset; template
+documents typecheck/build chaining), **FU-44** (`{phase}` interpolation scopes
+`tests_pass` to `tests/acceptance/phase_<N>/`, graceful-skips when the suite is absent).
+701 tests green. **Remaining pre-benchmark work:** the integrity pair **FU-43** (hard
+CLOSE suite-digest invariant) + **FU-50** (sanctioned oracle-correction lane), and
+**FU-53** (per-iteration runaway guard — build-a-stew iter 25 burned 11.4M tokens). A
+live build-a-stew signal check needs **pirozhok** (laptop vitest fails on rollup/NTFS —
+the FU-52 env cause).
+
 **What's next.** The dominant thread is the **model-benchmark initiative**
 (telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is SHIPPED** (2026-07-06, `a110138`; validated on clankercourts Phase 17 — oracle integrity held, acceptance suite frozen at the `N.tests` commit). The next benchmark step is the **replay harness on clankercourts + routing v0**.
 See **Active Roadmap** below for tracks, priorities, and the current recommendation.

@@ -271,6 +271,43 @@ criterion from the contract. Guidelines:
 - Do **not** implement production code here. TESTS writes tests only; if a test
   needs a helper/fixture, put it under the acceptance dir.
 
+#### Contract-coverage checklist
+
+The suite is only a real oracle if it encodes the **whole** contract. Before you
+finish, walk the `Module Contract` and confirm you have at least one assertion for
+each guarantee — including the ones easy to skip:
+
+- **Every public operation** — its documented success behavior.
+- **Every error mode** — assert the contract's typed errors/rejections actually
+  fire (e.g. an invalid operation *raises* the guaranteed error, not a silent
+  no-op). A missing error-path test lets EXECUTE "pass" while silently swallowing
+  failures the contract says must be surfaced.
+- **Field / data retention** — assert that constructed or transformed values keep
+  the fields the contract guarantees, so a dropped-field regression turns the
+  suite red instead of passing unnoticed.
+- **State transitions & invariants** — assert the observable state *after* each
+  operation, not only its return value.
+- **Interactions** — the cross-product from the bullet above.
+
+If a guarantee is genuinely untestable from the public surface, say so in the
+devlog summary rather than silently skipping it.
+
+#### Avoid fragile oracles (anti-patterns)
+
+A flaky or over-broad acceptance test corrupts the oracle: it produces false reds
+that burn EXECUTE budget fighting the *test* instead of the contract. Do **not**:
+
+- **Non-deterministic scans / loops** — no "repeat an action N times and hope the
+  right thing happens" (e.g. a multi-step focus scan); assert the exact expected
+  target directly.
+- **Over-broad matchers** — scope each assertion to the exact expected
+  element/value. A matcher like `/low|medium|high/` passes on the wrong output;
+  match the specific string/element the contract specifies.
+- **Environment-specific behavioral assumptions** — do not assert on incidental
+  quirks of the test environment (e.g. jsdom keyboard/layout behavior) that may
+  not reflect the contract. Assert the contract's guarantee, not the harness's
+  incidental behavior.
+
 ### 4. Do not commit — the runner does
 
 Leave the new suite files in the working tree; do **not** run `git`. After you

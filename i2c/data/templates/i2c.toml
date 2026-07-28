@@ -19,14 +19,26 @@
 # review = "claude"
 # close = "claude"
 
-# Optional: telemetry sidecar (.state/telemetry.jsonl) enrichment.
-# test_cmd is the opt-in tests oracle — a shell command run in the project root
-# after each worker invocation; its exit code is recorded as tests_pass. Leave
-# it unset to keep the oracle off. [telemetry.pricing] adds or overrides per-
-# model rates (USD per 1M tokens) layered over the bundled pricing table, used
-# to derive cost_usd / tier.
+# Optional but recommended: telemetry sidecar (.state/telemetry.jsonl) enrichment.
+# test_cmd is the tests oracle — a shell command run in the project root after
+# each worker invocation; its exit code is recorded as tests_pass (the metric the
+# benchmark rests on). Leave it unset to keep the oracle off, but then tests_pass
+# is null for the whole run and the runner warns on each iteration.
+#
+#   - Scope it to the frozen acceptance suite so tests_pass grades the contract,
+#     not self-written unit tests: the {phase} placeholder is substituted by the
+#     runner with the current phase number. (The worker's full suite still runs
+#     at CLOSE — this is only the per-iteration oracle.)
+#   - Chain typecheck/build so a compiled project can't record a false green
+#     (green tests but a broken build): the WHOLE chain's exit code is the signal.
+#
 # [telemetry]
-# test_cmd = "python -m pytest -q"
+# test_cmd = "python -m pytest tests/acceptance/phase_{phase} -q"   # contract-scoped
+# # compiled example — chain typecheck + build + the acceptance suite:
+# # test_cmd = "tsc --noEmit && vitest run tests/acceptance/phase_{phase}"
+#
+# [telemetry.pricing] adds or overrides per-model rates (USD per 1M tokens),
+# layered over the bundled pricing table, used to derive cost_usd / tier.
 # [telemetry.pricing.my-model]
 # tier = "T1"
 # in = 3.00

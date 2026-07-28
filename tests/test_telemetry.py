@@ -405,6 +405,45 @@ class TestTestsOracle(unittest.TestCase):
             self.assertEqual(rc, 0, msg=err)
             self.assertFalse(self._rows(p.root)[0]["tests_pass"])
 
+    def test_oracle_off_warns_not_silent(self):
+        # FU-52: no test_cmd -> tests_pass null, but the runner must warn so a
+        # null oracle across a run is never silent.
+        with TempProject() as p:
+            rc, _, err = run_iter(invoker=make_fake_invoker(signal_block()))
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIsNone(self._rows(p.root)[0]["tests_pass"])
+            self.assertIn("telemetry oracle off", err)
+
+    def test_oracle_phase_interpolation_scoped_pass(self):
+        # FU-44: {phase} targets the frozen acceptance suite; tests_cmd records
+        # the interpolated command actually run (fixture is phase 2).
+        with TempProject() as p:
+            acc = p.root / "tests" / "acceptance" / "phase_2"
+            acc.mkdir(parents=True)
+            (acc / "ok.py").write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+            (p.root / "i2c.toml").write_text(
+                '[telemetry]\n'
+                'test_cmd = "python tests/acceptance/phase_{phase}/ok.py"\n',
+                encoding="utf-8")
+            rc, _, err = run_iter(invoker=make_fake_invoker(signal_block()))
+            self.assertEqual(rc, 0, msg=err)
+            row = self._rows(p.root)[0]
+            self.assertTrue(row["tests_pass"])
+            self.assertEqual(
+                row["tests_cmd"], "python tests/acceptance/phase_2/ok.py")
+
+    def test_oracle_scoped_skips_when_suite_absent(self):
+        # FU-44: a {phase}-scoped oracle skips (tests_pass=None) when the frozen
+        # acceptance dir does not exist yet — not a false red.
+        with TempProject() as p:
+            (p.root / "i2c.toml").write_text(
+                '[telemetry]\n'
+                'test_cmd = "python tests/acceptance/phase_{phase}/ok.py"\n',
+                encoding="utf-8")
+            rc, _, err = run_iter(invoker=make_fake_invoker(signal_block()))
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIsNone(self._rows(p.root)[0]["tests_pass"])
+
 
 if __name__ == "__main__":
     unittest.main()

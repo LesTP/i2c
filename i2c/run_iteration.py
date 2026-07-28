@@ -526,14 +526,27 @@ def write_summary_line(
     return line
 
 
-def _run_project_tests(root: Path, cmd: str) -> bool | None:
-    """Run the opt-in tests-oracle command in ``root`` (telemetry only).
+def _run_project_tests(
+    root: Path, cmd: str, phase: int, *, scoped: bool = False
+) -> bool | None:
+    """Run the tests-oracle command in ``root`` (telemetry only).
+
+    ``cmd`` is already ``{phase}``-substituted. When ``scoped`` is set (the
+    configured ``test_cmd`` used the ``{phase}`` placeholder to target the frozen
+    ``tests/acceptance/phase_<N>/`` suite, FU-44), the oracle is *skipped*
+    (returns ``None``) if that acceptance dir does not exist yet — early phases /
+    actions before TESTS have no frozen suite, so a missing dir is "no signal",
+    not a false red.
 
     Returns True/False on pass/fail (exit 0 = pass), or None if the command
     couldn't be run at all. Best-effort: never raises, never affects the
     iteration's control flow. Runs *after* the worker's wall-clock is captured
     so the oracle's runtime isn't attributed to the worker.
     """
+    if scoped:
+        acc_dir = root / "tests" / "acceptance" / f"phase_{phase}"
+        if not acc_dir.exists():
+            return None  # frozen acceptance suite not present yet -> no signal
     try:
         proc = subprocess.run(
             cmd,
@@ -887,8 +900,22 @@ def run_iteration(
         pricing = tel.load_pricing(overrides=tele_cfg.pricing)
     except Exception:  # noqa: BLE001 - pricing is best-effort
         pricing = None
-    tests_cmd = tele_cfg.test_cmd
-    tests_pass = _run_project_tests(root, tests_cmd) if tests_cmd else None
+    raw_test_cmd = tele_cfg.test_cmd
+    if raw_test_cmd:
+        # FU-44: {phase} lets test_cmd target the frozen acceptance suite for the
+        # current phase; record the interpolated command actually run.
+        scoped = "{phase}" in raw_test_cmd
+        tests_cmd = raw_test_cmd.replace("{phase}", str(phase))
+        tests_pass = _run_project_tests(root, tests_cmd, phase, scoped=scoped)
+    else:
+        tests_cmd = None
+        tests_pass = None
+        # Not silent: a null oracle across a whole run makes telemetry useless as
+        # a benchmark substrate (FU-52). Nudge the operator to wire the oracle.
+        sys.stderr.write(
+            "NOTE: telemetry oracle off ([telemetry].test_cmd unset) -> "
+            "tests_pass=null. Set test_cmd in i2c.toml to grade this run.\n"
+        )
 
     def _emit_telemetry(final_exit: int) -> None:
         try:
