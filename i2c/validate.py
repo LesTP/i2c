@@ -27,6 +27,7 @@ SCHEMA_BY_FILENAME: dict[str, str] = {
     "steps.json": "steps.schema.json",
     "decisions.json": "decisions.schema.json",
     "followups.json": "followups.schema.json",
+    "tests_manifest.json": "tests_manifest.schema.json",
     # devlog.jsonl is per-line; use DEVLOG_ENTRY_SCHEMA for each record.
 }
 

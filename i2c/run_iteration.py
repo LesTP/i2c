@@ -1094,6 +1094,18 @@ def run_iteration(
             if committed:
                 sys.stdout.write(f"committed TESTS suite: {note}\n")
                 end_commit = tel.head_commit(root)
+                # FU-43: record a digest of the frozen suite so the hard CLOSE
+                # integrity invariant can detect any later change. Best-effort;
+                # a missing marker just degrades CLOSE to the soft (prose) layer.
+                try:
+                    digest = invariants.compute_acceptance_digest(root, t_phase)
+                    if digest is not None:
+                        invariants.record_tests_suite(
+                            root, t_phase,
+                            tests_commit=end_commit, digest=digest)
+                except Exception as e:  # noqa: BLE001 - marker is best-effort
+                    sys.stderr.write(
+                        f"NOTE: tests-suite integrity marker skipped ({e}).\n")
             else:
                 sys.stdout.write(f"NOTE: no TESTS commit ({note}).\n")
 

@@ -954,6 +954,29 @@ class TestTestsCommitWiring(unittest.TestCase):
             self.assertEqual(rc, 2)
             self.assertEqual(calls, [])
 
+    def test_tests_commit_writes_integrity_marker(self):
+        # FU-43: a successful TESTS commit records a suite digest marker in
+        # .state/tests_manifest.json for the hard CLOSE integrity invariant.
+        with TempProject() as tp:
+            tp.patch_project(state="tests")
+            self._seed_tests_devlog(tp.root)
+            acc = tp.root / "tests" / "acceptance" / "phase_2"
+            acc.mkdir(parents=True)
+            (acc / "t.py").write_text("assert 1\n", encoding="utf-8")
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    claude_invoker=make_fake_invoker(signal_block(exit_code=0)),
+                    execute_committer=lambda r, **kw: (True, "abc1234", "2.tests: x"),
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            man = json.loads(
+                (tp.root / ".state" / "tests_manifest.json")
+                .read_text(encoding="utf-8"))
+            entry = next(s for s in man["suites"] if s["phase"] == 2)
+            self.assertTrue(entry["digest"].startswith("sha256:"))
+
 
 class TestReviewCommitWiring(unittest.TestCase):
     """FU-40 Inc 3: run_iteration drives execute_committer on a successful REVIEW."""

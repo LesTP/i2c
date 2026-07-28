@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://i2c.local/schemas/tests_manifest.schema.json",
+  "title": "TestsManifest",
+  "description": "Runner-owned sidecar at .state/tests_manifest.json recording, per Build phase, a digest of the frozen acceptance suite (tests/acceptance/phase_<N>/) at the N.tests commit. The hard CLOSE acceptance-suite integrity invariant (D-tests-4 part 2, FU-43) recomputes the digest at CLOSE and fails the iteration if it changed. Absent file / phase entry ⇒ the check is skipped.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["suites"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "suites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phase", "digest"],
+        "properties": {
+          "phase": { "type": "integer", "minimum": 0 },
+          "tests_commit": { "type": ["string", "null"] },
+          "digest": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -251,14 +251,16 @@
     "id": "FU-43",
     "title": "Hard CLOSE acceptance-suite integrity invariant (D-tests-4 part 2)",
     "kind": "test-hardening",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-06",
     "context": "tests action v1 shipped soft integrity only: execute.md prohibits editing the frozen tests/acceptance/phase_<N>/ suite and review.md flags weakening as a Must-fix. The deterministic post-CLOSE invariant is deferred.",
     "trigger": "Benchmark-era. Needs a TESTS-commit marker (or suite digest) recorded in .state/ so the pure-.state invariants.py can verify the acceptance suite was unchanged since the N.tests: commit, plus git access + graceful skip on non-git fixtures.",
     "priority": "next",
     "refs": [
       "DESIGN_tests_action_v1.md §7 (D-tests-4); i2c/invariants.py"
-    ]
+    ],
+    "closed": "2026-07-28",
+    "resolution": "Hard CLOSE acceptance-suite integrity invariant. Runner records a git-free sha256 digest of tests/acceptance/phase_<N>/ into .state/tests_manifest.json at the N.tests commit; invariants.py recomputes it at CLOSE and fails (exit 2) on any change or deletion. Skips gracefully when no marker (no TESTS action / predates FU-43). New tests_manifest.schema.json; no schema_version bump (additive optional sidecar). Completes D-tests-4 with the soft escalation layer (b4bc8b1)."
   },
   {
     "id": "FU-44",

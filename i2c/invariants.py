@@ -38,12 +38,14 @@ The list grows as new patterns emerge from autonomous runs.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
 from pathlib import Path
 from typing import Any
 
 # Sibling package modules.
 from i2c import assemble_context as ac
+from i2c import state as _state
 from i2c import validate as v
 
 
@@ -78,6 +80,7 @@ def check_post_action(project_root: Path, action: str) -> list[str]:
     failures: list[str] = []
     if action == "close":
         failures.extend(_check_close(project, phases))
+        failures.extend(_check_acceptance_integrity(project_root, project))
     elif action == "review":
         failures.extend(_check_review(project))
     elif action == "plan":
@@ -209,6 +212,113 @@ def check_post_refine(
             "action='refine' (the sub-phase outcome record)"
         )
     return failures
+
+
+# ---------------------------------------------------------------------------
+# Acceptance-suite integrity — hard CLOSE invariant (D-tests-4 part 2, FU-43)
+# ---------------------------------------------------------------------------
+#
+# The `tests` action freezes a per-phase acceptance suite under
+# tests/acceptance/phase_<N>/ as an independent oracle; EXECUTE must not change
+# it (execute.md/review.md, the soft layer). The hard layer: at the N.tests
+# commit the runner records a digest of the frozen suite in the runner-owned
+# sidecar .state/tests_manifest.json; at CLOSE we recompute the digest and fail
+# the iteration (exit 2) if it changed. Git-free by design — the digest is a
+# filesystem hash, so this stays pure of git access and works on non-git
+# fixtures (tests_commit may be null). No marker for a phase ⇒ skip (no TESTS
+# action, or a project that predates FU-43): never a false fail.
+
+_TESTS_MANIFEST = "tests_manifest.json"
+
+
+def _acceptance_dir(project_root: Path, phase: int) -> Path:
+    return project_root / "tests" / "acceptance" / f"phase_{phase}"
+
+
+def compute_acceptance_digest(project_root: Path, phase: int) -> str | None:
+    """Deterministic sha256 over the frozen acceptance suite for ``phase``.
+
+    Returns ``None`` when ``tests/acceptance/phase_<N>/`` does not exist. Hashes
+    every file's POSIX-relative path and raw bytes in sorted path order, so the
+    result is independent of filesystem ordering and line-ending normalization.
+    """
+    d = _acceptance_dir(project_root, phase)
+    if not d.is_dir():
+        return None
+    files = sorted(
+        (p for p in d.rglob("*") if p.is_file()),
+        key=lambda p: p.relative_to(d).as_posix(),
+    )
+    h = hashlib.sha256()
+    for p in files:
+        h.update(p.relative_to(d).as_posix().encode("utf-8"))
+        h.update(b"\0")
+        h.update(p.read_bytes())
+        h.update(b"\0")
+    return "sha256:" + h.hexdigest()
+
+
+def record_tests_suite(
+    project_root: Path, phase: int, *, tests_commit: str | None, digest: str
+) -> None:
+    """Upsert the frozen-suite marker for ``phase`` into ``.state/tests_manifest.json``.
+
+    Runner-owned sidecar (like telemetry.jsonl). Re-authoring a phase's suite
+    (a ``partial`` TESTS re-run) replaces the phase's entry. Atomic write, then
+    validate so a malformed manifest fails loud at write time rather than
+    silently at CLOSE.
+    """
+    path = project_root / ".state" / _TESTS_MANIFEST
+    manifest: dict[str, Any] = {"suites": []}
+    if path.is_file():
+        try:
+            manifest = v.validate_state_file(path)
+        except ValueError:
+            manifest = {"suites": []}
+    suites = [s for s in manifest.get("suites", []) if s.get("phase") != phase]
+    suites.append(
+        {"phase": phase, "tests_commit": tests_commit, "digest": digest}
+    )
+    suites.sort(key=lambda s: s.get("phase", 0))
+    manifest["suites"] = suites
+    manifest.setdefault("schema_version", 1)
+    _state.atomic_write_json(path, manifest)
+    v.validate_state_file(path)
+
+
+def _check_acceptance_integrity(
+    project_root: Path, project: dict[str, Any]
+) -> list[str]:
+    phase = project.get("phase")
+    path = project_root / ".state" / _TESTS_MANIFEST
+    if not path.is_file():
+        return []  # no marker → no TESTS action / predates FU-43 → skip
+    try:
+        manifest = v.validate_state_file(path)
+    except ValueError as e:
+        return [f"post-CLOSE invariant: {_TESTS_MANIFEST} schema-invalid: {e}"]
+    entry = next(
+        (s for s in manifest.get("suites", []) if s.get("phase") == phase), None
+    )
+    if entry is None:
+        return []  # this phase froze no acceptance suite → skip
+    current = compute_acceptance_digest(project_root, phase)
+    if current is None:
+        return [
+            "post-CLOSE invariant: acceptance suite "
+            f"tests/acceptance/phase_{phase}/ was frozen at the N.tests commit "
+            "but is now missing; the frozen oracle must not be deleted "
+            "(restore it, or escalate for a human to authorize a change)"
+        ]
+    if current != entry.get("digest"):
+        return [
+            "post-CLOSE invariant: acceptance suite "
+            f"tests/acceptance/phase_{phase}/ changed since it was frozen at the "
+            "N.tests commit (D-tests-4). EXECUTE must not edit the frozen oracle: "
+            "restore it and fix the implementation, or escalate for a human to "
+            "authorize a correction"
+        ]
+    return []
 
 
 # ---------------------------------------------------------------------------

@@ -293,5 +293,103 @@ class TestCheckPostRefine(unittest.TestCase):
             self.assertTrue(any("action='refine'" in f for f in failures))
 
 
+# ---------------------------------------------------------------------------
+# Acceptance-suite integrity — hard CLOSE invariant (FU-43)
+# ---------------------------------------------------------------------------
+
+
+def _write_suite(root: Path, phase: int, files: dict[str, str]) -> None:
+    d = root / "tests" / "acceptance" / f"phase_{phase}"
+    d.mkdir(parents=True, exist_ok=True)
+    for name, body in files.items():
+        (d / name).write_text(body, encoding="utf-8")
+
+
+def _pass_close(p: "TempProject") -> None:
+    """Make the structural CLOSE invariant pass so only integrity varies."""
+    p.patch_project(state="audit_boundary")
+    p.patch_phase_status(2, "complete")
+
+
+class TestAcceptanceDigest(unittest.TestCase):
+    def test_none_when_absent(self):
+        with TempProject() as p:
+            self.assertIsNone(inv.compute_acceptance_digest(p.root, 2))
+
+    def test_stable_and_sensitive(self):
+        with TempProject() as p:
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            d1 = inv.compute_acceptance_digest(p.root, 2)
+            self.assertTrue(d1.startswith("sha256:"))
+            self.assertEqual(d1, inv.compute_acceptance_digest(p.root, 2))
+            _write_suite(p.root, 2, {"a.py": "assert 2\n"})  # modify
+            self.assertNotEqual(d1, inv.compute_acceptance_digest(p.root, 2))
+            _write_suite(p.root, 2, {"a.py": "assert 2\n", "b.py": "x\n"})  # add
+            self.assertNotEqual(
+                inv.compute_acceptance_digest(p.root, 2), d1)
+
+
+class TestRecordTestsSuite(unittest.TestCase):
+    def test_record_validates_and_upserts(self):
+        with TempProject() as p:
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            dig = inv.compute_acceptance_digest(p.root, 2)
+            inv.record_tests_suite(p.root, 2, tests_commit="abc", digest=dig)
+            path = p.root / ".state" / "tests_manifest.json"
+            self.assertTrue(path.is_file())
+            man = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(man["suites"]), 1)
+            self.assertEqual(man["suites"][0]["digest"], dig)
+            # Re-record for the same phase replaces (upsert), not appends.
+            inv.record_tests_suite(p.root, 2, tests_commit="def", digest="sha256:z")
+            man = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(len(man["suites"]), 1)
+            self.assertEqual(man["suites"][0]["tests_commit"], "def")
+
+
+class TestCloseIntegrity(unittest.TestCase):
+    def _integrity_failures(self, root: Path) -> list[str]:
+        return [f for f in inv.check_post_action(root, "close")
+                if "acceptance suite" in f]
+
+    def test_pass_when_unchanged(self):
+        with TempProject() as p:
+            _pass_close(p)
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            inv.record_tests_suite(
+                p.root, 2, tests_commit="abc",
+                digest=inv.compute_acceptance_digest(p.root, 2))
+            self.assertEqual(inv.check_post_action(p.root, "close"), [])
+
+    def test_fails_when_modified(self):
+        with TempProject() as p:
+            _pass_close(p)
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            inv.record_tests_suite(
+                p.root, 2, tests_commit="abc",
+                digest=inv.compute_acceptance_digest(p.root, 2))
+            _write_suite(p.root, 2, {"a.py": "assert 999  # weakened\n"})
+            fails = self._integrity_failures(p.root)
+            self.assertTrue(any("changed since it was frozen" in f for f in fails))
+
+    def test_fails_when_deleted(self):
+        with TempProject() as p:
+            _pass_close(p)
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            inv.record_tests_suite(
+                p.root, 2, tests_commit="abc",
+                digest=inv.compute_acceptance_digest(p.root, 2))
+            import shutil
+            shutil.rmtree(p.root / "tests" / "acceptance" / "phase_2")
+            fails = self._integrity_failures(p.root)
+            self.assertTrue(any("now missing" in f for f in fails))
+
+    def test_skips_without_marker(self):
+        with TempProject() as p:
+            _pass_close(p)
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})  # suite but no marker
+            self.assertEqual(inv.check_post_action(p.root, "close"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

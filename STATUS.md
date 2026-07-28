@@ -73,9 +73,14 @@ and "weaken" are frequently the *same edit* (build-a-stew D-23). **FU-50** (sanc
 correction lane) → **icebox**, revived only with an independent *blind* adjudicator
 (different model, unaware of the failing implementation) — a different reviewer model
 alone is degree-not-kind and still contaminates the per-phase oracle. Remaining
-pre-benchmark: **FU-53** (per-iteration runaway guard; folds FU-56) **next**, then
-**FU-43** as a strict byte-unchanged-since-`N.tests` invariant (digest in `.state/`,
-`invariants.py` kept pure).
+Remaining pre-benchmark: the integrity/guard cluster is now **complete** —
+FU-51/52/44 (signal group), FU-53 + FU-56 (per-iteration runaway guard + telemetry
+exit_code enum), and **FU-43** (hard CLOSE byte-unchanged invariant: the runner
+records a suite digest in `.state/tests_manifest.json` at the `N.tests` commit;
+`invariants.py` recomputes it at CLOSE and halts on any change — git-free, skips
+gracefully when absent). FU-50 iceboxed. D-tests-4 integrity is fully in place (soft
+prose layer + hard mechanical layer). **Next thread: the benchmark replay harness +
+routing v0** (on pirozhok — laptop cross-mount).
 
 **What's next.** The dominant thread is the **model-benchmark initiative**
 (telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is SHIPPED** (2026-07-06, `a110138`; validated on clankercourts Phase 17 — oracle integrity held, acceptance suite frozen at the `N.tests` commit). The next benchmark step is the **replay harness on clankercourts + routing v0**.
