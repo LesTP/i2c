@@ -297,11 +297,13 @@ git diff $(git log --pretty=%H --grep="^$PHASE\.tests:" -n 1) HEAD \
 
 - **No diff** → the suite is intact; nothing to do.
 - **Any change** (weakened/removed/`xfail`ed assertions, deleted tests, loosened
-  comparisons) → treat as a **Must** finding, unless the change is already
-  justified by a decision record (`decisions.json`) with a rationale. An
-  unjustified weakening of the oracle is a Must-fix: restore the acceptance test
-  to its frozen form (fix the *implementation* instead), or, if the acceptance
-  test was genuinely wrong, log a decision recording why the change is correct.
+  comparisons — or *any* edit at all) → treat as a **Must** finding, full stop.
+  EXECUTE may not change the frozen suite, even to "correct" it: restore the
+  acceptance suite to its frozen form and fix the *implementation* instead. If the
+  acceptance test really is wrong, that is not EXECUTE's (or your) call to make by
+  editing it — **escalate** (`state=audit_escalation`, `EXIT 2`) so a human
+  adjudicates; a genuine correction lands via a later TESTS/human, not a self-
+  logged decision.
 
 If no `tests/acceptance/phase_<N>/` dir exists, this phase had no TESTS action —
 skip this step.

@@ -369,7 +369,7 @@
     "opened": "2026-07-13",
     "context": "The tests action freezes an acceptance suite as an independent oracle; D-tests-4 makes integrity soft (EXECUTE must not weaken it; REVIEW flags weakening as a Must-fix). But a genuinely BUGGY oracle needs legitimate correction, which is indistinguishable from weakening under the current model. build-a-stew Phase 3 step 2 (iter 25) burned 11.4M input tokens over 23 minutes fighting a wrong test (over-broad /low|medium|high/ matcher; a non-deterministic 30-iteration Tab scan in jsdom), attempted anti-patterns three times, then escalated and required a human steer (D-22) to authorize changing the frozen suite; D-23 cascaded one Must-fix into 14 test-query rewrites. Need a sanctioned oracle-correction lane: EXECUTE/REVIEW may fix a demonstrably broken acceptance test with a recorded justification (decision), kept distinct from weakening, and the CLOSE integrity check (FU-43) should treat a justified correction differently from an unexplained diff. Benchmark-critical: oracle integrity is the linchpin the benchmark rests on.",
     "trigger": "Surfaced by the build-a-stew greenfield run; needed before the benchmark replay trusts tests_pass as an oracle.",
-    "priority": "next",
+    "priority": "icebox",
     "files": [
       "i2c/data/instructions/execute.md",
       "i2c/data/instructions/review.md",

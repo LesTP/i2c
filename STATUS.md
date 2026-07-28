@@ -65,6 +65,18 @@ CLOSE suite-digest invariant) + **FU-50** (sanctioned oracle-correction lane), a
 live build-a-stew signal check needs **pirozhok** (laptop vitest fails on rollup/NTFS —
 the FU-52 env cause).
 
+**Decision (2026-07-28) — oracle integrity = obligatory human escalation, not
+autonomous self-correction.** EXECUTE/REVIEW may **never** edit the frozen acceptance
+suite (execute.md/review.md tightened — removed the self-authorize-via-decision-record
+path); a test believed wrong → `audit_escalation` / `EXIT 2` for a human, since "fix"
+and "weaken" are frequently the *same edit* (build-a-stew D-23). **FU-50** (sanctioned
+correction lane) → **icebox**, revived only with an independent *blind* adjudicator
+(different model, unaware of the failing implementation) — a different reviewer model
+alone is degree-not-kind and still contaminates the per-phase oracle. Remaining
+pre-benchmark: **FU-53** (per-iteration runaway guard; folds FU-56) **next**, then
+**FU-43** as a strict byte-unchanged-since-`N.tests` invariant (digest in `.state/`,
+`invariants.py` kept pure).
+
 **What's next.** The dominant thread is the **model-benchmark initiative**
 (telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is SHIPPED** (2026-07-06, `a110138`; validated on clankercourts Phase 17 — oracle integrity held, acceptance suite frozen at the `N.tests` commit). The next benchmark step is the **replay harness on clankercourts + routing v0**.
 See **Active Roadmap** below for tracks, priorities, and the current recommendation.
