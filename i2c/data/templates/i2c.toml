@@ -9,6 +9,9 @@
 # backend = "[Backend]"      # claude | codex
 # model = "sonnet"
 # max_budget_usd = 5.00
+# max_iteration_seconds = 1200  # per-iteration wall-clock ceiling; the worker is
+                                # killed and the iteration aborts (exit 4) past it.
+                                # 0 disables. Default 1200 (20 min).
 
 # Optional: per-action backend, overriding [run].backend for that action.
 # Lets you spread load across backends (e.g. heavy EXECUTE on codex, the rest

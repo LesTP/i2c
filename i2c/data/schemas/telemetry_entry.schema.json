@@ -19,7 +19,7 @@
       "type": ["string", "null"],
       "enum": ["complete", "partial", "blocked", "escalate", "failed", null]
     },
-    "exit_code": { "type": ["integer", "null"], "enum": [0, 2, null] },
+    "exit_code": { "type": ["integer", "null"], "enum": [0, 2, 3, 4, null] },
     "mode": { "type": "string", "enum": ["autonomous", "supervised"] },
     "backend": { "type": "string", "enum": ["claude", "codex"] },
     "model": { "type": ["string", "null"] },

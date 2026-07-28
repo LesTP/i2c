@@ -39,6 +39,10 @@ class RunConfig:
     backend: str | None = None
     model: str | None = None
     max_budget_usd: float | None = None
+    max_iteration_seconds: float | None = None
+    """Per-iteration wall-clock ceiling (seconds) for ``i2c run`` — the worker
+    subprocess is killed and the iteration aborts (exit 4) past it (FU-53).
+    ``None`` = unset (the runner's built-in default applies); ``0`` disables."""
     backends: dict[str, str] = field(default_factory=dict)
     """Optional per-action backend overrides from ``[run.backends]`` — maps a
     worker action (plan/tests/execute/review/close) to a backend. Empty when
@@ -117,6 +121,16 @@ def load_run_config(start: Path | None = None) -> RunConfig:
             raise ConfigError(f"{path}: [run].max_budget_usd must be a number")
         budget = float(budget)
 
+    max_iter_s = run.get("max_iteration_seconds")
+    if max_iter_s is not None:
+        if isinstance(max_iter_s, bool) or not isinstance(max_iter_s, (int, float)):
+            raise ConfigError(
+                f"{path}: [run].max_iteration_seconds must be a number")
+        max_iter_s = float(max_iter_s)
+        if max_iter_s < 0:
+            raise ConfigError(
+                f"{path}: [run].max_iteration_seconds must be >= 0 (0 disables)")
+
     backends_raw = run.get("backends", {})
     if not isinstance(backends_raw, dict):
         raise ConfigError(f"{path}: [run.backends] must be a table")
@@ -135,7 +149,8 @@ def load_run_config(start: Path | None = None) -> RunConfig:
         backends[action] = be
 
     return RunConfig(
-        backend=backend, model=model, max_budget_usd=budget, backends=backends
+        backend=backend, model=model, max_budget_usd=budget,
+        max_iteration_seconds=max_iter_s, backends=backends
     )
 
 

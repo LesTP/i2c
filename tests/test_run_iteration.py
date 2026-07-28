@@ -116,12 +116,14 @@ def make_fake_invoker(captured: str, rc: int = 0, *, capture=None):
     budget, system_prompt_file) so tests can assert what the runner sent to
     the worker.
     """
-    def fake(prompt, *, cwd, model, max_budget_usd, system_prompt_file=None):
+    def fake(prompt, *, cwd, model, max_budget_usd, system_prompt_file=None,
+             timeout=None):
         if capture is not None:
             capture.append({
                 "cwd": cwd, "prompt": prompt, "model": model,
                 "max_budget_usd": max_budget_usd,
                 "system_prompt_file": system_prompt_file,
+                "timeout": timeout,
             })
         return rc, captured
     return fake
@@ -522,7 +524,7 @@ class TestCodexNoSplit(unittest.TestCase):
         with TempProject() as p:
             calls = []
 
-            def fake_codex(prompt, *, cwd):
+            def fake_codex(prompt, *, cwd, timeout=None):
                 calls.append(prompt)
                 jsonl = json.dumps({
                     "type": "item.completed",
@@ -577,11 +579,12 @@ class TestBackendResolution(unittest.TestCase):
         claude_calls: list[bool] = []
         codex_calls: list[bool] = []
 
-        def fake_claude(prompt, *, cwd, model, max_budget_usd, system_prompt_file=None):
+        def fake_claude(prompt, *, cwd, model, max_budget_usd, system_prompt_file=None,
+                        timeout=None):
             claude_calls.append(True)
             return 0, signal_block()
 
-        def fake_codex(prompt, *, cwd):
+        def fake_codex(prompt, *, cwd, timeout=None):
             codex_calls.append(True)
             jsonl = json.dumps({
                 "type": "item.completed",
@@ -1128,6 +1131,74 @@ class TestBackendRateLimit(unittest.TestCase):
             summary = read_summary(tp.root)
             self.assertIn("exit=3", summary)
             self.assertIn("rate-limited", summary)
+
+
+class TestIterationRunawayGuard(unittest.TestCase):
+    """FU-53: a per-iteration wall-clock ceiling kills a runaway worker and
+    aborts the iteration with exit 4, landing nothing."""
+
+    def test_timeout_returns_4_and_skips_commit(self):
+        with TempProject() as tp:
+            calls = []
+
+            def slow(prompt, *, cwd, model, max_budget_usd,
+                     system_prompt_file=None, timeout=None):
+                raise subprocess.TimeoutExpired(cmd="claude", timeout=timeout or 1)
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    max_iteration_seconds=1,
+                    claude_invoker=slow,
+                    execute_committer=lambda r, **kw: (
+                        calls.append(kw) or (True, "x", "y")),
+                )
+            self.assertEqual(rc, 4)
+            self.assertEqual(calls, [])  # nothing landed -> no commit
+            summary = read_summary(tp.root)
+            self.assertIn("exit=4", summary)
+            self.assertIn("ceiling", summary)
+
+    def test_timeout_row_recorded(self):
+        # The runaway abort still emits a telemetry row (exit_code 4 is now in
+        # the schema enum); usage is null since the worker produced no result.
+        with TempProject() as tp:
+            def slow(prompt, *, cwd, model, max_budget_usd,
+                     system_prompt_file=None, timeout=None):
+                raise subprocess.TimeoutExpired(cmd="claude", timeout=timeout or 1)
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    max_iteration_seconds=1, claude_invoker=slow,
+                )
+            rows = [json.loads(l) for l in
+                    (tp.root / ".state" / "telemetry.jsonl")
+                    .read_text(encoding="utf-8").splitlines() if l.strip()]
+            self.assertEqual(rows[0]["exit_code"], 4)
+
+    def test_default_ceiling_threaded_to_invoker(self):
+        # run_iter uses run_iteration's default; the invoker receives it.
+        with TempProject():
+            cap = []
+            rc, _, err = run_iter(
+                invoker=make_fake_invoker(signal_block(), capture=cap))
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(cap[0]["timeout"], ri.DEFAULT_MAX_ITERATION_SECONDS)
+
+    def test_zero_disables_timeout(self):
+        with TempProject():
+            cap = []
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                ri.run_iteration(
+                    backend="claude", model="sonnet", max_budget_usd=5.0,
+                    max_iteration_seconds=0,
+                    claude_invoker=make_fake_invoker(signal_block(), capture=cap),
+                )
+            self.assertIsNone(cap[0]["timeout"])  # 0 -> no subprocess timeout
 
 
 if __name__ == "__main__":

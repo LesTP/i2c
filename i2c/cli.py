@@ -257,12 +257,19 @@ def cmd_run(args: argparse.Namespace) -> int:
         max_budget_usd = cfg.max_budget_usd
     else:
         max_budget_usd = run_iteration.DEFAULT_MAX_BUDGET_USD
+    if args.max_iteration_seconds is not None:
+        max_iteration_seconds = args.max_iteration_seconds
+    elif cfg.max_iteration_seconds is not None:
+        max_iteration_seconds = cfg.max_iteration_seconds
+    else:
+        max_iteration_seconds = run_iteration.DEFAULT_MAX_ITERATION_SECONDS
     return control.run_iteration(
         backend=args.backend,
         backend_map=cfg.backends,
         default_backend=cfg.backend or "claude",
         model=model,
         max_budget_usd=max_budget_usd,
+        max_iteration_seconds=max_iteration_seconds,
         action_override=args.action,
         target=args.target,
     )
@@ -800,6 +807,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-budget-usd", type=float, default=None,
         help="Cost cap (claude). Precedence: this flag > i2c.toml "
         f"[run].max_budget_usd > {run_iteration.DEFAULT_MAX_BUDGET_USD:.2f}.",
+    )
+    p_run.add_argument(
+        "--max-iteration-seconds", type=float, default=None,
+        help="Per-iteration wall-clock ceiling; the worker is killed and the "
+        "iteration aborts (exit 4) past it (0 disables). Precedence: this flag > "
+        f"i2c.toml [run].max_iteration_seconds > "
+        f"{run_iteration.DEFAULT_MAX_ITERATION_SECONDS:.0f}s.",
     )
     p_run.add_argument(
         "--action", choices=("diagnose", "reconcile"), default=None,

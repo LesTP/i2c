@@ -125,6 +125,35 @@ class TestLoadRunConfig(unittest.TestCase):
             with self.assertRaises(config.ConfigError):
                 config.load_run_config(root)
 
+    def test_reads_max_iteration_seconds(self):
+        with TempDir() as root:
+            _write(root, "[run]\nmax_iteration_seconds = 900\n")
+            cfg = config.load_run_config(root)
+            self.assertEqual(cfg.max_iteration_seconds, 900.0)
+            self.assertIsInstance(cfg.max_iteration_seconds, float)
+
+    def test_max_iteration_seconds_zero_allowed(self):
+        with TempDir() as root:
+            _write(root, "[run]\nmax_iteration_seconds = 0\n")
+            self.assertEqual(config.load_run_config(root).max_iteration_seconds, 0.0)
+
+    def test_max_iteration_seconds_absent_is_none(self):
+        with TempDir() as root:
+            _write(root, '[run]\nbackend = "claude"\n')
+            self.assertIsNone(config.load_run_config(root).max_iteration_seconds)
+
+    def test_bad_max_iteration_seconds_type_raises(self):
+        with TempDir() as root:
+            _write(root, '[run]\nmax_iteration_seconds = "soon"\n')
+            with self.assertRaises(config.ConfigError):
+                config.load_run_config(root)
+
+    def test_negative_max_iteration_seconds_raises(self):
+        with TempDir() as root:
+            _write(root, "[run]\nmax_iteration_seconds = -5\n")
+            with self.assertRaises(config.ConfigError):
+                config.load_run_config(root)
+
     def test_malformed_toml_raises(self):
         with TempDir() as root:
             _write(root, "[run\nbackend = ")

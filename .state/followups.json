@@ -425,14 +425,16 @@
     "id": "FU-53",
     "title": "Per-iteration runaway guard (token/time ceiling) in the runner",
     "kind": "other",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-13",
     "context": "The max-budget-usd flag caps the run series, not a single iteration, and codex iterations are uncosted (cost_usd null), so a single runaway iteration has nothing to stop it but the worker three-strikes rule. build-a-stew iter 25 consumed 11.4M input tokens over 23 minutes on codex fighting a buggy test before it escalated. Add a per-iteration ceiling (token count and/or wall-clock) that aborts a single invocation cleanly with a distinct exit (mirroring the exit-3 rate-limit path), so a runaway cannot silently burn a large budget - especially important for codex where the dollar cap cannot fire.",
     "trigger": "build-a-stew iter 25: a single iteration burned 11.4M tokens over 23 minutes.",
     "priority": "next",
     "files": [
       "i2c/run_iteration.py"
-    ]
+    ],
+    "closed": "2026-07-28",
+    "resolution": "Per-iteration wall-clock ceiling: worker subprocess killed past max_iteration_seconds -> exit 4 (nothing landed). ON by default 1200s (data: >p99 of real iterations), tunable via [run].max_iteration_seconds + --max-iteration-seconds; 0 disables. In-flight wall-clock only (tokens unobservable until process end)."
   },
   {
     "id": "FU-54",
@@ -474,7 +476,7 @@
     "id": "FU-56",
     "title": "run_iteration rate-limit (exit 3) telemetry row silently dropped",
     "kind": "bugfix",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-13",
     "context": "run_iteration._emit_telemetry(3) on the rate-limit path records exit_code=3, but telemetry_entry.schema.json exit_code enum is {0,2,null}, so append_validated_jsonl raises and the best-effort wrapper drops the row -> every rate-limited iteration produces zero telemetry (invisible to cost/quota analysis). run_refine.py was fixed to emit exit_code=None on this path (surfaced during Proposal B review); run_iteration.py:932 still has the original bug. Apply the same fix (pass None) for consistency.",
     "trigger": "Surfaced by the Proposal B code review. Fix next time run_iteration telemetry is touched.",
@@ -484,6 +486,8 @@
     "refs": [
       "run_refine.py",
       "telemetry_entry.schema.json"
-    ]
+    ],
+    "closed": "2026-07-28",
+    "resolution": "Fixed with FU-53: telemetry exit_code enum widened to {0,2,3,4,null}, so exit-3 (rate-limit) rows no longer fail schema validation and get silently dropped."
   }
 ]

@@ -63,6 +63,12 @@ from i2c import validate as v
 
 DEFAULT_MODEL = "sonnet"
 DEFAULT_MAX_BUDGET_USD = 5.00
+# FU-53: per-iteration wall-clock ceiling. The worker subprocess is killed if a
+# single invocation exceeds this many seconds, aborting the iteration with exit 4
+# (nothing landed). ON by default; 1200s (20 min) sits above p99 of observed
+# real iterations (~15 min) so it spares legitimate heavy work while capping an
+# otherwise-unbounded runaway. Set [run].max_iteration_seconds = 0 to disable.
+DEFAULT_MAX_ITERATION_SECONDS = 1200.0
 LOG_DIR_NAME = "logs/loop"
 SUMMARY_LOG_NAME = "summary.log"
 
@@ -236,6 +242,7 @@ def invoke_claude(
     model: str,
     max_budget_usd: float,
     system_prompt_file: Path | None = None,
+    timeout: float | None = None,
 ) -> tuple[int, str]:
     """Run ``claude -p`` with the prompt on stdin; return (rc, stdout).
 
@@ -287,6 +294,7 @@ def invoke_claude(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        timeout=timeout,
     )
     combined = proc.stdout + (proc.stderr if proc.stderr else "")
     return proc.returncode, combined
@@ -296,6 +304,7 @@ def invoke_codex(
     prompt: str,
     *,
     cwd: Path,
+    timeout: float | None = None,
 ) -> tuple[int, str, str]:
     """Run ``codex exec -`` with the prompt on stdin; return
     (rc, jsonl_raw, agent_text).
@@ -329,6 +338,7 @@ def invoke_codex(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        timeout=timeout,
     )
     jsonl_raw = proc.stdout
     last_agent_text = ""
@@ -726,6 +736,7 @@ def run_iteration(
     default_backend: str = "claude",
     model: str,
     max_budget_usd: float,
+    max_iteration_seconds: float | None = DEFAULT_MAX_ITERATION_SECONDS,
     action_override: str | None = None,
     target: int | None = None,
     claude_invoker=invoke_claude,
@@ -829,6 +840,16 @@ def run_iteration(
     wall_start = time.monotonic()
 
     # 6. Invoke the chosen backend.
+    # FU-53: a per-iteration wall-clock ceiling kills the worker subprocess if it
+    # runs away (0/None disables). Tokens can't be capped in-flight (unobservable
+    # until the process ends), so time is the enforceable guard.
+    iter_timeout = (
+        max_iteration_seconds
+        if (max_iteration_seconds and max_iteration_seconds > 0)
+        else None
+    )
+    timed_out_reason: str | None = None
+    jsonl_raw = ""
     try:
         if backend == "claude":
             worker_rc, captured = claude_invoker(
@@ -837,13 +858,23 @@ def run_iteration(
                 model=model,
                 max_budget_usd=max_budget_usd,
                 system_prompt_file=system_path,
+                timeout=iter_timeout,
             )
         else:  # codex
             worker_rc, jsonl_raw, captured = codex_invoker(
                 stdin_prompt,
                 cwd=root,
+                timeout=iter_timeout,
             )
             jsonl_path.write_text(jsonl_raw, encoding="utf-8")
+    except subprocess.TimeoutExpired:
+        # The subprocess was killed for exceeding the ceiling. No usable result;
+        # handled as exit 4 below (after the telemetry scaffold is set up).
+        worker_rc, captured = None, ""
+        timed_out_reason = (
+            "iteration aborted: wall-clock ceiling exceeded "
+            f"({iter_timeout:.0f}s)"
+        )
     except FileNotFoundError as e:
         cli_name = e.filename or backend
         sys.stderr.write(
@@ -940,6 +971,20 @@ def run_iteration(
             )
         except Exception as e:  # noqa: BLE001 - telemetry must never break a run
             sys.stderr.write(f"NOTE: telemetry skipped ({e}).\n")
+
+    # 7a2. Per-iteration wall-clock ceiling (FU-53). The worker subprocess was
+    #      killed for exceeding max_iteration_seconds — nothing landed. Surface
+    #      it distinctly as exit 4 ("iteration aborted, ceiling exceeded"), skip
+    #      invariants + commits, and record it (usage is null; wall_clock_s ~=
+    #      the ceiling). A non-zero exit halts a /run series (telegram_core).
+    if timed_out_reason is not None:
+        line = write_summary_line(
+            log_dir, iteration=iteration, backend=backend, action=action,
+            exit_code=4, reason=timed_out_reason, tokens=usage)
+        sys.stdout.write(line + "\n")
+        sys.stderr.write(f"ERROR: {timed_out_reason}\n")
+        _emit_telemetry(4)
+        return 4
 
     # 7b. Backend rate-limit / infra-error short-circuit (exit 3). When the
     #     backend refused (claude JSON is_error + api_error_status, e.g. the
@@ -1153,6 +1198,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Cost cap for claude -p. Default: {DEFAULT_MAX_BUDGET_USD:.2f}.",
     )
     parser.add_argument(
+        "--max-iteration-seconds",
+        type=float,
+        default=DEFAULT_MAX_ITERATION_SECONDS,
+        help="Per-iteration wall-clock ceiling; the worker is killed and the "
+             "iteration aborts (exit 4) past it. 0 disables. Default: "
+             f"{DEFAULT_MAX_ITERATION_SECONDS:.0f}s.",
+    )
+    parser.add_argument(
         "--action",
         choices=("diagnose", "reconcile"),
         default=None,
@@ -1180,6 +1233,7 @@ def main(argv: list[str] | None = None) -> int:
         backend=args.backend,
         model=args.model,
         max_budget_usd=args.max_budget_usd,
+        max_iteration_seconds=args.max_iteration_seconds,
         action_override=args.action,
         target=args.target,
     )

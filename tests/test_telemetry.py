@@ -253,7 +253,7 @@ class TestRunnerWritesTelemetry(unittest.TestCase):
 
     def test_codex_model_left_null(self):
         with TempProject() as p:
-            def fake_codex(prompt, *, cwd):
+            def fake_codex(prompt, *, cwd, timeout=None):
                 jsonl = json.dumps({
                     "type": "item.completed",
                     "item": {"type": "agent_message",
