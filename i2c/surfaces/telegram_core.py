@@ -94,7 +94,7 @@ _HELP = (
     " /endphase [proj] [last] — Clear the audit_boundary (advance; last = terminate)\n"
     " /refine [proj] <fu-id> [backend] — Dispatch one refine worker against a "
     "followup (FU-N); closes it + commits on success\n"
-    " /refreeze [proj] <phase> [apply] <reason...> — Re-freeze a phase's "
+    " /refreeze [proj] <phase> [apply] [reason...] — Re-freeze a phase's "
     "acceptance oracle after a human-authorized correction (D-tests-4); "
     "dry-run unless 'apply'\n"
     "\n"
@@ -420,12 +420,15 @@ def _dispatch_project(
 
     if command == "refreeze":
         phase, apply, reason = _parse_refreeze_args(rest)
-        if phase is None or not reason:
+        if phase is None:
             return Reply(
-                "Usage: /refreeze [proj] <phase> [apply] <reason...>", ok=False
+                "Usage: /refreeze [proj] <phase> [apply] [reason...]", ok=False
             )
         report = control.refreeze_tests(
-            proj, phase=phase, reason=reason, apply=apply
+            proj,
+            phase=phase,
+            reason=reason or "manual /refreeze (no reason given)",
+            apply=apply,
         )
         return Reply(render._render_refreeze(report))
     return Reply(f"Unhandled command: /{command}", ok=False)  # pragma: no cover

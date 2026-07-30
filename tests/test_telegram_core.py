@@ -366,13 +366,30 @@ class TestRefreeze(unittest.TestCase):
         )
         (d / "a.py").write_text("assert 2\n", encoding="utf-8")  # human fix
 
-    def test_usage_when_phase_or_reason_missing(self):
+    def test_usage_when_phase_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _make(root, {"only": {}})
-            r = tc.dispatch("refreeze", ["9"], is_admin=True, root=root)
+            r = tc.dispatch("refreeze", ["apply", "no-phase"], is_admin=True, root=root)
             self.assertFalse(r.ok)
             self.assertIn("Usage:", r.text)
+
+    def test_apply_with_default_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            self._freeze_then_edit(root / "only", 2)
+            r = tc.dispatch("refreeze", ["2", "apply"], is_admin=True, root=root)
+            self.assertTrue(r.ok)
+            self.assertIn("REFROZE", r.text)
+            from i2c import invariants as inv
+            failures = [
+                f for f in inv.check_post_action(root / "only", "close")
+                if "acceptance suite" in f
+            ]
+            self.assertEqual(failures, [])  # drift cleared with no reason given
+            devlog = (root / "only" / ".state" / "devlog.jsonl").read_text("utf-8")
+            self.assertIn("no reason given", devlog)
 
     def test_dry_run_does_not_write(self):
         with tempfile.TemporaryDirectory() as tmp:
