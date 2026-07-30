@@ -293,7 +293,9 @@ class TestAuth(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _make(root, {"only": {}})
-            for cmd in ("run", "batch", "reconcile", "endphase", "refine"):
+            for cmd in (
+                "run", "batch", "reconcile", "endphase", "refine", "refreeze",
+            ):
                 r = tc.dispatch(cmd, [], is_admin=False, root=root)
                 self.assertFalse(r.ok)
                 self.assertIn("requires admin", r.text)
@@ -347,6 +349,78 @@ class TestReconcile(unittest.TestCase):
             self.assertTrue(r.ok)
             self.assertIn("RECONCILED", r.text)
             self.assertEqual(tc.control.status(root / "only").state, "review")
+
+
+class TestRefreeze(unittest.TestCase):
+    @staticmethod
+    def _freeze_then_edit(proj: Path, phase: int) -> None:
+        """Freeze a phase's acceptance suite, then edit it so the live digest
+        drifts from the frozen marker (the D-tests-4 situation /refreeze fixes)."""
+        from i2c import invariants as inv
+        d = proj / "tests" / "acceptance" / f"phase_{phase}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "a.py").write_text("assert 1\n", encoding="utf-8")
+        inv.record_tests_suite(
+            proj, phase, tests_commit="abc",
+            digest=inv.compute_acceptance_digest(proj, phase),
+        )
+        (d / "a.py").write_text("assert 2\n", encoding="utf-8")  # human fix
+
+    def test_usage_when_phase_or_reason_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            r = tc.dispatch("refreeze", ["9"], is_admin=True, root=root)
+            self.assertFalse(r.ok)
+            self.assertIn("Usage:", r.text)
+
+    def test_dry_run_does_not_write(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            self._freeze_then_edit(root / "only", 2)
+            r = tc.dispatch(
+                "refreeze", ["2", "authorized", "fix"], is_admin=True, root=root
+            )
+            self.assertTrue(r.ok)
+            self.assertIn("DRY-RUN", r.text)
+            from i2c import invariants as inv
+            failures = [
+                f for f in inv.check_post_action(root / "only", "close")
+                if "acceptance suite" in f
+            ]
+            self.assertTrue(failures)  # still drifted: dry-run wrote nothing
+
+    def test_apply_refreezes_and_audits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            self._freeze_then_edit(root / "only", 2)
+            r = tc.dispatch(
+                "refreeze",
+                ["2", "apply", "D-1", "authorized", "fix"],
+                is_admin=True, root=root,
+            )
+            self.assertTrue(r.ok)
+            self.assertIn("REFROZE", r.text)
+            from i2c import invariants as inv
+            failures = [
+                f for f in inv.check_post_action(root / "only", "close")
+                if "acceptance suite" in f
+            ]
+            self.assertEqual(failures, [])  # drift cleared
+            devlog = (root / "only" / ".state" / "devlog.jsonl").read_text("utf-8")
+            self.assertIn("D-1 authorized fix", devlog)
+
+    def test_no_suite_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            r = tc.dispatch(
+                "refreeze", ["7", "no", "suite"], is_admin=True, root=root
+            )
+            self.assertFalse(r.ok)
+            self.assertIn("Error", r.text)
 
 
 class TestRun(unittest.TestCase):

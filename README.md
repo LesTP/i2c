@@ -423,7 +423,10 @@ Commands:
   per-action from `[run.backends]`; `/refine [proj] <fu-id> [backend]` —
   dispatch one refine worker against a followup (closes it + commits on
   success); `/reconcile [proj] [apply]` — apply workflow-drift fixes (dry-run
-  unless `apply`); `/endphase [proj] [last]` — clear the `audit_boundary`
+  unless `apply`); `/refreeze [proj] <phase> [apply] <reason...>` — re-freeze a
+  phase's acceptance oracle after a human-authorized correction (D-tests-4
+  escape hatch; dry-run unless `apply`, records `reason` to `devlog.jsonl`);
+  `/endphase [proj] [last]` — clear the `audit_boundary`
   (advance, or `last` to terminate).
 
 ---

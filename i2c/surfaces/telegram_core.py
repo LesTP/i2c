@@ -40,7 +40,7 @@ from typing import Callable
 from i2c import control, render
 
 READ_COMMANDS = frozenset({"audit", "diagnose", "portfolio", "setdir", "commands", "start"})
-MUTATING_COMMANDS = frozenset({"run", "batch", "reconcile", "endphase", "refine"})
+MUTATING_COMMANDS = frozenset({"run", "batch", "reconcile", "endphase", "refine", "refreeze"})
 ALL_COMMANDS = READ_COMMANDS | MUTATING_COMMANDS
 
 # Runaway guard for /batch (which has no explicit count). A phase always
@@ -70,6 +70,7 @@ COMMAND_MENU: list[tuple[str, str]] = [
     ("reconcile", "Admin: apply workflow-drift fixes (dry-run; 'apply' to write)"),
     ("endphase", "Admin: clear the audit_boundary (advance; 'last' to terminate)"),
     ("refine", "Admin: dispatch one refine worker against a followup (FU-N)"),
+    ("refreeze", "Admin: re-freeze a phase's acceptance oracle (D-tests-4; dry-run, 'apply' to write)"),
 ]
 
 _HELP = (
@@ -93,6 +94,9 @@ _HELP = (
     " /endphase [proj] [last] — Clear the audit_boundary (advance; last = terminate)\n"
     " /refine [proj] <fu-id> [backend] — Dispatch one refine worker against a "
     "followup (FU-N); closes it + commits on success\n"
+    " /refreeze [proj] <phase> [apply] <reason...> — Re-freeze a phase's "
+    "acceptance oracle after a human-authorized correction (D-tests-4); "
+    "dry-run unless 'apply'\n"
     "\n"
     "/start and /commands show this list. Most commands take an optional project "
     "name; otherwise the /setdir current project (or the only one) is used."
@@ -322,6 +326,25 @@ def _parse_refine_args(rest: list[str]) -> tuple[str | None, str | None]:
     return fu_id, backend
 
 
+def _parse_refreeze_args(rest: list[str]) -> tuple[int | None, bool, str]:
+    """From /refreeze's args (after project): a required phase (first integer
+    token), an optional ``apply`` write-gate token (dry-run otherwise, mirroring
+    /reconcile), and the remaining tokens joined as the free-text reason. The
+    first integer and the first ``apply`` are consumed as control tokens; any
+    later occurrences stay in the reason."""
+    phase: int | None = None
+    apply = False
+    reason_parts: list[str] = []
+    for a in rest:
+        if phase is None and a.isdigit():
+            phase = int(a)
+        elif not apply and a.lower() == "apply":
+            apply = True
+        else:
+            reason_parts.append(a)
+    return phase, apply, " ".join(reason_parts).strip()
+
+
 def _dispatch_project(
     command: str,
     rest: list[str],
@@ -394,4 +417,15 @@ def _dispatch_project(
             f"Refine {fu_id} on {be} did not complete (exit {rc}); FU left open.",
             ok=False,
         )
+
+    if command == "refreeze":
+        phase, apply, reason = _parse_refreeze_args(rest)
+        if phase is None or not reason:
+            return Reply(
+                "Usage: /refreeze [proj] <phase> [apply] <reason...>", ok=False
+            )
+        report = control.refreeze_tests(
+            proj, phase=phase, reason=reason, apply=apply
+        )
+        return Reply(render._render_refreeze(report))
     return Reply(f"Unhandled command: /{command}", ok=False)  # pragma: no cover
