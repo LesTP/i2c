@@ -99,6 +99,7 @@ from i2c.render import (  # noqa: E402
     _render_phase_summary,
     _render_portfolio,
     _render_reconcile,
+    _render_refreeze,
     _render_status,
 )
 
@@ -191,6 +192,17 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
     except control.ControlError as e:
         return _fail(e)
     _emit(result, as_json=args.json, renderer=_render_reconcile)
+    return 0
+
+
+def cmd_tests_refreeze(args: argparse.Namespace) -> int:
+    try:
+        result = control.refreeze_tests(
+            phase=args.phase, reason=args.reason, apply=args.apply
+        )
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(result, as_json=args.json, renderer=_render_refreeze)
     return 0
 
 
@@ -729,6 +741,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the reconcile mutations (the human gate). Default: dry-run.",
     )
     p_rec.set_defaults(func=cmd_reconcile)
+
+    p_tests = sub.add_parser(
+        "tests",
+        help="Frozen acceptance-oracle operations (D-tests-4).",
+    )
+    tests_sub = p_tests.add_subparsers(dest="tests_cmd", required=True)
+    p_tests_rf = tests_sub.add_parser(
+        "refreeze",
+        parents=[json_parent],
+        help="Re-freeze a phase's acceptance suite after a human-authorized "
+        "oracle correction (D-tests-4 escape hatch; dry-run by default, "
+        "--apply is the human gate).",
+    )
+    p_tests_rf.add_argument(
+        "--phase", type=int, required=True,
+        help="Phase whose acceptance suite (tests/acceptance/phase_N/) to refreeze.",
+    )
+    p_tests_rf.add_argument(
+        "--reason", required=True,
+        help="Human justification / decision id for the oracle correction "
+        "(recorded in devlog.jsonl as an audit trail).",
+    )
+    p_tests_rf.add_argument(
+        "--apply", action="store_true",
+        help="Re-record the frozen digest via i2c state (the human gate). "
+        "Default: dry-run.",
+    )
+    p_tests_rf.set_defaults(func=cmd_tests_refreeze)
 
     p_logs = sub.add_parser(
         "logs",

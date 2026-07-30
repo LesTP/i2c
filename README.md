@@ -277,6 +277,34 @@ This extends i2c's detect-and-halt post-action invariants into
 [`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md). The deferred
 `fix` code-repair agent is tracked in [`FUTURE_recovery.md`](FUTURE_recovery.md).
 
+### Frozen acceptance oracle (`i2c tests refreeze`)
+The TESTS action freezes a phase's acceptance suite: it hashes
+`tests/acceptance/phase_<N>/` into `.state/tests_manifest.json` at the `N.tests`
+commit, and a hard CLOSE invariant (D-tests-4) recomputes the digest and fails
+if the suite changed. That is deliberate anti-cheat: **EXECUTE must not edit the
+oracle to make itself pass.** When CLOSE hits this, there are two branches:
+
+- **(a) the implementation is wrong** - restore the frozen suite and fix the
+  code (the default; the oracle was right).
+- **(b) the oracle itself was the bug** and a human has *authorized* correcting
+  it (e.g. an over-specified / ambiguous test). Re-freeze the corrected suite:
+
+  ```
+  i2c tests refreeze --phase N --reason <decision>          # dry-run: show frozen vs live digest
+  i2c tests refreeze --phase N --reason <decision> --apply  # re-record the marker (human gate)
+  ```
+
+  Dry-run by default; `--apply` is the human gate (mirrors `reconcile --apply`).
+  It recomputes the current digest and upserts the phase's marker **only through
+  the sanctioned `record_tests_suite` path** (atomic + schema-validated), and
+  records `--reason` as an audit entry in `devlog.jsonl`.
+
+> ⚠️ This is a **sanctioned, audited escape hatch, not an auto-fix.** The gate is
+> currently flag-only + trust-based (like `reconcile`): it is intended for a human
+> operator, and `--reason` is free text. Making it technically unreachable by the
+> autonomous worker and validating `--reason` against `decisions.json` is deferred
+> hardening (see FU-58).
+
 ### Refine tier (ad-hoc work)
 
 Alongside the phase lifecycle (Build), i2c has a low-ceremony **Refine tier** for

@@ -491,5 +491,52 @@
     ],
     "closed": "2026-07-28",
     "resolution": "Fixed with FU-53: telemetry exit_code enum widened to {0,2,3,4,null}, so exit-3 (rate-limit) rows no longer fail schema validation and get silently dropped."
+  },
+  {
+    "id": "FU-57",
+    "title": "Gated `i2c tests refreeze` command to authorize a frozen-oracle correction (D-tests-4 escape hatch)",
+    "kind": "cli-ergonomics",
+    "status": "closed",
+    "opened": "2026-07-30",
+    "context": "The frozen-oracle invariant (D-tests-4, invariants.py) hashes tests/acceptance/phase_N/ into .state/tests_manifest.json at the N.tests freeze and fails at CLOSE if the suite changed. Its failure text offers two branches: (a) restore the oracle and fix the implementation, or (b) escalate for a human to authorize a correction. Branch (b) has NO tooling: the manifest is written only by invariants.record_tests_suite() during the runner TESTS action; i2c state has no manifest subcommand and i2c reconcile does not cover it (confirmed via dry-run). So the only ways to clear a legitimate human-approved oracle fix are: revert it (branch a, which can force DEGRADING the product when the oracle itself is the bug, e.g. an over-specified or ambiguous getByRole name query), re-run the phase TESTS action (awkward after advancing phases), or call record_tests_suite() directly (gray-area vs the never-hand-edit-.state rule). Proposal: add an admin/human-gated command, e.g. i2c tests refreeze --phase N --reason DECISION_ID, that recomputes the current digest and upserts the phase entry via record_tests_suite (atomic + schema-validated), mirroring reconcile --apply as the explicit write gate. HARD REQUIREMENT: it must be human-only (never reachable by the autonomous worker) and must record the reason/decision id, preserving the anti-cheat purpose of freezing (the freeze exists so EXECUTE cannot edit the oracle to pass) -- this is a sanctioned audited escape hatch, not an auto-fix. Also wire the D-tests-4 failure message and reconcile output to name the command, and document the two branches in the operator runbook.",
+    "trigger": "build-a-stew Phase 9 close hit the D-tests-4 post-CLOSE invariant after a human-authorized oracle correction (build-a-stew D-42): the frozen phase_9 acceptance test was edited to disambiguate an ambiguous chip query, but there was no operator command to re-freeze the digest, so close exited 2 and the only clean options were revert-and-fix-impl or an internal record_tests_suite call. Oracle corrections have recurred 3x in one consumer (build-a-stew D-22/D-23/D-42), and any redesign that supersedes an earlier phase contract will collide with that phase frozen suite.",
+    "priority": "next",
+    "files": [
+      "i2c/invariants.py",
+      "i2c/run_iteration.py",
+      "i2c/cli.py",
+      "i2c/state.py",
+      "README.md"
+    ],
+    "refs": [
+      "D-tests-4",
+      "FU-43",
+      "FU-40",
+      "build-a-stew:D-42",
+      "build-a-stew:D-22",
+      "build-a-stew:D-23"
+    ],
+    "closed": "2026-07-30",
+    "resolution": "Shipped the flag-gated MVP: i2c tests refreeze --phase N --reason <text> [--apply] (control.refreeze_tests + RefreezeReport, cli tests subgroup, _render_refreeze). Dry-run by default; --apply upserts .state/tests_manifest.json via the sanctioned invariants.record_tests_suite path and audits --reason in devlog.jsonl. D-tests-4 CLOSE failure messages now name the command; documented in README (Frozen acceptance oracle). Verified dry-run against build-a-stew phase_9 (the D-42 trigger). Anti-cheat hardening (require --reason to resolve to a decisions.json id + make it unreachable by the autonomous worker) deferred to FU-58."
+  },
+  {
+    "id": "FU-58",
+    "title": "Harden i2c tests refreeze gate: require --reason to resolve to a decisions.json id + make it unreachable by the autonomous worker",
+    "kind": "test-hardening",
+    "status": "open",
+    "opened": "2026-07-30",
+    "context": "MVP shipped for FU-57 is flag-gated + trust-based, exactly mirroring reconcile --apply: i2c tests refreeze --phase N --reason <text> --apply recomputes the acceptance digest and upserts .state/tests_manifest.json via invariants.record_tests_suite, appending a free-text audit entry to devlog.jsonl. This does NOT yet meet FU-57's HARD REQUIREMENT that the escape hatch be human-only and never reachable by the autonomous worker, and --reason is free text (not validated). Hardening: (1) validate --reason resolves to a real record in decisions.json (refuse otherwise) so a human-authored decision must pre-exist -- the worker cannot fabricate one mid-EXECUTE without an auditable state write; (2) add a worker-context guard (e.g. refuse when an env var the runner sets during EXECUTE is present) as defense-in-depth; (3) consider gating behind [telegram].admins-style authz if ever exposed via the bot.",
+    "trigger": "Come back for anti-cheat hardening after the flag-gated MVP has proven the ergonomics. Reconcile's flag-only gate is trust-based and does not technically bar the worker; this command edits an anti-cheat invariant so it warrants a stronger barrier.",
+    "priority": "next",
+    "files": [
+      "i2c/control.py",
+      "i2c/cli.py",
+      "i2c/invariants.py",
+      "README.md"
+    ],
+    "refs": [
+      "FU-57",
+      "D-tests-4"
+    ]
   }
 ]

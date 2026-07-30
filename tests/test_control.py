@@ -829,5 +829,81 @@ class TestDashboardModel(unittest.TestCase):
             self.assertEqual(model.run_config["backend"], "claude")
 
 
+class TestRefreezeTests(unittest.TestCase):
+    """control.refreeze_tests - the D-tests-4 escape hatch (FU-57)."""
+
+    @staticmethod
+    def _write_suite(root: Path, phase: int, files: dict) -> None:
+        d = root / "tests" / "acceptance" / f"phase_{phase}"
+        d.mkdir(parents=True, exist_ok=True)
+        for name, body in files.items():
+            (d / name).write_text(body, encoding="utf-8")
+
+    def test_no_suite_raises(self):
+        with TempProject() as p:
+            with self.assertRaises(c.ControlError):
+                c.refreeze_tests(p.root, phase=2, reason="x")
+
+    def test_dry_run_reports_drift_without_writing(self):
+        with TempProject() as p:
+            self._write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            from i2c import invariants as inv
+            inv.record_tests_suite(
+                p.root, 2, tests_commit="abc",
+                digest=inv.compute_acceptance_digest(p.root, 2),
+            )
+            self._write_suite(p.root, 2, {"a.py": "assert 2\n"})  # human fix
+            rep = c.refreeze_tests(p.root, phase=2, reason="D-1 authorized fix")
+            self.assertFalse(rep.applied)
+            self.assertTrue(rep.changed)
+            self.assertNotEqual(rep.old_digest, rep.new_digest)
+            # Dry-run wrote nothing: manifest still holds the stale digest.
+            man = json.loads(
+                (p.root / ".state" / "tests_manifest.json").read_text("utf-8")
+            )
+            self.assertEqual(man["suites"][0]["digest"], rep.old_digest)
+
+    def test_apply_upserts_digest_and_audits(self):
+        with TempProject() as p:
+            self._write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            from i2c import invariants as inv
+            inv.record_tests_suite(
+                p.root, 2, tests_commit="abc",
+                digest=inv.compute_acceptance_digest(p.root, 2),
+            )
+            self._write_suite(p.root, 2, {"a.py": "assert 2\n"})  # human fix
+            rep = c.refreeze_tests(
+                p.root, phase=2, reason="D-1 authorized fix", apply=True
+            )
+            self.assertTrue(rep.applied)
+            # Manifest now matches the live suite -> CLOSE integrity passes.
+            p.patch_project(phase=2)
+            integrity = [
+                f for f in inv.check_post_action(p.root, "close")
+                if "acceptance suite" in f
+            ]
+            self.assertEqual(integrity, [])
+            man = json.loads(
+                (p.root / ".state" / "tests_manifest.json").read_text("utf-8")
+            )
+            self.assertEqual(man["suites"][0]["digest"], rep.new_digest)
+            # An audit entry landed in devlog.jsonl carrying the reason.
+            devlog = (p.root / ".state" / "devlog.jsonl").read_text("utf-8")
+            self.assertIn("D-1 authorized fix", devlog)
+            self.assertIn("refreeze", devlog)
+
+    def test_apply_when_no_drift_is_idempotent(self):
+        with TempProject() as p:
+            self._write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            from i2c import invariants as inv
+            inv.record_tests_suite(
+                p.root, 2, tests_commit="abc",
+                digest=inv.compute_acceptance_digest(p.root, 2),
+            )
+            rep = c.refreeze_tests(p.root, phase=2, reason="noop", apply=True)
+            self.assertFalse(rep.changed)
+            self.assertEqual(rep.old_digest, rep.new_digest)
+
+
 if __name__ == "__main__":
     unittest.main()

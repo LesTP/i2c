@@ -286,3 +286,24 @@ def _render_reconcile(r: control.ReconcileReport) -> str:
     if not r.applied and r.items:
         lines += ["", "Re-run with --apply to write these via i2c state."]
     return "\n".join(lines)
+
+
+def _render_refreeze(r: control.RefreezeReport) -> str:
+    head = "REFROZE" if r.applied else "DRY-RUN (no .state writes)"
+    lines = [
+        f"tests refreeze - {head}",
+        "",
+        f"  phase:  {r.phase}",
+        f"  reason: {r.reason}",
+        f"  frozen: {r.old_digest or '(none)'}",
+        f"  live:   {r.new_digest}",
+    ]
+    if not r.changed:
+        lines.append(
+            "  note:   live suite already matches the frozen oracle (no drift)."
+        )
+    if r.applied:
+        lines += ["", "Frozen oracle re-recorded; CLOSE will pass. Audited in devlog.jsonl."]
+    else:
+        lines += ["", "Re-run with --apply to re-freeze the oracle via i2c state."]
+    return "\n".join(lines)

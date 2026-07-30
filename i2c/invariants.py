@@ -308,15 +308,17 @@ def _check_acceptance_integrity(
             "post-CLOSE invariant: acceptance suite "
             f"tests/acceptance/phase_{phase}/ was frozen at the N.tests commit "
             "but is now missing; the frozen oracle must not be deleted "
-            "(restore it, or escalate for a human to authorize a change)"
+            "(restore it, or if the removal was human-authorized re-freeze with "
+            f"`i2c tests refreeze --phase {phase} --reason <decision>`)"
         ]
     if current != entry.get("digest"):
         return [
             "post-CLOSE invariant: acceptance suite "
             f"tests/acceptance/phase_{phase}/ changed since it was frozen at the "
             "N.tests commit (D-tests-4). EXECUTE must not edit the frozen oracle: "
-            "restore it and fix the implementation, or escalate for a human to "
-            "authorize a correction"
+            "restore it and fix the implementation, or if a human authorized the "
+            "correction re-freeze with "
+            f"`i2c tests refreeze --phase {phase} --reason <decision>`"
         ]
     return []
 

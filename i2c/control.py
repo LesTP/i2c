@@ -223,6 +223,24 @@ class ReconcileReport:
 
 
 @dataclass
+class RefreezeReport:
+    """The result of ``refreeze_tests`` (FU-57, the D-tests-4 escape hatch).
+    ``applied`` is True only when the operator passed the human gate
+    (``apply=True``) and the frozen-oracle marker was re-written via the
+    sanctioned path (``invariants.record_tests_suite`` - atomic +
+    schema-validated). Mirrors ``ReconcileReport``: dry-run by default,
+    ``--apply`` is the human gate. ``changed`` says whether the live suite digest
+    differs from the currently-frozen one (i.e. whether re-freezing actually
+    moves the oracle)."""
+    phase: int
+    applied: bool
+    reason: str
+    old_digest: str | None
+    new_digest: str
+    changed: bool
+
+
+@dataclass
 class IterationLog:
     iter: int
     backend: str
@@ -1201,3 +1219,105 @@ def reconcile(root: Path | None = None, *, apply: bool = False) -> ReconcileRepo
         for f in judgment
     ]
     return ReconcileReport(applied=apply, items=items, skipped=skipped)
+
+
+def _current_manifest_digest(root: Path, phase: int) -> str | None:
+    """The frozen digest currently recorded for ``phase`` in
+    ``.state/tests_manifest.json``, or ``None`` if there is no manifest / entry.
+    Read-only; tolerant of an absent or schema-invalid manifest (returns None)
+    since the caller only uses it to report drift."""
+    path = _state_path(root, "tests_manifest.json")
+    if not path.is_file():
+        return None
+    try:
+        manifest = v.validate_state_file(path)
+    except ValueError:
+        return None
+    entry = next(
+        (s for s in manifest.get("suites", []) if s.get("phase") == phase), None
+    )
+    return entry.get("digest") if entry else None
+
+
+def refreeze_tests(
+    root: Path | None = None,
+    *,
+    phase: int,
+    reason: str,
+    apply: bool = False,
+) -> RefreezeReport:
+    """Re-freeze the acceptance-suite oracle for ``phase`` - the sanctioned,
+    human-gated D-tests-4 escape hatch (FU-57).
+
+    The frozen-oracle invariant (D-tests-4, ``invariants._check_acceptance_integrity``)
+    fails CLOSE when ``tests/acceptance/phase_<N>/`` changed since it was frozen,
+    so EXECUTE cannot edit the oracle to pass. When a human has *authorized* an
+    oracle correction (the frozen test itself was the bug), this recomputes the
+    current suite digest and upserts the phase's marker in
+    ``.state/tests_manifest.json`` via ``invariants.record_tests_suite`` (atomic
+    + schema-validated - the same writer the runner's TESTS action uses), then
+    records an audit entry in ``devlog.jsonl`` carrying ``reason``.
+
+    **Dry-run by default** - the operator passing ``apply=True`` is the human
+    gate (mirrors ``reconcile --apply``). ``ControlError`` if there is no
+    acceptance suite for ``phase`` to freeze.
+
+    NOTE (hardening deferred, see follow-up): the gate is currently flag-only and
+    trust-based, exactly like ``reconcile``. It does NOT yet technically prevent
+    the autonomous worker from invoking it, nor does it validate ``reason``
+    against ``decisions.json``. That is the anti-cheat hardening tracked
+    separately; this MVP restores a clean CLOSE path for a human-authorized fix.
+    """
+    from i2c import invariants as _inv
+    from i2c import telemetry as _tel
+
+    root = root or find_project_root()
+    load_state(root)  # validates a real project (.state/*.json) exists here
+    new_digest = _inv.compute_acceptance_digest(root, phase)
+    if new_digest is None:
+        raise ControlError(
+            f"no acceptance suite at tests/acceptance/phase_{phase}/ to freeze"
+        )
+    old_digest = _current_manifest_digest(root, phase)
+    changed = old_digest != new_digest
+    if apply:
+        _inv.record_tests_suite(
+            root, phase, tests_commit=_tel.head_commit(root), digest=new_digest
+        )
+        _append_refreeze_devlog(root, phase, reason=reason)
+    return RefreezeReport(
+        phase=phase,
+        applied=apply,
+        reason=reason,
+        old_digest=old_digest,
+        new_digest=new_digest,
+        changed=changed,
+    )
+
+
+def _append_refreeze_devlog(root: Path, phase: int, *, reason: str) -> None:
+    """Append an audit trail for a manual re-freeze to ``devlog.jsonl`` via the
+    sanctioned ``state`` path (validated JSONL append). Uses the ``tests`` action
+    (phase-level acceptance-suite authoring) so the entry is legible next to the
+    original freeze."""
+    from datetime import datetime, timezone
+
+    ns = argparse.Namespace(
+        file=str(_state_path(root, "devlog.jsonl")),
+        record=json.dumps(
+            {
+                "phase": phase,
+                "step": None,
+                "action": "tests",
+                "outcome": "complete",
+                "summary": f"Manual acceptance-suite refreeze (D-tests-4 "
+                f"escape hatch): {reason}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
+        from_file=None,
+    )
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = _state.cmd_append(ns)
+    if rc != 0:
+        raise ControlError("failed to append refreeze audit entry to devlog.jsonl")
