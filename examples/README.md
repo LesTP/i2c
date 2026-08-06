@@ -106,6 +106,17 @@ initialize `.state/`, and run the first phase — follow
 **[Bootstrap a new i2c project](../README.md#bootstrap-a-new-i2c-project)**
 in the top-level README.
 
+**Two first-run gotchas** the Bootstrap section now calls out (both surface
+as a bare `exit 2` when driving via `i2c run` or the Telegram bot):
+
+1. **Advance off the `phase 0` init sentinel** before running —
+   `i2c state set project.json phase=1 state=plan`. `i2c init` leaves the
+   project on phase 0, which has no phase record to assemble.
+2. **Trust the repo for git in the *run* environment** —
+   `git config --global --add safe.directory <path>` — so the worker's
+   per-action `.state/` commit doesn't fail with "dubious ownership" (common
+   on containers or NTFS / network-mounted checkouts).
+
 Note: the read commands in §2 work against any `.state/` directory. The
 *full* per-action prompt assembly
 (`i2c assemble --action plan --phase N --mode supervised`)

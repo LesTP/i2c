@@ -538,5 +538,20 @@
       "FU-57",
       "D-tests-4"
     ]
+  },
+  {
+    "id": "FU-59",
+    "title": "Dispatch-readiness preflight to surface exit-2 causes before run",
+    "kind": "cli-ergonomics",
+    "status": "open",
+    "opened": "2026-08-06",
+    "context": "Bot-driven dispatch fails opaquely (bare exit 2) when the project is not runnable: on the phase-0 init sentinel, current phase missing/complete, next-action cannot assemble, or git dubious-ownership in the run env blocks the worker .state commit. doctor checks env only; next-action does not validate assemblability; diagnose is drift-only; no pre-dispatch gate. Add a computed readiness check (core: dry i2c assemble of the next action exits 0; plus phase!=0 / not-complete guards, git-trust, backend). Fold into i2c diagnose (bot-exposed via /diagnose, runs in-container) and have i2c run / batch run it first, replying with a human-readable reason + fix instead of exit 2. Optional /ready bot command. Computed, not a stored field. Motivated by masorah first bot dispatch 2026-08-06.",
+    "trigger": "masorah bot /run exited 2 with no visible reason: phase-0 sentinel + missing git safe.directory in the container",
+    "priority": "next",
+    "files": [
+      "i2c/doctor.py",
+      "i2c/recovery.py",
+      "i2c/run_iteration.py"
+    ]
   }
 ]

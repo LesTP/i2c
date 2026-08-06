@@ -533,8 +533,33 @@ v0.1.
 
    and follow the procedure in the assembled `Instructions` section.
 
-To run autonomously instead, drive the loop with
-`i2c run --backend claude --max-budget-usd 5.00` from the project root.
+To run autonomously instead — including via the Telegram bot — first
+**advance off the `phase 0` init sentinel.** `i2c init` leaves
+`project.json.phase` at `0`, which has no phase record: supervised
+`i2c assemble --action plan --phase N` works (the phase is explicit), but
+`i2c run` and the bot read `project.json.phase` and fail to assemble phase 0
+with a bare `exit 2`. Advance first:
+
+```bash
+i2c state set project.json phase=1 state=plan
+```
+
+Then drive the loop with `i2c run --backend claude --max-budget-usd 5.00`
+from the project root (or `/setdir <proj>` + `/run` / `/batch` on the bot).
+
+> **Autonomous git trust.** The worker commits `.state/` on every action
+> (`git add .state/ && git commit`). If the *run environment* — a container,
+> or an NTFS / network-mounted checkout — reports git "dubious ownership,"
+> that commit fails mid-phase (also a bare `exit 2`). Trust the repo **where
+> the worker runs** (which may differ from where you bootstrapped):
+>
+> ```bash
+> git config --global --add safe.directory /path/to/project
+> ```
+>
+> This is easy to miss when bootstrapping on one host (e.g. a laptop) but
+> running autonomously on another (e.g. a container) — the trust setting is
+> per-environment.
 
 ### Configuration (`i2c.toml`)
 
