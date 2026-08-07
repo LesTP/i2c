@@ -239,14 +239,26 @@ def compute_acceptance_digest(project_root: Path, phase: int) -> str | None:
     """Deterministic sha256 over the frozen acceptance suite for ``phase``.
 
     Returns ``None`` when ``tests/acceptance/phase_<N>/`` does not exist. Hashes
-    every file's POSIX-relative path and raw bytes in sorted path order, so the
-    result is independent of filesystem ordering and line-ending normalization.
+    every source file's POSIX-relative path and raw bytes in sorted path order,
+    so the result is independent of filesystem ordering.
+
+    Python bytecode (``__pycache__/`` and ``*.pyc`` / ``*.pyo``) is excluded: it
+    is regenerated with fresh mtimes (and extra pytest-rewritten variants)
+    whenever the suite runs between the TESTS freeze and CLOSE, which would
+    otherwise trip the D-tests-4 integrity check even though the oracle source
+    is unchanged.
     """
     d = _acceptance_dir(project_root, phase)
     if not d.is_dir():
         return None
     files = sorted(
-        (p for p in d.rglob("*") if p.is_file()),
+        (
+            p
+            for p in d.rglob("*")
+            if p.is_file()
+            and "__pycache__" not in p.relative_to(d).parts
+            and p.suffix not in (".pyc", ".pyo")
+        ),
         key=lambda p: p.relative_to(d).as_posix(),
     )
     h = hashlib.sha256()

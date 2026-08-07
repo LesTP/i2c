@@ -328,6 +328,25 @@ class TestAcceptanceDigest(unittest.TestCase):
             self.assertNotEqual(
                 inv.compute_acceptance_digest(p.root, 2), d1)
 
+    def test_ignores_pycache(self):
+        """Bytecode under __pycache__ / *.pyc must not affect the digest."""
+        with TempProject() as p:
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            d1 = inv.compute_acceptance_digest(p.root, 2)
+            pc = p.root / "tests" / "acceptance" / "phase_2" / "__pycache__"
+            pc.mkdir(parents=True, exist_ok=True)
+            (pc / "a.cpython-311.pyc").write_bytes(b"\x00bytecode-v1\x00")
+            (pc / "a.cpython-311-pytest-9.0.3.pyc").write_bytes(b"\x00pytest\x00")
+            self.assertEqual(
+                inv.compute_acceptance_digest(p.root, 2), d1,
+                "__pycache__ bytecode must not change the digest")
+            # Regenerating bytecode (different bytes) also has no effect.
+            (pc / "a.cpython-311.pyc").write_bytes(b"\x00bytecode-v2-diff\x00")
+            self.assertEqual(inv.compute_acceptance_digest(p.root, 2), d1)
+            # A stray top-level .pyc is ignored too.
+            (p.root / "tests" / "acceptance" / "phase_2" / "stray.pyc").write_bytes(b"\x00")
+            self.assertEqual(inv.compute_acceptance_digest(p.root, 2), d1)
+
 
 class TestRecordTestsSuite(unittest.TestCase):
     def test_record_validates_and_upserts(self):
@@ -360,6 +379,24 @@ class TestCloseIntegrity(unittest.TestCase):
                 p.root, 2, tests_commit="abc",
                 digest=inv.compute_acceptance_digest(p.root, 2))
             self.assertEqual(inv.check_post_action(p.root, "close"), [])
+
+    def test_pass_when_only_pycache_changes(self):
+        """Bytecode regenerated between freeze and CLOSE must not trip D-tests-4.
+
+        Regression for the masorah phase-3 false positive: TESTS ran the suite
+        (creating __pycache__), EXECUTE re-ran it (fresh mtimes + pytest .pyc),
+        and the digest tripped though the oracle source was byte-identical.
+        """
+        with TempProject() as p:
+            _pass_close(p)
+            _write_suite(p.root, 2, {"a.py": "assert 1\n"})
+            inv.record_tests_suite(
+                p.root, 2, tests_commit="abc",
+                digest=inv.compute_acceptance_digest(p.root, 2))
+            pc = p.root / "tests" / "acceptance" / "phase_2" / "__pycache__"
+            pc.mkdir(parents=True, exist_ok=True)
+            (pc / "a.cpython-311.pyc").write_bytes(b"\x00regenerated\x00")
+            self.assertEqual(self._integrity_failures(p.root), [])
 
     def test_fails_when_modified(self):
         with TempProject() as p:
