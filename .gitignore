@@ -8,3 +8,4 @@ dist/
 .tmp_*
 # Regenerable dashboard artifact (i2c dashboard)
 dashboard.html
+.llms/plugins/
