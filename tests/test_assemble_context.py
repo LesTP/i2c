@@ -661,13 +661,20 @@ class TestTestsAction(unittest.TestCase):
             self.assertEqual(ns.action, "tests")
 
 
-class TestModuleContract(unittest.TestCase):
+class TestContract(unittest.TestCase):
+    @staticmethod
+    def _set_pattern(root: Path, value: str) -> None:
+        p = root / ".state" / "project.json"
+        proj = json.loads(p.read_text())
+        proj["pattern"] = value
+        p.write_text(json.dumps(proj))
+
     def test_module_contract_required_when_module_present(self):
-        # Phase 2 module is event_store; no ARCH_event_store.md ⇒ exit 1.
+        # Pattern A: phase 2 module is event_store; no ARCH_event_store.md ⇒ exit 1.
         with TempProject():
             ctx = build_ctx(action="execute", phase=2)
             with self.assertRaises(SystemExit) as cm:
-                ac.render_module_contract(ctx)
+                ac.render_contract(ctx)
             self.assertEqual(cm.exception.code, 1)
 
     def test_module_contract_renders_when_present(self):
@@ -675,7 +682,7 @@ class TestModuleContract(unittest.TestCase):
             "ARCH_event_store.md": "# Event Store\n\nIntro.\n\n## Surface\n\nDetails.\n",
         }):
             ctx = build_ctx(action="execute", phase=2)
-            out = ac.render_module_contract(ctx)
+            out = ac.render_contract(ctx)
             self.assertTrue(out.startswith("## Module Contract: event_store"))
             self.assertIn("Surface", out)
 
@@ -687,31 +694,52 @@ class TestModuleContract(unittest.TestCase):
                     del p["module"]
             (root / ".state" / "phases.json").write_text(json.dumps(data))
             ctx = build_ctx(action="execute", phase=2)
-            self.assertEqual(ac.render_module_contract(ctx), "")
+            self.assertEqual(ac.render_contract(ctx), "")
 
-    def test_module_contract_omitted_under_pattern_b(self):
-        # Pattern B: a stray `module` on a phase record is ignored (FU-48), so no
-        # ARCH_<module>.md is required and no error is raised — even though phase
-        # 2 carries module=event_store and no ARCH file exists.
+    def test_pattern_b_renders_architecture_as_contract_in_execute(self):
+        # Pattern B has no per-module ARCH files, so the whole ARCHITECTURE.md is
+        # the contract for the contract-carrying actions (tests/execute/close).
+        # FU-49: closes the gap where Pattern B EXECUTE/CLOSE saw no contract.
+        with TempProject(with_extra={
+            "ARCHITECTURE.md": "# Arch\n\n## Components\n\nThe StewBuild contract.\n",
+        }) as root:
+            self._set_pattern(root, "B")
+            for action in ("tests", "execute", "close"):
+                ctx = build_ctx(action=action, phase=2)
+                out = ac.render_contract(ctx)
+                self.assertTrue(
+                    out.startswith("## Architecture (contract)"), msg=action)
+                self.assertIn("StewBuild contract", out)
+
+    def test_pattern_b_omitted_where_architecture_already_rendered(self):
+        # plan/review/diagnose already render full architecture via
+        # render_architecture, so the contract slot stays empty under Pattern B
+        # (no double-render). These are exactly _ARCHITECTURE_ACTIONS.
+        with TempProject(with_extra={
+            "ARCHITECTURE.md": "# Arch\n\n## Components\n\nDetails.\n",
+        }) as root:
+            self._set_pattern(root, "B")
+            self.assertEqual(
+                set(ac._ARCHITECTURE_ACTIONS), {"plan", "review", "diagnose"})
+            for action in ("plan", "review", "diagnose"):
+                ctx = build_ctx(action=action, phase=2)
+                self.assertEqual(ac.render_contract(ctx), "", msg=action)
+
+    def test_pattern_b_no_architecture_file_is_graceful(self):
+        # Pattern B with no ARCHITECTURE.md: contract slot is empty, no error.
         with TempProject() as root:
-            proj_path = root / ".state" / "project.json"
-            proj = json.loads(proj_path.read_text())
-            proj["pattern"] = "B"
-            proj_path.write_text(json.dumps(proj))
+            self._set_pattern(root, "B")
             ctx = build_ctx(action="execute", phase=2)
-            self.assertEqual(ac.render_module_contract(ctx), "")
+            self.assertEqual(ac.render_contract(ctx), "")
 
     def test_module_contract_pattern_a_explicit_still_errors(self):
         # Explicit pattern=A keeps the hard-require (typo-catch) behavior for a
         # module whose ARCH file is missing.
         with TempProject() as root:
-            proj_path = root / ".state" / "project.json"
-            proj = json.loads(proj_path.read_text())
-            proj["pattern"] = "A"
-            proj_path.write_text(json.dumps(proj))
+            self._set_pattern(root, "A")
             ctx = build_ctx(action="execute", phase=2)
             with self.assertRaises(SystemExit) as cm:
-                ac.render_module_contract(ctx)
+                ac.render_contract(ctx)
             self.assertEqual(cm.exception.code, 1)
 
 

@@ -745,30 +745,42 @@ def render_instructions(ctx: AssemblerContext) -> str:
     return f"## Instructions\n\n{body.rstrip()}"
 
 
-# --- Project Context: Module Contract --------------------------------------
+# --- Project Context: Contract (per-module ARCH or single-doc architecture) -
 
 
-def render_module_contract(ctx: AssemblerContext) -> str:
-    """## Module Contract: NAME — full ARCH_<module>.md (verbatim).
+def render_contract(ctx: AssemblerContext) -> str:
+    """The pattern-aware **contract slot** — what the worker builds against.
 
-    Per ARCH §11.1: required if phases.json[current].module is set;
-    omitted entirely if not.
+    What it emits depends on ``project.json.pattern``:
 
-    Pattern B (project.json.pattern == "B"): single-document architecture has
-    no per-module contracts, so this section is always omitted — even if a phase
-    carries a stray ``module`` (e.g. one PLAN wrote in error, FU-48). The omit is
-    silent: this renderer runs on every action, and ``module`` is meaningless
-    under Pattern B, so a per-invocation warning would be pure noise; the PLAN
-    procedure (instructions/plan.md) is the place the stray write is prevented.
-
-    Pattern A / absent: ``module`` set ⇒ ARCH_<module>.md is required; a missing
-    file is a hard error (catches typos like module="orchestratr").
+    - **Pattern A / absent (per-module):** the current phase's
+      ``ARCH_<module>.md`` verbatim (heading ``## Module Contract: <module>``).
+      Required when ``phases.json[current].module`` is set — a missing file is a
+      hard error (catches typos like module="orchestratr"); omitted when
+      ``module`` is unset.
+    - **Pattern B (single-document):** there are no per-module ARCH files, so the
+      whole ``ARCHITECTURE.md`` serves as the contract (heading
+      ``## Architecture (contract)``). Emitted only for the contract-carrying
+      actions that do NOT separately ``render_architecture`` — i.e. an action
+      holding this renderer that is not in ``_ARCHITECTURE_ACTIONS``
+      (tests/execute/close). For plan/review/diagnose the full architecture
+      already arrives via ``render_architecture``, so this returns "" to avoid
+      duplicating it (FU-49).
     """
     record = ctx.current_phase_record()
     if record is None:
         return ""
     if ctx.project.get("pattern") == "B":
-        return ""
+        # Single-document: ARCHITECTURE.md is the contract, but only where it is
+        # not already rendered by render_architecture (FU-49).
+        if ctx.action in _ARCHITECTURE_ACTIONS:
+            return ""
+        path = ctx.project_root / "ARCHITECTURE.md"
+        if not path.is_file():
+            return ""
+        text = path.read_text(encoding="utf-8")
+        body = _extract_after_first_h2(text) or text
+        return f"## Architecture (contract)\n\n{body.rstrip()}"
     module = record.get("module")
     if not module:
         return ""
@@ -1043,7 +1055,7 @@ def render_recent_activity_5(ctx: AssemblerContext) -> str:
 # Per ARCH §5 (Assembly Matrix) — Project Context section ordering by action.
 _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] = {
     "plan": [
-        render_module_contract,
+        render_contract,
         render_project_state,
         render_gotchas,
         render_current_phase,
@@ -1054,7 +1066,7 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         render_decisions,
     ],
     "tests": [
-        render_module_contract,
+        render_contract,
         render_project_state,
         render_gotchas,
         render_current_phase,
@@ -1066,7 +1078,7 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         # per-step (see instructions/tests.md).
     ],
     "execute": [
-        render_module_contract,
+        render_contract,
         render_project_state,
         render_gotchas,
         render_current_phase,
@@ -1078,7 +1090,7 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         # needs it. PLAN / REVIEW / CLOSE still include it.
     ],
     "review": [
-        render_module_contract,
+        render_contract,
         render_project_state,
         render_gotchas,
         render_current_phase,
@@ -1088,7 +1100,7 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         render_decisions,
     ],
     "close": [
-        render_module_contract,
+        render_contract,
         render_project_state,
         render_gotchas,
         render_current_phase,
@@ -1101,7 +1113,7 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
     # state/steps/devlog it needs to act.
     "diagnose": [
         render_failure_context,
-        render_module_contract,
+        render_contract,
         render_project_state,
         render_gotchas,
         render_current_phase,
@@ -1119,6 +1131,17 @@ _PROJECT_CONTEXT_BY_ACTION: dict[str, list[Callable[[AssemblerContext], str]]] =
         render_phase_devlog,
     ],
 }
+
+
+# Actions whose Project-Context recipe already includes render_architecture (the
+# full ARCHITECTURE.md). Derived from the recipe map so it can never drift out of
+# sync. render_contract consults this to know where NOT to also emit the
+# Pattern-B architecture-as-contract fallback — avoiding a double-render (FU-49).
+_ARCHITECTURE_ACTIONS = frozenset(
+    action
+    for action, recipe in _PROJECT_CONTEXT_BY_ACTION.items()
+    if render_architecture in recipe
+)
 
 
 # Actions where Available Modules adds value (i.e., Architecture isn't already

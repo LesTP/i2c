@@ -28,7 +28,7 @@ GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 REGEN = os.environ.get("I2C_REGEN_GOLDEN") == "1"
 
 # A fixed module contract for the fixture's phase-2 module (event_store). The
-# committed fixture omits it; the worker prompt requires it (render_module_contract
+# committed fixture omits it; the worker prompt requires it (render_contract
 # errors when a module is declared but its ARCH file is missing). Kept constant so
 # the assembled prompt is deterministic.
 ARCH_EVENT_STORE = """\

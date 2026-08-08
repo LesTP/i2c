@@ -352,7 +352,7 @@
     "id": "FU-49",
     "title": "Pattern B: load ARCHITECTURE.md as module-contract source in EXECUTE/CLOSE",
     "kind": "other",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-07-10",
     "context": "In Pattern B (module absent) render_module_contract returns empty, so EXECUTE and CLOSE receive no architecture doc at all - ARCHITECTURE.md is assembled only for PLAN and REVIEW, while Pattern A gets ARCH_<module>.md in all five actions. Proposal: when project.json.pattern==B, use ARCHITECTURE.md as the module-contract source for EXECUTE/CLOSE (and possibly TESTS), loaded via the real path with correct first-h2 extraction, and skipped in PLAN/REVIEW to avoid double-loading the doc already present there. Open question: does this help or just bloat the EXECUTE prompt, given the frozen acceptance suite already encodes the contract? Rejected the ARCH_ITECTURE.md filename-pun (module=ITECTURE) as too fragile/surprising.",
     "trigger": "Surfaced while planning FU-48 (explicit project.json.pattern flag). Blocked on FU-48 landing - the pattern flag is the prerequisite signal. Decide on merits once a Pattern B project (build-a-stew) has run EXECUTE/CLOSE and we can see whether missing arch context actually hurts.",
@@ -363,7 +363,9 @@
     "refs": [
       "FU-48",
       "ref/SPEC_architecture.md"
-    ]
+    ],
+    "closed": "2026-08-08",
+    "resolution": "Implemented (Option C): renamed render_module_contract -> render_contract, the pattern-aware contract slot. Pattern B now renders the whole ARCHITECTURE.md as the contract for tests/execute/close (the actions lacking render_architecture), gated by the derived _ARCHITECTURE_ACTIONS constant to avoid double-render in plan/review/diagnose. Evidence: build-a-stew (Pattern B, 9 phases) had 2 EXECUTE->REVIEW contract-drift escalations that this closes. Full suite 693 passing."
   },
   {
     "id": "FU-50",
