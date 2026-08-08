@@ -79,18 +79,6 @@ class _Progress:
         self.lines.append(text)
 
 
-class _RefineCounter:
-    """Fake refine_fn(proj, fu_id, backend) -> rc; records (fu_id, backend)."""
-
-    def __init__(self, rc: int = 0):
-        self.rc = rc
-        self.calls: list[tuple[str, str | None]] = []
-
-    def __call__(self, proj=None, fu_id=None, backend=None) -> int:
-        self.calls.append((fu_id, backend))
-        return self.rc
-
-
 class TestHelpAndUnknown(unittest.TestCase):
     def test_commands_help(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -294,7 +282,7 @@ class TestAuth(unittest.TestCase):
             root = Path(tmp)
             _make(root, {"only": {}})
             for cmd in (
-                "run", "batch", "reconcile", "endphase", "refine", "refreeze",
+                "run", "batch", "reconcile", "endphase", "refreeze",
             ):
                 r = tc.dispatch(cmd, [], is_admin=False, root=root)
                 self.assertFalse(r.ok)
@@ -577,70 +565,6 @@ class TestEndphase(unittest.TestCase):
             r = tc.dispatch("endphase", ["last"], is_admin=True, root=root)
             self.assertTrue(r.ok)
             self.assertIn("terminated", r.text)
-
-
-class TestRefine(unittest.TestCase):
-    def test_refine_requires_fu_id(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make(root, {"only": {}})
-            fake = _RefineCounter()
-            r = tc.dispatch("refine", [], is_admin=True, root=root, refine_fn=fake)
-            self.assertFalse(r.ok)
-            self.assertIn("Usage: /refine", r.text)
-            self.assertEqual(fake.calls, [])  # nothing dispatched
-
-    def test_refine_happy_path_closes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make(root, {"only": {}})
-            fake = _RefineCounter(rc=0)
-            r = tc.dispatch(
-                "refine", ["FU-1"], is_admin=True, root=root, refine_fn=fake
-            )
-            self.assertTrue(r.ok)
-            self.assertIn("FU-1", r.text)
-            self.assertEqual(fake.calls, [("FU-1", None)])
-
-    def test_refine_nonzero_leaves_open(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make(root, {"only": {}})
-            fake = _RefineCounter(rc=2)
-            r = tc.dispatch(
-                "refine", ["FU-9"], is_admin=True, root=root, refine_fn=fake
-            )
-            self.assertFalse(r.ok)
-            self.assertIn("left open", r.text)
-
-    def test_refine_parses_backend_and_normalizes_id(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make(root, {"only": {}})
-            fake = _RefineCounter(rc=0)
-            tc.dispatch(
-                "refine", ["fu-7", "codex"], is_admin=True, root=root, refine_fn=fake
-            )
-            self.assertEqual(fake.calls, [("FU-7", "codex")])  # id upper-cased
-
-    def test_refine_by_project_name(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make(root, {"a": {}, "b": {}})
-            fake = _RefineCounter(rc=0)
-            r = tc.dispatch(
-                "refine", ["b", "FU-3"], is_admin=True, root=root, refine_fn=fake
-            )
-            self.assertTrue(r.ok, msg=r.text)
-            self.assertEqual(fake.calls, [("FU-3", None)])
-
-    def test_refine_not_available_without_fn(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            _make(root, {"only": {}})
-            r = tc.dispatch("refine", ["FU-1"], is_admin=True, root=root)
-            self.assertFalse(r.ok)
-            self.assertIn("not available", r.text)
 
 
 class TestCommandMenu(unittest.TestCase):

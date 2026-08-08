@@ -89,23 +89,6 @@ def _make_runner(root: Path):
     return _run
 
 
-def _make_refine_runner(root: Path):
-    """Return ``fn(proj, fu_id, backend=None) -> int`` that dispatches one refine
-    worker (Proposal B).
-
-    Shells ``i2c refine <fu-id>`` with the project as CWD: ``run_refine`` resolves
-    the project + the ``[run.backends].refine`` map from the working directory,
-    and the shell gives process isolation for the worker. A non-None ``backend``
-    forces a single backend via ``--backend``."""
-    def _refine(proj: Path, fu_id: str, backend: str | None = None) -> int:
-        cmd = [sys.executable, "-m", "i2c.cli", "refine", fu_id]
-        if backend:
-            cmd += ["--backend", backend]
-        return subprocess.run(cmd, cwd=str(proj)).returncode
-
-    return _refine
-
-
 async def _send(update, reply: tc.Reply) -> None:
     text = reply.text or "(no output)"
     for i in range(0, len(text), _TG_LIMIT):
@@ -130,7 +113,6 @@ def build_application(token: str, root: Path, admins: frozenset[int], state_path
     app = Application.builder().token(token).post_init(_set_command_menu).build()
     chat_state = _ChatState(state_path)
     runner = _make_runner(root)
-    refine_runner = _make_refine_runner(root)
 
     def make_handler(command: str):
         async def handler(update, context):
@@ -162,7 +144,6 @@ def build_application(token: str, root: Path, admins: frozenset[int], state_path
                 root=root,
                 current=current,
                 run_iteration_fn=runner,
-                refine_fn=refine_runner,
                 progress=progress,
             )
             if reply.set_current:

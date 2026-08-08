@@ -711,8 +711,8 @@ class TestFollowups(unittest.TestCase):
             self.assertEqual(len(result), 3)
 
 
-class TestResolveCloseFollowup(unittest.TestCase):
-    """resolve_followup / close_followup — the refine loop's read+close (Proposal B)."""
+class TestCloseFollowup(unittest.TestCase):
+    """close_followup — the shared FU close used by ``i2c fu close``."""
 
     _FUS = [
         {"id": "FU-1", "title": "prose pass", "kind": "prose", "status": "open"},
@@ -724,25 +724,6 @@ class TestResolveCloseFollowup(unittest.TestCase):
         (root / ".state" / "followups.json").write_text(
             json.dumps(records), encoding="utf-8"
         )
-
-    def test_resolve_returns_open_view(self):
-        with TempProject() as t:
-            self._write(t.root, self._FUS)
-            view = c.resolve_followup(t.root, "FU-1")
-            self.assertEqual(view.id, "FU-1")
-            self.assertEqual(view.kind, "prose")
-
-    def test_resolve_missing_raises_notfound(self):
-        with TempProject() as t:
-            self._write(t.root, self._FUS)
-            with self.assertRaises(c.NotFoundError):
-                c.resolve_followup(t.root, "FU-99")
-
-    def test_resolve_closed_raises_invalidstate(self):
-        with TempProject() as t:
-            self._write(t.root, self._FUS)
-            with self.assertRaises(c.InvalidStateError):
-                c.resolve_followup(t.root, "FU-2")
 
     def test_close_sets_status_resolution_date(self):
         with TempProject() as t:

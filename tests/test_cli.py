@@ -388,63 +388,6 @@ class TestClearBoundary(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestRefine(unittest.TestCase):
-    def test_refine_forwards_args(self):
-        captured: dict = {}
-
-        def fake(fu_id, **kwargs):
-            captured["fu_id"] = fu_id
-            captured.update(kwargs)
-            return 0
-
-        original = cli.run_refine.run_refine
-        cli.run_refine.run_refine = fake
-        try:
-            rc, out, err = run_cli(
-                "refine", "FU-7", "--backend", "codex", "--model", "x",
-                "--max-budget-usd", "1.5",
-            )
-        finally:
-            cli.run_refine.run_refine = original
-        self.assertEqual(rc, 0, msg=err)
-        self.assertEqual(captured["fu_id"], "FU-7")
-        self.assertEqual(captured["backend"], "codex")
-        self.assertEqual(captured["model"], "x")
-        self.assertEqual(captured["max_budget_usd"], 1.5)
-
-    def test_refine_returns_exit_code(self):
-        original = cli.run_refine.run_refine
-        cli.run_refine.run_refine = lambda fu_id, **kwargs: 2
-        try:
-            rc, out, err = run_cli("refine", "FU-1")
-        finally:
-            cli.run_refine.run_refine = original
-        self.assertEqual(rc, 2)
-
-    def test_refine_backend_map_from_toml(self):
-        captured: dict = {}
-
-        def fake(fu_id, **kwargs):
-            captured.update(kwargs)
-            return 0
-
-        with tempfile.TemporaryDirectory(prefix="i2c_cli_ref_") as tmp:
-            (Path(tmp) / "i2c.toml").write_text(
-                '[run]\nbackend = "claude"\n[run.backends]\nrefine = "codex"\n',
-                encoding="utf-8",
-            )
-            original = cli.run_refine.run_refine
-            cli.run_refine.run_refine = fake
-            try:
-                with ChdirFixture(Path(tmp)):
-                    rc, out, err = run_cli("refine", "FU-1")
-            finally:
-                cli.run_refine.run_refine = original
-        self.assertEqual(rc, 0, msg=err)
-        self.assertEqual(captured["backend_map"], {"refine": "codex"})
-        self.assertEqual(captured["default_backend"], "claude")
-
-
 class TestRun(unittest.TestCase):
     def test_run_forwards_args(self):
         captured: dict = {}

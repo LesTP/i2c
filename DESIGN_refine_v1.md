@@ -1,11 +1,17 @@
 # DESIGN — Formalizing Refine / ad-hoc work v1
 
-> **Status:** Proposal A **shipped** (the `i2c fu` backlog). Proposal B **shipped**
-> (this doc §12): the assembler `refine` recipe + `instructions/refine.md`, the
-> `run_refine.py` driver, the sub-phase invariant, the `devlog`/`telemetry` refine
-> support (D-refine-8), the `i2c refine` CLI, the admin-gated `/refine` Telegram
-> command (FU-54), **and the read-only `/audit fu` bot backlog facet** (§4.4).
-> **Deferred:** followups-only-repo (i2c self-dogfooding) support (FU-55).
+> **Status:** Proposal A **shipped and live** (the `i2c fu` backlog + the
+> read-only `/audit fu` bot facet, §4.4). Proposal B (this doc §12 — the
+> autonomous refine *loop*) was **shipped and then REMOVED on 2026-08-07**,
+> unused: the assembler `refine` recipe + `instructions/refine.md`, the
+> `run_refine.py` driver, the sub-phase invariant, the `i2c refine` CLI, the
+> admin-gated `/refine` Telegram command, and the `[run.backends].refine`
+> routing. Rationale + exact surface: see `CHANGELOG.md` (Unreleased → Removed).
+> **The design below is kept as historical record** for a possible future
+> revival (e.g. an agent tool); it no longer describes shipped code for the loop.
+> The `devlog_entry.schema.json` `action:"refine"` value is retained for
+> data-compat (D-refine-8). **Deferred (moot while the loop is removed):**
+> followups-only-repo (i2c self-dogfooding) support (FU-55).
 > Formalizes the *opportunistic
 > refine* work — cleanups, prose passes, dead-surface removal, and the endless
 > doc/status reconciliation — that i2c does constantly but never structured. The

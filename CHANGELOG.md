@@ -61,6 +61,25 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Removed
 
+- **Autonomous refine loop (`i2c refine` + `/refine`) — DESIGN_refine_v1
+  Proposal B.** Removed the single-shot refine engine (`run_refine.py`:
+  `run_refine`, `commit_refine`), the `i2c refine <fu-id>` CLI command, the
+  `/refine` Telegram command + its runner wiring, `instructions/refine.md`, the
+  sub-phase invariant (`invariants.check_post_refine` / `snapshot_phase_files`),
+  the assembler's `refine` action (`render_followup_context`, the `--fu` flag,
+  the `refine` entries in `ACTIONS` / `_NO_NEXT_STATE_ACTIONS` /
+  `_PROJECT_CONTEXT_BY_ACTION`), `control.resolve_followup`, and the
+  `refine` key in `config._RUN_ACTIONS` (`[run.backends].refine`). Rationale:
+  the loop was never used across the fleet (zero `refine(<kind>): <fu-id>`
+  commits) and did not match the operator's workflow (refine items are worked
+  by hand in a session). **The FU backlog (Proposal A) is retained** —
+  `i2c fu add|list|show|close|reopen|prioritize|render` over
+  `.state/followups.json`, plus the `/audit fu` bot facet — as is the
+  `devlog_entry.schema.json` `action:"refine"` value (data-compat for existing
+  devlogs). The removed design is preserved in git history and in
+  `DESIGN_refine_v1.md` (Proposal B, marked historical) for a possible future
+  revival (e.g. an agent tool).
+
 - **Multi-step / `--step-budget` machinery (D-run-1/D-run-2).** Declared
   single-iteration-per-invocation the design and removed the unused multi-step
   surface: the assembler's `--step-budget` flag and `multi_step_only` marker,

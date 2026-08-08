@@ -1,5 +1,14 @@
 # Recovery — code-class capture (`diagnose(code)` → `bugfix` FU) (FUTURE)
 
+> **⚠️ Dependency removed (2026-08-07).** This design's *executor* half is the
+> refine loop (`i2c refine <fu-id>`, DESIGN_refine_v1 Proposal B), which was
+> **removed unused** on 2026-08-07 (see the i2c CHANGELOG). Everything below that
+> reads "→ `i2c refine`" / "the refine loop implements the repair" is therefore
+> **not currently buildable as written** — reviving or replacing that single-shot
+> executor is a prerequisite. The *capture* half (`diagnose(code)` → `bugfix` FU)
+> is independent and still valid. Kept as historical roadmap; premise needs
+> re-establishing before scheduling.
+>
 > **Status: FUTURE — not scheduled.** The reconcile-first recovery **v1**
 > (deterministic drift audit + `diagnose` + human-gated `reconcile` + out-of-band
 > dispatch) shipped 2026-06-29 — see

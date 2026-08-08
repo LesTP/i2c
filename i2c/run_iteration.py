@@ -136,7 +136,6 @@ def assemble_prompt(
     backend: str,
     emit: str = "full",
     target: int | None = None,
-    fu: str | None = None,
 ) -> str:
     """Invoke ``python -m i2c.assemble_context`` and return the prompt text.
 
@@ -152,10 +151,6 @@ def assemble_prompt(
     ``target`` is forwarded as ``--target`` for recovery actions
     (diagnose/reconcile), selecting which iteration's failure context the
     assembler renders. Ignored by the normal lifecycle actions.
-
-    ``phase`` is required for lifecycle/recovery actions but is ``None`` for
-    the refine action (sub-phase — no lifecycle phase); ``fu`` is forwarded as
-    ``--fu`` for the refine action and selects the backlog item.
     """
     argv = [
         sys.executable, "-m", "i2c.assemble_context",
@@ -168,8 +163,6 @@ def assemble_prompt(
         argv += ["--phase", str(phase)]
     if target is not None:
         argv += ["--target", str(target)]
-    if fu is not None:
-        argv += ["--fu", fu]
     proc = subprocess.run(
         argv,
         cwd=str(project_root),

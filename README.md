@@ -309,18 +309,15 @@ oracle to make itself pass.** When CLOSE hits this, there are two branches:
 
 Alongside the phase lifecycle (Build), i2c has a low-ceremony **Refine tier** for
 opportunistic, sub-phase work — prose passes, dead-surface removal, doc
-reconciliation, small ergonomics (`DESIGN_refine_v1.md`). It has two parts:
+reconciliation, small ergonomics (`DESIGN_refine_v1.md`). It is a **backlog**:
 
 - **The backlog** — `i2c fu add|list|show|close|reopen|prioritize|render` over a
   schema-validated `.state/followups.json`. It gates nothing; it's a queryable,
   drift-proof replacement for a hand-maintained follow-ups markdown.
-- **The loop** — `i2c refine <fu-id>` is a **single-shot, sub-phase dispatch**
-  that bypasses the state machine: it assembles a refine prompt (the FU record +
-  `instructions/refine.md`, no phase context), invokes the worker once, and on
-  `EXIT:0` closes the FU and commits `refine(<kind>): <fu-id> <summary>`. A
-  structural invariant asserts the run left `project.json` / `phases.json` /
-  `steps.json` byte-unchanged — that is what keeps refine off the lifecycle.
-  Backend routing uses `[run.backends].refine`.
+
+Backlog items are worked **by hand in a session** — pick one up, make the change,
+then `i2c fu close <fu-id>`. (An autonomous single-shot `i2c refine` loop was
+prototyped and removed unused — see `CHANGELOG.md` / `DESIGN_refine_v1.md`.)
 
 ---
 
@@ -420,10 +417,9 @@ Commands:
 - **Admin (gated to the `admins` in the `[telegram]` table of `i2c.toml`):**
   `/run [proj] [N] [backend]` — N iterations (default 1) on a single backend;
   `/batch [proj]` — run a whole phase to a halt, choosing the backend
-  per-action from `[run.backends]`; `/refine [proj] <fu-id> [backend]` —
-  dispatch one refine worker against a followup (closes it + commits on
-  success); `/reconcile [proj] [apply]` — apply workflow-drift fixes (dry-run
-  unless `apply`); `/refreeze [proj] <phase> [apply] [reason...]` — re-freeze a
+  per-action from `[run.backends]`; `/reconcile [proj] [apply]` — apply
+  workflow-drift fixes (dry-run unless `apply`); `/refreeze [proj] <phase>
+  [apply] [reason...]` — re-freeze a
   phase's acceptance oracle after a human-authorized correction (D-tests-4
   escape hatch; dry-run unless `apply`, records `reason` to `devlog.jsonl`);
   `/endphase [proj] [last]` — clear the `audit_boundary`

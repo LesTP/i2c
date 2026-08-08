@@ -628,35 +628,9 @@ def followups(
     return [_followup_view(r) for r in records]
 
 
-# Followup statuses that count as "still open" — an item in one of these is a
-# valid refine-dispatch target. Single source shared by render.py and the
-# refine loop (Proposal B).
+# Followup statuses that count as "still open". Single source shared by
+# render.py and the `i2c fu` backlog commands.
 _OPEN_STATUSES = ("open", "accepted", "partially-closed")
-
-
-def resolve_followup(root: Path | None, fu_id: str) -> FollowupView:
-    """Resolve a single backlog item by id for the refine loop (Proposal B).
-
-    Raises ``NotFoundError`` if ``fu_id`` is absent from
-    ``.state/followups.json`` and ``InvalidStateError`` if it is present but not
-    open (already closed/wontfix) — refine only dispatches an open item. On
-    success returns the ``FollowupView``.
-    """
-    root = root or _find_followups_root()
-    record = next(
-        (r for r in _read_followups(root) if r.get("id") == fu_id), None
-    )
-    if record is None:
-        raise NotFoundError(
-            f"{fu_id} not found in {_state_path(root, 'followups.json')}."
-        )
-    view = _followup_view(record)
-    if view.status not in _OPEN_STATUSES:
-        raise InvalidStateError(
-            f"{fu_id} is {view.status!r}; refine can only run an open item "
-            f"(one of {_OPEN_STATUSES}). Use `i2c fu reopen {fu_id}` first."
-        )
-    return view
 
 
 def close_followup(
@@ -667,8 +641,8 @@ def close_followup(
     status: str = "closed",
 ) -> None:
     """Close a backlog item through the sanctioned ``state.py`` path (atomic +
-    schema-validated) — the shared write used by ``i2c fu close`` and the refine
-    runner. Sets ``status`` (``closed``/``wontfix``), ``closed=today`` and, when
+    schema-validated) — the shared write used by ``i2c fu close``. Sets
+    ``status`` (``closed``/``wontfix``), ``closed=today`` and, when
     given, ``resolution``. Raises ``ControlError`` on a non-zero return (no
     matching id / validation failure)."""
     import datetime
@@ -691,7 +665,7 @@ def close_followup(
     # (state.parse_value), so a free-text `resolution` that happens to be a JSON
     # scalar — the worker's EXIT reason "42" / "true" / a leading '{'/'[' — would
     # be coerced to a non-string and fail the schema, aborting an already-done
-    # refine. --from-file keeps arbitrary prose a string.
+    # close. --from-file keeps arbitrary prose a string.
     fd, tmp = tempfile.mkstemp(suffix=".json")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
