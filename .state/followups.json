@@ -190,7 +190,7 @@
     "id": "FU-37",
     "title": "Dead-surface audit as a refine survey call (detect -> file dead-surface FUs)",
     "kind": "dead-surface",
-    "status": "open",
+    "status": "wontfix",
     "priority": "eventually",
     "context": "A refine-tier survey, NOT bespoke boundary tooling: rides the refine machinery (Proposal B) rather than a standalone command / doctor check / inline-close hook. Detection is automatable (vulture or AST for unused imports/functions/vars; grep/import-graph for CLI flags, env vars, assembler --section modes, tools imported only by tests, schema fields written-but-never-read); the cut-or-keep decision is NOT (load-bearing via dynamic dispatch / public API / planned use -- a false positive means auto-deleting live code, high blast radius), so deletion stays human-gated. Distinct from diagnose (recovery tier: reactive, iteration-targeted, reads .state/ + loop logs, feeds reconcile deterministically): this is proactive, whole-tree, reads source, feeds the fu backlog by judgment. Per D-refine-7 they stay separate lifecycles but may share the finding/proposal reporting shape. Pays off: FU-7, STOP_BEFORE_REVIEW, STEP_BUDGET removals were all ad-hoc-audit finds.",
     "trigger": "Depends on Proposal B growing a survey/propose facet (a refine call that files FUs, mirroring the execute-a-FU mode). Then dead-surface survey = a refine call that runs the detector (vulture + grep, a tool the refine worker uses) and files dead-surface FUs; each executes via normal refine dispatch, one commit, human-gated. Invoke opportunistically (a phase/module boundary is natural), scoped to the module just closed to avoid big-bang. Supersedes the earlier three placement options (standalone command / doctor / inline-close). Spec: DESIGN_refine_v1 Proposal B survey mode + D-refine-7.",
@@ -199,7 +199,9 @@
     ],
     "refs": [
       "DESIGN_refine_v1"
-    ]
+    ],
+    "closed": "2026-08-07",
+    "resolution": "Depended on the refine loop growing a survey/propose facet (Proposal B), removed 2026-08-07 (see CHANGELOG); no autonomous executor to build on. Dead-surface audits are done by hand."
   },
   {
     "id": "FU-20",
@@ -461,7 +463,7 @@
     "id": "FU-55",
     "title": "i2c refine on followups-only repos (self-dogfooding, D-refine-3)",
     "kind": "cli-ergonomics",
-    "status": "open",
+    "status": "wontfix",
     "opened": "2026-07-13",
     "context": "run_refine currently requires a standard .state/ (project.json) because assemble_context.find_project_root and telemetry regime/leaf derivation assume it. To let i2c dogfood its OWN backlog via i2c refine (a followups-only repo, no phase machine), extend find_project_root to also anchor on followups.json (mirror control._find_followups_root), make build_context load project/phases/steps optionally for --action refine, and make telemetry degrade gracefully without project.json.",
     "trigger": "When wanting to run i2c refine inside the i2c repo itself, or on any non-phase-migrated repo.",
@@ -472,7 +474,9 @@
     "refs": [
       "DESIGN_refine_v1",
       "run_refine.py"
-    ]
+    ],
+    "closed": "2026-08-07",
+    "resolution": "Refine loop (DESIGN_refine_v1 Proposal B) removed 2026-08-07 (see CHANGELOG); self-dogfooding the loop is moot."
   },
   {
     "id": "FU-56",
