@@ -564,7 +564,7 @@
     "id": "FU-60",
     "title": "codex-aware i2c init: auto-enable [run.backends] split when codex is on PATH",
     "kind": "cli-ergonomics",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-08-11",
     "context": "i2c init scaffolds [run.backends] commented out, so a new project defaults to single-backend (claude) until manually uncommented. A real consumer (masorah) shipped its entire 7-phase MVP claude-only for this reason; the multi-backend feature exists and is documented but the scaffold default is off and buried. Make i2c init backend-aware: at init, detect whether codex is on PATH and, if present, scaffold [run.backends] ACTIVE with the fleet pattern (plan=claude, execute=codex, review=claude, close=codex); if absent keep claude-only. Never route an action to an uninstalled backend (that action would fail). Optionally add an explicit --backends override flag. Do NOT hard-default codex in the universal template (breaks greenfield envs without codex). Companion to the README bootstrap step (commit 91395c5, the process half); this is the tooling half.",
     "trigger": "masorah ran its whole MVP on claude only because i2c init left [run.backends] commented; discovered 2026-08-11.",
@@ -572,6 +572,8 @@
     "files": [
       "i2c/scaffold.py",
       "i2c/data/templates/i2c.toml"
-    ]
+    ],
+    "closed": "2026-08-11",
+    "resolution": "i2c init is now backend-aware: --backends {auto,split,claude} (default auto) activates the [run.backends] fleet split when codex is on PATH + the codex adapter is scaffolded, else claude-only with a run-host caveat. Implemented in 5154796."
   }
 ]
