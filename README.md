@@ -557,6 +557,28 @@ from the project root (or `/setdir <proj>` + `/run` / `/batch` on the bot).
 > running autonomously on another (e.g. a container) — the trust setting is
 > per-environment.
 
+> **Enable the per-action backend split (recommended when a second backend is
+> installed).** `i2c init` scaffolds `[run.backends]` **commented out**, so a
+> fresh project runs on a single backend (`claude`) until you turn it on — easy
+> to miss, and the project silently never spreads load. If `codex` is on the run
+> host's `PATH`, uncomment `[run.backends]` in `i2c.toml` to route actions across
+> backends. The fleet pattern:
+>
+> ```toml
+> [run]
+> backend = "claude"   # default for any action not listed below
+> [run.backends]
+> plan = "claude"      # judgment
+> execute = "codex"    # mechanical, cheaper
+> review = "claude"
+> close = "codex"
+> ```
+>
+> Precedence is `[run.backends][action] > [run].backend > claude`; omitted
+> actions fall back to `[run].backend`. **Only route an action to a backend whose
+> CLI is actually on `PATH`** — e.g. `execute = "codex"` with no `codex` installed
+> fails that action. See Configuration below for the full surface.
+
 ### Configuration (`i2c.toml`)
 
 `i2c init` writes a starter `i2c.toml` at the project root that records default
