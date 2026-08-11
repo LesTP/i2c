@@ -307,7 +307,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     try:
         report = scaffold.init_project(
             root, name=name, backends=backends, pattern=args.pattern,
-            run_backends=args.backends, force=args.force,
+            run_split=args.run_split, force=args.force,
         )
     except scaffold.ScaffoldError as e:
         return _fail(e)
@@ -865,11 +865,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Which adapter(s) to scaffold. Default: both.",
     )
     p_init.add_argument(
-        "--backends", choices=scaffold.RUN_BACKENDS_MODES, default="auto",
+        "--run-split", choices=scaffold.RUN_SPLIT_MODES, default="auto",
         help="Activate the i2c.toml [run.backends] per-action split. "
-             "auto (default): on when codex is on PATH here; "
-             "split: force on (plan/review=claude, execute/close=codex); "
-             "claude: single-backend.",
+             "auto (default): enable when codex is on PATH here; "
+             "on: force the split (plan/review=claude, execute/close=codex); "
+             "off: single-backend.",
     )
     p_init.add_argument(
         "--pattern", choices=("A", "B"), default="A",

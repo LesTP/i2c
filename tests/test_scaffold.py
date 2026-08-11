@@ -114,23 +114,23 @@ class TestInit(unittest.TestCase):
             ln.strip() == "[run.backends]" for ln in toml_text.splitlines()
         )
 
-    def test_run_backends_split_forces_active(self):
+    def test_run_split_on_forces_active(self):
         with TempDir() as root:
-            report = scaffold.init_project(root, name="x", run_backends="split")
+            report = scaffold.init_project(root, name="x", run_split="on")
             toml = (root / "i2c.toml").read_text(encoding="utf-8")
             self.assertTrue(self._has_active_backends(toml))
             self.assertIn('execute = "codex"', toml)
             self.assertIn('close = "codex"', toml)
             self.assertTrue(any("split" in ln for ln in report))
 
-    def test_run_backends_claude_stays_commented(self):
+    def test_run_split_off_stays_commented(self):
         with TempDir() as root:
-            scaffold.init_project(root, name="x", run_backends="claude")
+            scaffold.init_project(root, name="x", run_split="off")
             toml = (root / "i2c.toml").read_text(encoding="utf-8")
             self.assertFalse(self._has_active_backends(toml))
             self.assertIn("# [run.backends]", toml)
 
-    def test_run_backends_auto_activates_when_codex_present(self):
+    def test_run_split_auto_activates_when_codex_present(self):
         from unittest import mock
 
         with TempDir() as root:
@@ -140,7 +140,7 @@ class TestInit(unittest.TestCase):
             self.assertTrue(self._has_active_backends(toml))
             self.assertTrue(any("detected codex" in ln for ln in report))
 
-    def test_run_backends_auto_claude_only_when_codex_absent(self):
+    def test_run_split_auto_claude_only_when_codex_absent(self):
         from unittest import mock
 
         with TempDir() as root:
@@ -150,7 +150,7 @@ class TestInit(unittest.TestCase):
             self.assertFalse(self._has_active_backends(toml))
             self.assertTrue(any("not detected" in ln for ln in report))
 
-    def test_run_backends_auto_no_split_without_codex_adapter(self):
+    def test_run_split_auto_no_split_without_codex_adapter(self):
         from unittest import mock
 
         with TempDir() as root:
@@ -160,10 +160,10 @@ class TestInit(unittest.TestCase):
             toml = (root / "i2c.toml").read_text(encoding="utf-8")
             self.assertFalse(self._has_active_backends(toml))
 
-    def test_run_backends_invalid_rejected(self):
+    def test_run_split_invalid_rejected(self):
         with TempDir() as root:
             with self.assertRaises(scaffold.ScaffoldError):
-                scaffold.init_project(root, name="x", run_backends="bogus")
+                scaffold.init_project(root, name="x", run_split="bogus")
 
 
 class TestEject(unittest.TestCase):
