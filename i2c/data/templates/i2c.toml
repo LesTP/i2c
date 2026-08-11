@@ -13,14 +13,7 @@
                                 # killed and the iteration aborts (exit 4) past it.
                                 # 0 disables. Default 1200 (20 min).
 
-# Optional: per-action backend, overriding [run].backend for that action.
-# Lets you spread load across backends (e.g. heavy EXECUTE on codex, the rest
-# on claude) or use an independent reviewer. `i2c run --backend X` overrides all.
-# [run.backends]
-# plan = "claude"
-# execute = "codex"
-# review = "claude"
-# close = "claude"
+[Backends]
 
 # Optional but recommended: telemetry sidecar (.state/telemetry.jsonl) enrichment.
 # test_cmd is the tests oracle — a shell command run in the project root after

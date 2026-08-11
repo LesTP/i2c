@@ -15,6 +15,7 @@ The seed ``project.json`` is stamped with ``CURRENT_SCHEMA_VERSION`` (§8).
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from i2c import state
@@ -25,6 +26,20 @@ from i2c.migrate import CURRENT_SCHEMA_VERSION
 # Backend → scaffolded adapter filename at the project root.
 _ADAPTER_TARGET = {"claude": "CLAUDE.md", "codex": "CODEX.md"}
 BACKENDS = tuple(_ADAPTER_TARGET)
+
+# [run.backends] activation policies for `i2c init --backends`.
+RUN_BACKENDS_MODES = ("auto", "split", "claude")
+
+# The fleet per-action split scaffolded when the split is active (FU-60):
+# judgment-heavy PLAN/REVIEW on claude, mechanical EXECUTE/CLOSE on codex.
+# `tests` is deliberately omitted so it falls back to [run].backend (a capable
+# tier per D-tests-6).
+_FLEET_SPLIT = (
+    ("plan", "claude"),
+    ("execute", "codex"),
+    ("review", "claude"),
+    ("close", "codex"),
+)
 
 # Override-resolved assets that `eject` can materialize (§5.3). The special
 # token "instructions" expands to every per-action procedure.
@@ -82,6 +97,66 @@ def _ensure_gitignore(root: Path, report: list[str]) -> None:
     report.append("updated .gitignore" if existing else "created .gitignore")
 
 
+def _codex_available() -> bool:
+    """Whether the ``codex`` CLI is on PATH *on this host* (see FU-60 caveat:
+    ``init`` may run on a different host than autonomous runs)."""
+    return shutil.which("codex") is not None
+
+
+def _resolve_run_split(mode: str, adapters: tuple[str, ...]) -> tuple[bool, str | None]:
+    """Decide whether to scaffold the ``[run.backends]`` split active.
+
+    Returns ``(active, note)`` where ``note`` is an optional operator message
+    appended to the init report. ``mode`` is one of ``RUN_BACKENDS_MODES``.
+    """
+    if mode not in RUN_BACKENDS_MODES:
+        raise ScaffoldError(
+            f"unknown --backends {mode!r}; expected one of {RUN_BACKENDS_MODES}"
+        )
+    if mode == "claude":
+        return False, None
+    if mode == "split":
+        if "codex" not in adapters:
+            return True, (
+                "note: [run.backends] routes execute/close to codex, but no "
+                "CODEX.md was scaffolded (--backend claude). Re-run with "
+                "--backend both or those actions will fail."
+            )
+        return True, "activated the [run.backends] split in i2c.toml (--backends split)."
+    # auto: activate only when codex is usable here (adapter scaffolded + on PATH).
+    if "codex" in adapters and _codex_available():
+        return True, "detected codex on PATH — activated the [run.backends] split in i2c.toml."
+    return False, (
+        "codex not detected on PATH here — scaffolded claude-only [run].backend. "
+        "If this project runs where codex is available (e.g. the Pi), re-run "
+        "`i2c init --backends split`, or uncomment [run.backends] in i2c.toml."
+    )
+
+
+def _backends_block(active: bool) -> str:
+    """Render the ``[run.backends]`` region for the scaffolded i2c.toml."""
+    if active:
+        rows = "\n".join(f'{action} = "{backend}"' for action, backend in _FLEET_SPLIT)
+        return (
+            "# Per-action backend split: judgment-heavy PLAN/REVIEW on claude,\n"
+            "# mechanical EXECUTE/CLOSE on codex. `i2c run --backend X` overrides\n"
+            "# all. Only route an action to a backend whose CLI is on PATH.\n"
+            "[run.backends]\n"
+            f"{rows}"
+        )
+    return (
+        "# Optional: per-action backend, overriding [run].backend for that action.\n"
+        "# Lets you spread load across backends (e.g. heavy EXECUTE on codex, the\n"
+        "# rest on claude) or use an independent reviewer. `i2c run --backend X`\n"
+        "# overrides all. (Re-run `i2c init --backends split` to activate this.)\n"
+        "# [run.backends]\n"
+        '# plan = "claude"\n'
+        '# execute = "codex"\n'
+        '# review = "claude"\n'
+        '# close = "codex"'
+    )
+
+
 # ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
@@ -93,6 +168,7 @@ def init_project(
     name: str,
     backends: tuple[str, ...] = BACKENDS,
     pattern: str = "A",
+    run_backends: str = "auto",
     force: bool = False,
 ) -> list[str]:
     """Scaffold a new i2c project in ``root``. Returns a report of actions.
@@ -100,6 +176,11 @@ def init_project(
     ``pattern`` stamps ``project.json.pattern`` ("A" per-module ARCH files, or
     "B" single-document ARCHITECTURE.md; see ref/SPEC_architecture.md). It can be
     changed later with ``i2c state set project.json pattern=...``.
+
+    ``run_backends`` (one of ``RUN_BACKENDS_MODES``) sets whether the scaffolded
+    i2c.toml activates the ``[run.backends]`` per-action split: ``auto`` turns it
+    on when the ``codex`` CLI is on PATH here (FU-60), ``split`` forces it on, and
+    ``claude`` keeps the single-backend default.
 
     Raises ``ScaffoldError`` if ``.state/project.json`` already exists and
     ``force`` is not set.
@@ -110,6 +191,7 @@ def init_project(
     for b in backends:
         if b not in _ADAPTER_TARGET:
             raise ScaffoldError(f"unknown backend {b!r}; expected one of {BACKENDS}")
+    split_active, split_note = _resolve_run_split(run_backends, backends)
 
     state_dir = root / ".state"
     project_json = state_dir / "project.json"
@@ -168,12 +250,16 @@ def init_project(
         _write_text(root, root / _ADAPTER_TARGET[b], body, report, force=force)
 
     # Starter i2c.toml (commented [run] defaults; §5.5). The commented backend
-    # line reflects the run-relevant backend (claude when both are scaffolded).
+    # line reflects the run-relevant backend (claude when both are scaffolded);
+    # the [Backends] region is rendered active or commented per run_backends.
     run_backend = "claude" if "claude" in backends else backends[0]
     toml_body = _packaged_text("templates/i2c.toml").replace("[Backend]", run_backend)
+    toml_body = toml_body.replace("[Backends]", _backends_block(split_active))
     _write_text(root, root / "i2c.toml", toml_body, report, force=force)
 
     _ensure_gitignore(root, report)
+    if split_note:
+        report.append(split_note)
     return report
 
 
