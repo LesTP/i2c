@@ -575,5 +575,44 @@
     ],
     "closed": "2026-08-11",
     "resolution": "i2c init is now backend-aware: --backends {auto,split,claude} (default auto) activates the [run.backends] fleet split when codex is on PATH + the codex adapter is scaffolded, else claude-only with a run-host caveat. Implemented in 5154796."
+  },
+  {
+    "id": "FU-61",
+    "title": "Spike pi.dev as a CLI backend (and OpenRouter/gemini shim) - DESIGN_backend_v1 sec 3.7",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-08-11",
+    "context": "pi.dev (Pi Coding Agent) is a minimal, hackable agentic terminal CLI in the claude/codex/gemini family, not a raw model API - so it fits the DESIGN_backend_v1 sec 1.1 CLI-backend shape (config._BACKENDS + adapter + doctor probe + run_iteration dispatch + pricing + goldens), NOT the Option-A in-house harness. Its alternate-model-providers support means one pi.dev backend can double as the OpenRouter/gemini shim, sidestepping the codex-0.124 Responses-wire block that stalled Option C. Its custom tools + prompt templates may satisfy the i2c worker contract more cleanly than opencode/aider (controllable system prompt + a shell tool for i2c state - the two seams aider failed). Run the sec 3.7 spike protocol against pi.dev; make-or-break unknowns: a headless one-shot mode, and whether the 2-line EXIT/REASON block survives to stdout parseably (Q-or-signal). Spike on pirozhok (laptop cannot run headless agents, FU-28).",
+    "trigger": "pi.dev surfaced 2026-08-11 as a hackable agentic CLI with alternate model providers; candidate Option-B backend + OpenRouter shim.",
+    "priority": "next",
+    "files": [
+      "i2c/config.py",
+      "i2c/run_iteration.py",
+      "i2c/assemble_context.py",
+      "i2c/doctor.py",
+      "i2c/data/adapters"
+    ],
+    "refs": [
+      "DESIGN_backend_v1.md"
+    ]
+  },
+  {
+    "id": "FU-62",
+    "title": "Revisit i2c init --run-split default and values when a 3rd backend lands (FU-38)",
+    "kind": "cli-ergonomics",
+    "status": "open",
+    "opened": "2026-08-11",
+    "context": "FU-60 scoped i2c init [run.backends] activation to claude/codex: --run-split auto|on|off, auto-detecting codex via _codex_available(), with a hardcoded fleet split (_FLEET_SPLIT: plan=claude, execute=codex, review=claude, close=codex). Both are deliberately claude/codex-only because routing a 3rd backend (gemini, or OpenRouter via pi.dev) is a benchmark-informed judgment call (DESIGN_benchmark_v1 D-bench-1), not something init should guess. When FU-38 lands a 3rd backend, revisit: (1) generalize detection beyond _codex_available(); (2) the split pattern and --run-split semantics (auto/on/off may need per-backend nuance or a way to choose which backends participate). Keep FU-60 scoped until then.",
+    "trigger": "A 3rd backend (gemini or pi.dev/OpenRouter) lands via FU-38 backend abstraction.",
+    "priority": "eventually",
+    "files": [
+      "i2c/scaffold.py",
+      "i2c/cli.py"
+    ],
+    "refs": [
+      "FU-60",
+      "DESIGN_backend_v1.md",
+      "DESIGN_benchmark_v1.md"
+    ]
   }
 ]

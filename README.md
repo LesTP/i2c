@@ -557,12 +557,16 @@ from the project root (or `/setdir <proj>` + `/run` / `/batch` on the bot).
 > running autonomously on another (e.g. a container) — the trust setting is
 > per-environment.
 
-> **Enable the per-action backend split (recommended when a second backend is
-> installed).** `i2c init` scaffolds `[run.backends]` **commented out**, so a
-> fresh project runs on a single backend (`claude`) until you turn it on — easy
-> to miss, and the project silently never spreads load. If `codex` is on the run
-> host's `PATH`, uncomment `[run.backends]` in `i2c.toml` to route actions across
-> backends. The fleet pattern:
+> **Per-action backend split (`i2c init` is codex-aware).** By default
+> `i2c init` **auto-activates** `[run.backends]` with the fleet pattern when the
+> `codex` CLI is on `PATH` at init time, so a project with a second backend
+> installed spreads load out of the box; otherwise it scaffolds a single-backend
+> (`claude`) config with the split left commented. Control it explicitly with
+> `--run-split {auto,on,off}` (default `auto`): `on` forces the split, `off`
+> keeps single-backend. **Caveat — detection is at the *init* host:** if you
+> init where `codex` is absent (e.g. a laptop) but run where it is present (e.g.
+> a server), pass `i2c init --run-split on` (or uncomment `[run.backends]` in
+> `i2c.toml` afterward). The fleet pattern it scaffolds:
 >
 > ```toml
 > [run]

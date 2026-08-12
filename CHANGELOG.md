@@ -10,6 +10,17 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Added
 
+- **`i2c init` is codex-aware — auto-activates the per-action backend split
+  (`--run-split`).** `i2c init` now scaffolds `[run.backends]` **active** with the
+  fleet pattern (`plan`/`review` → claude, `execute`/`close` → codex) when the
+  `codex` CLI is on `PATH` at init time, instead of always leaving it commented —
+  so a project with a second backend installed no longer silently runs on a single
+  backend. A new `--run-split {auto,on,off}` flag controls it (default `auto` =
+  detect codex + a scaffolded `CODEX.md`; `on` forces the split; `off` keeps
+  single-backend). When `auto` finds no `codex` it stays claude-only and prints a
+  caveat, since `init` may run on a different host than autonomous runs (detect on
+  the *init* host; pass `--run-split on` when they differ).
+
 - **`project.json.pattern` — explicit architecture pattern (A/B).** New optional
   field recording whether a project uses per-module `ARCH_<module>.md` contracts
   (`"A"`) or a single-document `ARCHITECTURE.md` (`"B"`); **absent ⇒ `"A"`**

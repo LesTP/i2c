@@ -138,7 +138,7 @@ of that, per model.
 
 | | **A. In-house harness** | **B. Dedicated agent CLI → OpenRouter** | **C. Reuse codex → OpenRouter** |
 |---|---|---|---|
-| What | i2c builds a tool-using loop over `llm_client` | a flexible OSS agent CLI (aider/opencode/OpenHands/…) pointed at OpenRouter, used as a §1.1 CLI backend | configure the **existing** codex backend's custom provider → OpenRouter |
+| What | i2c builds a tool-using loop over `llm_client` | a flexible OSS agent CLI (aider/opencode/OpenHands/pi.dev/…) pointed at OpenRouter, used as a §1.1 CLI backend | configure the **existing** codex backend's custom provider → OpenRouter |
 | i2c code | **large** (new harness) | small (one more CLI backend) | **~none** (host config) |
 | Python dep | **+toolkit/openai** (`i2c[openrouter]`, D-pkg-12) | none (external binary) | none |
 | Agency | rebuilt from scratch | the chosen CLI's (proven) | codex's (proven) |
@@ -151,9 +151,14 @@ of that, per model.
 smoke): codex 0.124 dropped `wire_api="chat"` and requires the OpenAI **Responses
 API**, which OpenRouter (Chat-Completions-native) doesn't serve. Current ranking:
 
-1. **B — preferred now.** A chat-completions agent CLI (aider / opencode /
-   OpenHands / …) pointed at OpenRouter, adopted as a §1.1 CLI backend. Reuses a
-   proven loop; no in-house harness; no Python dep.
+1. **B — preferred now.** A multi-provider agent CLI (aider / opencode /
+   OpenHands / **pi.dev** / …) pointed at OpenRouter, adopted as a §1.1 CLI
+   backend. Reuses a proven loop; no in-house harness; no Python dep. **pi.dev**
+   (Pi Coding Agent) is a strong candidate — a deliberately tiny, *hackable*
+   agent CLI with custom tools + prompt templates + alternate model providers, so
+   it may satisfy i2c's worker contract more cleanly than opencode (controllable
+   system prompt + a shell tool for `i2c state`) and double as the OpenRouter
+   *and* gemini shim in one backend (spike: FU-61, §3.7).
 2. **A — guaranteed-works fallback.** In-house harness over toolkit's
    `OpenRouterProvider`, which *does* speak Chat Completions to OpenRouter
    (diplomat-proven) — but it's the big build + toolkit dep (`i2c[openrouter]`,
@@ -232,8 +237,10 @@ arm), but the bulk is the harness module + dep. Treat as its own DESIGN if pursu
   per-model benchmark attribution and mixed-backend projects.
 - **Q-or-coverage:** which OpenRouter models drive codex's (or a chosen CLI's)
   tool protocol acceptably?
-- **D-or-4:** opencode is the Option-B spike candidate; aider is fallback-only
-  (doc pre-pass 2026-07-11 — see §3.7).
+- **D-or-4:** opencode and **pi.dev** are the Option-B spike candidates (pi.dev
+  added 2026-08-11 — a hackable agent CLI with custom tools/prompt templates +
+  alternate model providers, so it may also serve as the gemini shim; FU-61);
+  aider is fallback-only (doc pre-pass 2026-07-11 — see §3.7).
 - **Q-or-signal:** does `opencode run` stdout preserve the worker's 2-line
   `EXIT/REASON` block parseably? (the make-or-break unknown; §3.7 acceptance #3.)
 
