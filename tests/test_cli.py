@@ -860,5 +860,25 @@ class TestFuCli(unittest.TestCase):
             self.assertIn("| FU-2 |", out)
 
 
+class TestReady(unittest.TestCase):
+    def test_ready_blocks_unassemblable_with_exit_5(self):
+        with TempProject():  # minimal fixture: no adapters → next action won't assemble
+            rc, out, err = run_cli("ready")
+        self.assertEqual(rc, 5)
+        self.assertIn("NOT dispatch-ready", out)
+
+    def test_ready_ok_when_assemblable(self):
+        from tests._fixtures import write_adapters
+
+        with TempProject() as p:
+            write_adapters(p.root)
+            (p.root / "ARCH_event_store.md").write_text(
+                "# ARCH event_store\n\n## Contract\n\nStub.\n", encoding="utf-8"
+            )
+            rc, out, err = run_cli("ready")
+        self.assertEqual(rc, 0, msg=err)
+        self.assertIn("READY to dispatch", out)
+
+
 if __name__ == "__main__":
     unittest.main()

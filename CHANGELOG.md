@@ -10,6 +10,20 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Added
 
+- **`i2c ready` — dispatch-readiness preflight (FU-59).** A new read-only
+  projection (`control.readiness`, exposed as `i2c ready` and the Telegram
+  `/ready`, with `--json`) that catches the causes of a formerly-opaque bare
+  `exit 2` *before* dispatch and prints a human-readable reason + fix per
+  finding: the phase-0 init sentinel, a next action that does not assemble
+  (missing phase record / Pattern-A `ARCH_<module>.md`), and invalid `.state/`
+  are **blocking**; a backend CLI not on PATH and git *dubious ownership* are
+  **advisory** (warn, never block). `i2c run` runs the check first and refuses a
+  not-ready project with a new **`exit 5`** ("not dispatch-ready") + the reason,
+  instead of the bare `exit 2` (recovery dispatch, `--action diagnose|reconcile`,
+  is exempt). The readiness report is folded into `i2c diagnose` / `/diagnose`,
+  and `i2c doctor` gains an advisory **git trust** check (dubious-ownership
+  detection with the `git config --global --add safe.directory <path>` fix).
+
 - **`i2c init` is codex-aware — auto-activates the per-action backend split
   (`--run-split`).** `i2c init` now scaffolds `[run.backends]` **active** with the
   fleet pattern (`plan`/`review` → claude, `execute`/`close` → codex) when the

@@ -99,6 +99,7 @@ from i2c.render import (  # noqa: E402
     _render_portfolio,
     _render_reconcile,
     _render_refreeze,
+    _render_readiness,
     _render_status,
 )
 
@@ -435,6 +436,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     report = doctor.run_checks()
     _emit(report, as_json=args.json, renderer=_render_doctor)
     return 0 if report.ok() else 1
+
+
+def cmd_ready(args: argparse.Namespace) -> int:
+    try:
+        report = control.readiness()
+    except control.ControlError as e:
+        return _fail(e)
+    _emit(report, as_json=args.json, renderer=_render_readiness)
+    from i2c.run_iteration import EXIT_NOT_READY
+
+    return 0 if report.ready() else EXIT_NOT_READY
 
 
 def cmd_import(args: argparse.Namespace) -> int:
@@ -927,6 +939,14 @@ def build_parser() -> argparse.ArgumentParser:
         "backends, project .state).",
     )
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_ready = sub.add_parser(
+        "ready",
+        parents=[json_parent],
+        help="Preflight: is this project dispatch-ready? (phase, next action "
+        "assembles, backend, git trust). Read-only; exit 5 when not ready.",
+    )
+    p_ready.set_defaults(func=cmd_ready)
 
     p_import = sub.add_parser(
         "import",

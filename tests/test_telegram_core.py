@@ -578,5 +578,31 @@ class TestCommandMenu(unittest.TestCase):
             self.assertTrue(0 < len(desc) <= 256, msg=name)
 
 
+class TestReadinessSurface(unittest.TestCase):
+    def test_ready_is_read_command(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            r = tc.dispatch("ready", [], is_admin=False, root=root)
+            self.assertTrue(r.ok)
+            self.assertIn("readiness", r.text)
+
+    def test_diagnose_includes_readiness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            r = tc.dispatch("diagnose", [], is_admin=False, root=root)
+            self.assertIn("readiness", r.text)
+
+    def test_run_exit5_hints_at_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _make(root, {"only": {}})
+            fake = _Counter(rc=tc.EXIT_NOT_READY)
+            r = tc.dispatch("run", [], is_admin=True, root=root, run_iteration_fn=fake)
+            self.assertFalse(r.ok)
+            self.assertIn("/ready", r.text)
+
+
 if __name__ == "__main__":
     unittest.main()

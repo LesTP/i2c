@@ -11,7 +11,7 @@ I2C_ROOT = Path(__file__).resolve().parent.parent
 
 from i2c import control as c  # noqa: E402
 from i2c import validate as v  # noqa: E402
-from tests._fixtures import copy_fixture  # noqa: E402
+from tests._fixtures import copy_fixture, write_adapters  # noqa: E402
 
 FIXTURE = I2C_ROOT / "examples" / "initial_state"
 
@@ -884,6 +884,67 @@ class TestRefreezeTests(unittest.TestCase):
             rep = c.refreeze_tests(p.root, phase=2, reason="noop", apply=True)
             self.assertFalse(rep.changed)
             self.assertEqual(rep.old_digest, rep.new_digest)
+
+
+def _make_assemblable(root: Path) -> None:
+    """Add the adapters + module contract the assembler needs so readiness can
+    dry-assemble the fixture's phase-2 (event_store) EXECUTE action."""
+    write_adapters(root)
+    (root / "ARCH_event_store.md").write_text(
+        "# ARCH event_store\n\n## Contract\n\nStub for tests.\n", encoding="utf-8"
+    )
+
+
+class TestReadiness(unittest.TestCase):
+    def test_ready_when_assemblable(self):
+        with TempProject() as p:
+            _make_assemblable(p.root)
+            rep = c.readiness(p.root)
+            self.assertTrue(
+                rep.ready(),
+                msg=[(f.name, f.status, f.detail) for f in rep.findings],
+            )
+            self.assertEqual(rep.action, "EXECUTE")
+
+    def test_phase_zero_blocks(self):
+        with TempProject() as p:
+            p.patch_project(phase=0, state="plan")
+            rep = c.readiness(p.root)
+            self.assertFalse(rep.ready())
+            self.assertTrue(
+                any(f.name == "phase" and f.status == "fail" for f in rep.findings)
+            )
+
+    def test_unassemblable_blocks(self):
+        # Minimal fixture: no adapters / ARCH contract → the next action can't
+        # assemble, which is exactly the bare-`exit 2` cause readiness catches.
+        with TempProject() as p:
+            rep = c.readiness(p.root)
+            self.assertFalse(rep.ready())
+            self.assertTrue(
+                any(f.name == "assemble" and f.status == "fail" for f in rep.findings)
+            )
+
+    def test_invalid_state_blocks(self):
+        with TempProject() as p:
+            p.patch_project(state="bogus")
+            rep = c.readiness(p.root)
+            self.assertFalse(rep.ready())
+
+    def test_ready_semantics_warn_does_not_block_fail_does(self):
+        from i2c.doctor import Check, FAIL, OK, WARN
+
+        warn_only = c.ReadinessReport(
+            1, "execute", "EXECUTE", [Check("a", OK, ""), Check("b", WARN, "")]
+        )
+        self.assertTrue(warn_only.ready())
+        blocking = c.ReadinessReport(1, "execute", "EXECUTE", [Check("z", FAIL, "")])
+        self.assertFalse(blocking.ready())
+
+    def test_diagnose_includes_readiness(self):
+        with TempProject() as p:
+            d = c.diagnose(p.root)
+            self.assertIsInstance(d.readiness, c.ReadinessReport)
 
 
 if __name__ == "__main__":

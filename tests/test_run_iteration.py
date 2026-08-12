@@ -1224,5 +1224,38 @@ class TestIterationRunawayGuard(unittest.TestCase):
             self.assertIsNone(cap[0]["timeout"])  # 0 -> no subprocess timeout
 
 
+class TestReadinessGate(unittest.TestCase):
+    """FU-59: the runner refuses an un-runnable project with exit 5 before
+    dispatch, and recovery dispatch is exempt."""
+
+    def test_phase_zero_refused_with_exit_5(self):
+        with TempProject() as p:
+            p.patch_project(phase=0, state="plan")
+            calls = []
+            invoker = make_fake_invoker(signal_block(), capture=calls)
+            rc, out, err = run_iter(invoker=invoker)
+            self.assertEqual(rc, 5, msg=err)
+            self.assertEqual(len(calls), 0)  # worker never invoked
+            self.assertIn("not dispatch-ready", err.lower())
+
+    def test_recovery_dispatch_not_gated(self):
+        # action_override (diagnose) bypasses the readiness gate even at phase 0
+        # (recovery runs *because* the project is broken). It won't return 5.
+        with TempProject() as p:
+            p.patch_project(phase=0, state="plan")
+            invoker = make_fake_invoker(signal_block())
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="claude",
+                    model="sonnet",
+                    max_budget_usd=5.00,
+                    action_override="diagnose",
+                    claude_invoker=invoker,
+                    codex_invoker=invoker,
+                )
+            self.assertNotEqual(rc, 5)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
 import unittest
+from pathlib import Path
 
 from i2c import doctor
 
@@ -121,6 +123,46 @@ class TestDoctor(unittest.TestCase):
             )
         self.assertEqual(check.status, doctor.FAIL)
         self.assertTrue(check.remedy)
+
+
+class TestGitTrust(unittest.TestCase):
+    def test_skipped_when_no_git(self):
+        orig = doctor.shutil.which
+        doctor.shutil.which = lambda name: None  # type: ignore[assignment]
+        try:
+            check = doctor._check_git_trust(Path("."))
+        finally:
+            doctor.shutil.which = orig  # type: ignore[assignment]
+        self.assertEqual(check.status, doctor.OK)
+        self.assertIn("git not found", check.detail)
+
+    def test_warns_on_dubious_ownership(self):
+        orig_which, orig_run = doctor.shutil.which, doctor.subprocess.run
+        doctor.shutil.which = lambda name: "/usr/bin/git"  # type: ignore[assignment]
+        doctor.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(  # type: ignore[assignment]
+            a, 128, stdout="",
+            stderr="fatal: detected dubious ownership in repository at '/x'",
+        )
+        try:
+            check = doctor._check_git_trust(Path("/x"))
+        finally:
+            doctor.shutil.which, doctor.subprocess.run = orig_which, orig_run  # type: ignore[assignment]
+        self.assertEqual(check.status, doctor.WARN)
+        self.assertIn("safe.directory", check.remedy)
+
+    def test_ok_when_clean(self):
+        orig_which, orig_run = doctor.shutil.which, doctor.subprocess.run
+        doctor.shutil.which = lambda name: "/usr/bin/git"  # type: ignore[assignment]
+        doctor.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(  # type: ignore[assignment]
+            a, 0, stdout="", stderr="")
+        try:
+            check = doctor._check_git_trust(Path("/x"))
+        finally:
+            doctor.shutil.which, doctor.subprocess.run = orig_which, orig_run  # type: ignore[assignment]
+        self.assertEqual(check.status, doctor.OK)
+
+    def test_run_checks_includes_git_trust(self):
+        self.assertIn("git trust", {c.name for c in doctor.run_checks().checks})
 
 
 if __name__ == "__main__":

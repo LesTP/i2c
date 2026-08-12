@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from i2c import validate as v
 
@@ -252,6 +253,52 @@ def _check_project() -> Check:
     )
 
 
+def _check_git_trust(root: Path | None = None) -> Check:
+    """Detect a git "dubious ownership" (safe.directory) trust failure.
+
+    On shared / NTFS / container mounts git can refuse operations with
+    ``fatal: detected dubious ownership``. Because the runner's `.state/` commits
+    are best-effort and swallow errors (FU-40), such a failure does not halt a
+    run — it silently no-ops the commit, leaving orphaned `.state/`. This check
+    is **advisory** (``WARN``), never a hard ``FAIL``: it is mount/host-specific
+    and prone to false positives (owner mismatch on a laptop share), so it
+    surfaces the risk + fix without blocking. Only the specific dubious-ownership
+    signature warns; other git errors (e.g. not a repo) are treated as neutral.
+    """
+    if shutil.which("git") is None:
+        return Check("git trust", OK, "git not found; skipped")
+    if root is None:
+        from i2c import control
+
+        try:
+            root = control.find_project_root()
+        except control.NotFoundError:
+            return Check("git trust", OK, "not inside an i2c project; skipped")
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:  # pragma: no cover
+        return Check("git trust", WARN, f"git probe failed to run: {e}")
+    if proc.returncode != 0 and "dubious ownership" in proc.stderr.lower():
+        return Check(
+            "git trust",
+            WARN,
+            f"{root}: git reports dubious ownership",
+            remedy=(
+                "Autonomous `.state/` commits will silently no-op (orphaned "
+                "state). Trust the repo where the worker runs: "
+                f"git config --global --add safe.directory {root}"
+            ),
+        )
+    if proc.returncode != 0:
+        return Check("git trust", OK, f"{root}: no trust issue (git rc={proc.returncode})")
+    return Check("git trust", OK, f"{root}: trusted")
+
+
 def run_checks() -> DoctorReport:
     """Run all environment/install checks and return a structured report."""
     return DoctorReport(
@@ -263,6 +310,7 @@ def run_checks() -> DoctorReport:
             _check_schemas(),
             _check_toml(),
             _check_backends(),
+            _check_git_trust(),
             _check_project(),
         ]
     )

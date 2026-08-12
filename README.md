@@ -49,9 +49,9 @@ in-place `.state/` upgrades (see
 
 On top of the state model sits a **single structured command layer**
 (`i2c.control`) with an operator CLI — `i2c status` / `portfolio` /
-`phase-summary` / `decisions` / `devlog` / `escalation` / `logs` / `diagnose`
-(all with a `--json` mode) plus the `clear-boundary` and `reconcile` actions,
-a static-HTML `dashboard` —
+`phase-summary` / `decisions` / `devlog` / `escalation` / `logs` / `diagnose` /
+`ready` (all with a `--json` mode) plus the `clear-boundary` and `reconcile`
+actions, a static-HTML `dashboard` —
 and an optional **Telegram surface** (see [Chat surface](#chat-surface-telegram)).
 Both are thin, deterministic adapters over the same command API.
 
@@ -277,6 +277,20 @@ This extends i2c's detect-and-halt post-action invariants into
 [`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md). The deferred
 `fix` code-repair agent is tracked in [`FUTURE_recovery.md`](FUTURE_recovery.md).
 
+### Dispatch readiness (`i2c ready`)
+
+Before dispatch, a project can be *un-runnable* for reasons that used to surface
+as a bare `exit 2` — the phase-0 init sentinel, a next action that doesn't
+assemble (missing phase record or Pattern-A `ARCH_<module>.md`), or invalid
+`.state/`. **`i2c ready`** computes this preflight and prints a human-readable
+*reason + fix* per finding (read-only; `--json` too). Blocking findings return
+**exit 5**; advisory ones (a backend CLI not on PATH, git *dubious ownership*)
+warn but don't block. `i2c run` runs the same check first and refuses with
+`exit 5` + the reason instead of a bare `exit 2` (recovery dispatch —
+`--action diagnose|reconcile` — is exempt); the readiness report is also folded
+into `i2c diagnose`. On the Telegram surface: `/ready` (read-only) and the
+`/diagnose` report.
+
 ### Frozen acceptance oracle (`i2c tests refreeze`)
 The TESTS action freezes a phase's acceptance suite: it hashes
 `tests/acceptance/phase_<N>/` into `.state/tests_manifest.json` at the `N.tests`
@@ -412,7 +426,8 @@ Commands:
   `(none)` → summary, or `phase N` / `decisions [N]` / `devlog [N]` /
   `escalation` / `logs [N]` / `logs iter N` / `fu [all|status|kind]` (the refine
   backlog; defaults to open). Plus `/diagnose [proj] [N]`
-  (recovery drift audit + classification), `/portfolio` (cross-project),
+  (recovery drift audit + classification), `/ready [proj]` (dispatch-readiness
+  preflight), `/portfolio` (cross-project),
   `/setdir <proj>` (set the current project), `/commands`.
 - **Admin (gated to the `admins` in the `[telegram]` table of `i2c.toml`):**
   `/run [proj] [N] [backend]` — N iterations (default 1) on a single backend;

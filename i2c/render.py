@@ -236,6 +236,18 @@ def _render_boundary(r: control.BoundaryResult) -> str:
     return f"{r.outcome} — phase {r.phase}, state {r.state}"
 
 
+def _render_readiness(rep: control.ReadinessReport) -> str:
+    marks = {"ok": "ok  ", "warn": "WARN", "fail": "FAIL"}
+    action = rep.action or "(none)"
+    lines = [f"readiness — phase {rep.phase} / {rep.state} — next action: {action}"]
+    for c in rep.findings:
+        lines.append(f"  [{marks.get(c.status, c.status)}] {c.name}: {c.detail}")
+        if c.remedy and c.status != "ok":
+            lines.append(f"         -> {c.remedy}")
+    lines.append("  " + ("READY to dispatch" if rep.ready() else "NOT dispatch-ready"))
+    return "\n".join(lines)
+
+
 def _render_diagnosis(d: control.Diagnosis) -> str:
     target = f"iter {d.target}" if d.target is not None else "(no loop log)"
     lines = [
@@ -265,6 +277,8 @@ def _render_diagnosis(d: control.Diagnosis) -> str:
         lines.append("  (none)")
     if d.escalation:
         lines += ["", "Escalation context:", _fmt_devlog(d.escalation)]
+    if d.readiness is not None:
+        lines += ["", _render_readiness(d.readiness)]
     return "\n".join(lines)
 
 

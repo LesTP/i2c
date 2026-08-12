@@ -31,6 +31,7 @@ import contextlib
 import io
 import json
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -198,6 +199,28 @@ class Diagnosis:
     malformed_signal: bool  # target failed on a missing/malformed exit signal (#1 trigger)
     findings: list[DriftView]
     escalation: DevlogView | None  # triggering escalate/blocked devlog entry, if any
+    readiness: "ReadinessReport | None" = None  # FU-59 pre-dispatch readiness (folded in)
+
+
+@dataclass
+class ReadinessReport:
+    """Pre-dispatch readiness of a project (FU-59).
+
+    Composes state validity, the phase-0 sentinel guard, dispatchability (the
+    state machine produces a real action, not ``EXIT``), backend availability for
+    the dispatched action, an in-project dry-assemble of that action, and an
+    advisory git-trust probe. Findings reuse ``doctor.Check`` (``ok``/``warn``/
+    ``fail`` + remedy). A run is refused (runner ``exit 5``) when any finding is
+    ``fail``; ``warn`` surfaces a risk but never blocks. Read-only."""
+
+    phase: int
+    state: str
+    action: str | None  # the action that would dispatch (None when undecidable)
+    findings: list[Any]  # list[doctor.Check]
+
+    def ready(self) -> bool:
+        """True when no finding is blocking (``fail``); warnings do not block."""
+        return all(f.status != "fail" for f in self.findings)
 
 
 @dataclass
@@ -1105,7 +1128,126 @@ def diagnose(root: Path | None = None, *, target: int | None = None) -> Diagnosi
         malformed_signal=_is_malformed_signal(target_log),
         findings=drift_views,
         escalation=esc.entry,
+        readiness=readiness(root),
     )
+
+
+def _resolve_dispatch_backend(root: Path, action: str, override: str | None) -> str:
+    """Resolve the backend the runner would use for ``action`` — mirrors
+    ``run_iteration``'s precedence: explicit override > ``[run.backends][action]``
+    > ``[run].backend`` > ``claude``. Best-effort: a malformed ``i2c.toml`` falls
+    back to the default rather than raising (readiness must not crash on config)."""
+    if override:
+        return override
+    try:
+        rc = _config.load_run_config(root)
+    except _config.ConfigError:
+        return "claude"
+    return (rc.backends or {}).get(action.lower()) or rc.backend or "claude"
+
+
+def _dry_assemble(root: Path, action: str, phase: int, backend: str) -> tuple[bool, str]:
+    """Attempt an in-project assemble of ``action`` for ``phase`` exactly as the
+    runner would (``run_iteration.assemble_prompt`` shells the assembler with
+    ``cwd=root``). Returns ``(ok, detail)``; on failure ``detail`` is the
+    assembler's structured ``ERROR:/File:/Detail:`` stderr — the human reason+fix
+    the bare ``exit 2`` used to hide. Read-only; assembly writes nothing."""
+    try:
+        _runner.assemble_prompt(root, action, phase, backend=backend, emit="full")
+    except _runner.RunnerError as e:
+        return False, str(e)
+    return True, ""
+
+
+def readiness(
+    root: Path | None = None, *, backend_override: str | None = None
+) -> ReadinessReport:
+    """Compute pre-dispatch readiness (FU-59): can the runner dispatch the next
+    action, or would it halt with a bare ``exit 2``?
+
+    Blocking (``fail`` → runner refuses with ``exit 5``): invalid ``.state/``, the
+    phase-0 init sentinel, an undecidable / ``EXIT`` dispatch (nothing to run), the
+    dispatched backend missing from PATH, and a next action that does not assemble.
+    Advisory (``warn`` → surfaced, still runs): git dubious-ownership. Pure read:
+    composes ``load_state`` / ``next_action`` / a dry assemble / ``doctor`` checks
+    and mutates nothing. ``backend_override`` mirrors ``i2c run --backend`` so the
+    backend check matches what will actually dispatch."""
+    from i2c import doctor  # lazy: keeps control import-light; doctor is a leaf
+
+    root = root or find_project_root()
+    findings: list[Any] = []
+
+    # 1. State load + validity. Without valid state nothing else is meaningful.
+    try:
+        st = load_state(root)
+    except ControlError as e:
+        findings.append(doctor.Check(
+            "state valid", doctor.FAIL, str(e),
+            remedy="Fix or re-create the invalid .state/ file (see `i2c doctor`)."))
+        findings.append(doctor._check_git_trust(root))
+        return ReadinessReport(phase=0, state="", action=None, findings=findings)
+
+    phase = int(st.project.get("phase", 0))
+    state = st.project.get("state", "")
+
+    # 2. Phase-0 init sentinel (no phase record; --phase 0 cannot assemble).
+    if phase == 0:
+        findings.append(doctor.Check(
+            "phase", doctor.FAIL,
+            "project is at the phase-0 init sentinel (no phase record)",
+            remedy="Advance off phase 0: "
+                   "i2c state set project.json phase=1 state=plan"))
+
+    # 3. Dispatchability: the state machine must produce a real action, not EXIT.
+    action: str | None = None
+    try:
+        action = next_action(root).action
+    except ControlError as e:
+        findings.append(doctor.Check(
+            "dispatchable", doctor.FAIL, str(e),
+            remedy="project.json.state is invalid; set a valid lifecycle state."))
+    else:
+        if action == "EXIT":
+            remedy = {
+                "audit_boundary": "Clear the gate: i2c state set project.json "
+                    "phase=N+1 state=plan (advance) or state=done (terminate).",
+                "audit_escalation": "Resolve the escalation, then set project.json "
+                    "state back to execute|review|... to resume.",
+                "done": "Project is terminal. Add a phase deliberately: "
+                    "i2c state set project.json phase=N+1 state=plan.",
+            }.get(state, "Nothing to dispatch in the current state.")
+            # Advisory, not blocking: a HALT state dispatches EXIT (exit 0) — a
+            # legitimate no-op the batch loop relies on, not an exit-2 cause.
+            findings.append(doctor.Check(
+                "dispatchable", doctor.WARN,
+                f"state={state!r} dispatches EXIT — nothing to run", remedy=remedy))
+
+    # 4. Backend for the dispatched action resolvable on PATH; then dry-assemble.
+    if action and action != "EXIT":
+        backend = _resolve_dispatch_backend(root, action, backend_override)
+        if shutil.which(backend) is None:
+            # Advisory (mirrors doctor._check_backends): supervised hosts / CI
+            # legitimately lack a backend CLI, and the runner surfaces a missing
+            # backend at invoke time — so surface it, but do not block the gate.
+            findings.append(doctor.Check(
+                "backend CLI", doctor.WARN,
+                f"{backend!r} (for action {action.lower()}) is not on PATH",
+                remedy=f"Install the {backend} CLI on the run host's PATH, or route "
+                       "this action to an installed backend in [run.backends]."))
+        # 5. Dry-assemble the next action (the core check). Skip phase-0 (already
+        #    flagged above; --phase 0 cannot assemble).
+        if phase >= 1:
+            ok, detail = _dry_assemble(root, action, phase, backend)
+            if not ok:
+                findings.append(doctor.Check(
+                    "assemble", doctor.FAIL, detail or "next action does not assemble",
+                    remedy="Fix the cause above (missing phase record / module "
+                           "contract / etc.), then re-check with `i2c ready`."))
+
+    # 6. git trust — advisory only (never blocks; see doctor._check_git_trust).
+    findings.append(doctor._check_git_trust(root))
+
+    return ReadinessReport(phase=phase, state=state, action=action, findings=findings)
 
 
 def _apply_proposal(root: Path, action: Any) -> None:

@@ -35,8 +35,9 @@ from pathlib import Path
 from typing import Callable
 
 from i2c import control, render
+from i2c.run_iteration import EXIT_NOT_READY
 
-READ_COMMANDS = frozenset({"audit", "diagnose", "portfolio", "setdir", "commands", "start"})
+READ_COMMANDS = frozenset({"audit", "diagnose", "ready", "portfolio", "setdir", "commands", "start"})
 MUTATING_COMMANDS = frozenset({"run", "batch", "reconcile", "endphase", "refreeze"})
 ALL_COMMANDS = READ_COMMANDS | MUTATING_COMMANDS
 
@@ -61,6 +62,7 @@ COMMAND_MENU: list[tuple[str, str]] = [
     ("run", "Admin: run N iterations (default 1); add 'full' for per-step progress"),
     ("batch", "Admin: run a full phase to a halt; add 'full' for per-step progress"),
     ("diagnose", "Diagnose a failed iteration: drift audit + classification (read-only)"),
+    ("ready", "Preflight: is this project dispatch-ready? (read-only)"),
     ("reconcile", "Admin: apply workflow-drift fixes (dry-run; 'apply' to write)"),
     ("endphase", "Admin: clear the audit_boundary (advance; 'last' to terminate)"),
     ("refreeze", "Admin: re-freeze a phase's acceptance oracle (D-tests-4; dry-run, 'apply' to write)"),
@@ -75,6 +77,8 @@ _HELP = (
     "fu [all|status|kind]\n"
     " /diagnose [proj] [N] — Diagnose iteration N (default latest): drift audit "
     "+ classification (read-only)\n"
+    " /ready [proj] — Preflight: is this project dispatch-ready? reason+fix if not "
+    "(read-only)\n"
     " /portfolio — Cross-project view (which project needs me?)\n"
     " /setdir <proj> — Show or set the current project\n"
     "\n"
@@ -335,6 +339,9 @@ def _dispatch_project(
         target = _int_arg(rest)
         return Reply(render._render_diagnosis(control.diagnose(proj, target=target)))
 
+    if command == "ready":
+        return Reply(render._render_readiness(control.readiness(proj)))
+
     if command == "reconcile":
         apply = any(a.lower() == "apply" for a in rest)
         report = control.reconcile(proj, apply=apply)
@@ -357,6 +364,8 @@ def _dispatch_project(
         state = control.status(proj).state
         be = backend or "project default/map"
         msg = f"Ran {ran}/{n} on {be}; now state={state} (last exit={last_rc})."
+        if last_rc == EXIT_NOT_READY:
+            msg += "\nNot dispatch-ready — run /ready for the reason + fix."
         if records and not full:  # with 'full', heartbeats already showed each step
             msg += "\n" + _enumerate(records)
         return Reply(msg, ok=(last_rc == 0))
@@ -374,6 +383,8 @@ def _dispatch_project(
             f"Batch done: {ran} iteration(s); now state={state} "
             f"(last exit={last_rc})."
         )
+        if last_rc == EXIT_NOT_READY:
+            msg += "\nNot dispatch-ready — run /ready for the reason + fix."
         if records and not full:  # with 'full', heartbeats already showed each step
             msg += "\n" + _enumerate(records)
         return Reply(msg, ok=(last_rc == 0))

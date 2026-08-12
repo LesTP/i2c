@@ -33,6 +33,11 @@ Pipeline (per the plan):
 
 Iteration number is derived from ``summary.log``: highest existing iter
 + 1, or 1 if absent. This keeps log filenames stable across runs.
+
+Before dispatch (normal runs only), a readiness preflight (FU-59) refuses an
+un-runnable project with ``exit 5`` and a structured reason+fix, instead of the
+bare ``exit 2`` those causes (phase-0 sentinel, un-assemblable action, missing
+backend, invalid ``.state/``) used to produce. Recovery dispatch is exempt.
 """
 
 from __future__ import annotations
@@ -71,6 +76,11 @@ DEFAULT_MAX_BUDGET_USD = 5.00
 DEFAULT_MAX_ITERATION_SECONDS = 1200.0
 LOG_DIR_NAME = "logs/loop"
 SUMMARY_LOG_NAME = "summary.log"
+# FU-59: runner exit code when the pre-dispatch readiness check blocks the run
+# (phase-0 sentinel, un-assemblable next action, missing dispatched backend, or
+# invalid .state/). Distinct from 2 (worker/code error), 3 (backend rate-limit),
+# and 4 (iteration timeout) so `/batch` and scripts can branch on "not ready".
+EXIT_NOT_READY = 5
 
 # Regexes for the 2-line exit signal. Tolerant to surrounding whitespace
 # so the parser succeeds when claude pads with trailing blank lines.
@@ -757,6 +767,42 @@ def run_iteration(
     """
     root = ac.find_project_root()
     log_dir = root / LOG_DIR_NAME
+
+    # 0. Pre-dispatch readiness gate (FU-59). Normal runs only — recovery
+    #    dispatch (diagnose/reconcile) must run *because* the project is broken,
+    #    so it is exempt. A blocking readiness failure (phase-0 sentinel, an
+    #    un-assemblable next action, the dispatched backend missing, invalid
+    #    .state/) is what used to surface as a bare `exit 2`; refuse early with
+    #    the structured reason + fix and a distinct exit code (5) instead.
+    if action_override is None:
+        from i2c import control as _control
+
+        try:
+            rd = _control.readiness(root, backend_override=backend)
+        except _control.ControlError:
+            rd = None  # a genuinely un-loadable project falls through to the
+            # existing state-machine error path below (still a clear message).
+        if rd is not None and not rd.ready():
+            blocking = [f for f in rd.findings if f.status == "fail"]
+            reason = "not dispatch-ready: " + "; ".join(f.name for f in blocking)
+            write_summary_line(
+                log_dir,
+                iteration=next_iteration_number(log_dir),
+                backend=(backend or default_backend),
+                action="PREFLIGHT",
+                exit_code=EXIT_NOT_READY,
+                reason=reason,
+            )
+            sys.stderr.write(
+                "ERROR: project is not dispatch-ready "
+                f"(i2c run aborted, exit {EXIT_NOT_READY}).\n"
+            )
+            for f in blocking:
+                sys.stderr.write(f"  [FAIL] {f.name}: {f.detail}\n")
+                if f.remedy:
+                    sys.stderr.write(f"         -> {f.remedy}\n")
+            sys.stderr.write("Run `i2c ready` for the full readiness report.\n")
+            return EXIT_NOT_READY
 
     # 1. Decide the action: out-of-band override (recovery) or state machine.
     if action_override is not None:
