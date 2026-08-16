@@ -616,5 +616,47 @@
       "DESIGN_backend_v1.md",
       "DESIGN_benchmark_v1.md"
     ]
+  },
+  {
+    "id": "FU-63",
+    "title": "Provenance Tier 1: lock assembler purity so prompt_hash is a trustworthy replay key",
+    "kind": "test-hardening",
+    "status": "open",
+    "opened": "2026-08-16",
+    "context": "DESIGN_provenance_v1 sec 0 Tier 1 = Phase A minus the source-registry refactor, with Phase C folded in. The assembler is already pure for the 5 core actions (test_prompt_golden.py locks bytes across action x backend x mode) and prompt_hash is already recorded per iteration (telemetry.py:105 + run_iteration). What is missing is an ASSERTED purity invariant plus resolving the one impurity. Do: (1) add an explicit purity test (double-assemble byte-identity + cwd/clock independence over examples/initial_state); (2) declare recovery actions (diagnose/reconcile, render_failure_context runs a live git/disk audit) OUT of scope for prompt_hash/provenance -- already golden-skipped inside a git repo; (3) fold Phase C as a light assertion (recipe design has no read-file-and-splice path, so completeness holds structurally). Outcome: the benchmark's prompt_hash replay key becomes reproducible/trustworthy. Sibling to FU-50 (trust tests_pass) -- this is trust prompt_hash.",
+    "trigger": "Do alongside / just before the benchmark replay harness on clankercourts (pirozhok); it makes prompt_hash meaningful for that harness. Small, mostly additive (a test + a scoping decision). Clean green test run may need pirozhok (laptop Samba/vitest cross-mount flakiness, cf FU-52 / D-bench-4).",
+    "priority": "next",
+    "files": [
+      "tests/test_prompt_golden.py",
+      "i2c/assemble_context.py",
+      "i2c/telemetry.py"
+    ],
+    "refs": [
+      "DESIGN_provenance_v1.md",
+      "DESIGN_benchmark_v1.md",
+      "FU-50"
+    ]
+  },
+  {
+    "id": "FU-64",
+    "title": "Provenance Tier 2: iteration manifest + content-addressed blobs + i2c replay --check (gated on the benchmark replay harness)",
+    "kind": "structural-refactor",
+    "status": "open",
+    "opened": "2026-08-16",
+    "context": "DESIGN_provenance_v1 sec 0 Tier 2 = Phases B (manifest .state/iterations.jsonl + content-addressed .state/blobs/, runner-owned per D-1) + D (i2c replay N --check / --all --check, re-derive and assert prompt_sha256). Builds on Tier 1 (FU-63) purity. Gate: build WITH the clankercourts replay harness on pirozhok, because that is when you can MEASURE whether checkout-and-reassemble is lossy enough to need a recorded input set (the four reconstruction problems in DESIGN_provenance sec 1). Decision rule: if replay --check against the already-recorded prompt_hash passes for historical iterations, blobs may be unnecessary (skip D-3); if it fails, blobs are justified. This is D-3 measure-before-optimising applied at the moment measurement is possible. Precedent for the manifest+verify shape: tests_manifest.json + invariants.py:199 (D-tests-4). Autonomous-only (supervised out of scope, sec 0). Tier 3 (i2c fork, Phase E) stays deferred within the same DESIGN -- it rides the benchmark active A/B (D-bench-5 / benchmark sec 13 step 7).",
+    "trigger": "When the benchmark replay harness (DESIGN_benchmark sec 9.3, Q-bench-4: likely an i2c subcommand) is being built on pirozhok. Do not build ahead of it -- the harness decides whether blobs are needed. Remaining open questions to settle then: iteration-id stability/monotonicity across crashes + out-of-band dispatch (prov sec 7.2), and blob retention/gc policy (prov sec 7.4).",
+    "priority": "eventually",
+    "files": [
+      "i2c/run_iteration.py",
+      "i2c/assemble_context.py",
+      "i2c/data/schemas",
+      "i2c/cli.py",
+      "i2c/invariants.py"
+    ],
+    "refs": [
+      "DESIGN_provenance_v1.md",
+      "DESIGN_benchmark_v1.md",
+      "FU-63"
+    ]
   }
 ]
