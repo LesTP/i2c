@@ -621,7 +621,7 @@
     "id": "FU-63",
     "title": "Provenance Tier 1: lock assembler purity so prompt_hash is a trustworthy replay key",
     "kind": "test-hardening",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-08-16",
     "context": "DESIGN_provenance_v1 sec 0 Tier 1 = Phase A minus the source-registry refactor, with Phase C folded in. The assembler is already pure for the 5 core actions (test_prompt_golden.py locks bytes across action x backend x mode) and prompt_hash is already recorded per iteration (telemetry.py:105 + run_iteration). What is missing is an ASSERTED purity invariant plus resolving the one impurity. Do: (1) add an explicit purity test (double-assemble byte-identity + cwd/clock independence over examples/initial_state); (2) declare recovery actions (diagnose/reconcile, render_failure_context runs a live git/disk audit) OUT of scope for prompt_hash/provenance -- already golden-skipped inside a git repo; (3) fold Phase C as a light assertion (recipe design has no read-file-and-splice path, so completeness holds structurally). Outcome: the benchmark's prompt_hash replay key becomes reproducible/trustworthy. Sibling to FU-50 (trust tests_pass) -- this is trust prompt_hash.",
     "trigger": "Do alongside / just before the benchmark replay harness on clankercourts (pirozhok); it makes prompt_hash meaningful for that harness. Small, mostly additive (a test + a scoping decision). Clean green test run may need pirozhok (laptop Samba/vitest cross-mount flakiness, cf FU-52 / D-bench-4).",
@@ -635,7 +635,9 @@
       "DESIGN_provenance_v1.md",
       "DESIGN_benchmark_v1.md",
       "FU-50"
-    ]
+    ],
+    "closed": "2026-08-16",
+    "resolution": "Tier 1 purity lock shipped (doc-only recovery exclusion). Added tests/test_assembler_purity.py: double-assemble identity + cwd-independence + wall-clock-independence over the 5 core actions x backends (120 tests green with golden+assemble_context). Documented the purity invariant, folded Phase C (structural completeness), and the recovery-action exclusion (prompt_hash not a replay key for diagnose/reconcile) in ARCH_assembler.md sec 12.1. Telemetry-data enforcement of the recovery exclusion (null prompt_hash) deferred to FU-64."
   },
   {
     "id": "FU-64",

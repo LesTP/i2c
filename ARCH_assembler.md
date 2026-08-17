@@ -494,6 +494,35 @@ Every `.state/*.json` file read is validated against the registered schema via `
 - **Source markdown verbatim:** content lifted from `WORKER_SPEC.md`, `PROJECT.md`, `ARCHITECTURE.md`, `ARCH_<module>.md`, and `instructions/$ACTION.md` is included verbatim except for conditional-section stripping. The assembler does not edit prose, normalize whitespace, or re-flow paragraphs.
 - **State-file rendering:** `project.json` is rendered as pretty-printed JSON inside a fenced ```json``` block. `phases.json`, `steps.json`, `decisions.json` are rendered as markdown tables (one row per record, columns in schema-declaration order). `devlog.jsonl` filters render as bulleted summaries: `phase.step action → outcome (commit if present) — summary`.
 
+### 12.1 Purity & provenance (Tier 1 — DESIGN_provenance_v1 §0)
+
+The reproducibility bullet above is a hard invariant, and it is what the
+model-benchmark thread rests on: the runner records `prompt_hash`
+(`telemetry.py`) as a **replay key**, which is only meaningful if re-assembly is
+byte-reproducible (DESIGN_benchmark_v1 §8/§9.3).
+
+- **Purity.** For the five core lifecycle actions (plan/tests/execute/review/
+  close), the assembled prompt is a **pure function of the input set** — the same
+  `.state/` + resolved `instructions/`/`WORKER_SPEC`/adapter + project docs + CLI
+  args produce identical bytes, independent of wall-clock time and working
+  directory. Locked by `tests/test_assembler_purity.py` (double-assemble identity,
+  cwd-independence, wall-clock-independence) as a *property*, and by
+  `tests/test_prompt_golden.py` against a stored *snapshot*.
+- **Completeness (folded Phase C).** Every prompt byte is produced by a
+  recipe-enumerated renderer (§4/§5/§6): there is no code path that reads a file
+  and splices it into the prompt outside the action recipe. Completeness therefore
+  holds *structurally* — a single producer, enumerated sections — rather than by a
+  separate assemble-time check.
+- **Recovery actions are excluded, by design.** `diagnose`/`reconcile` embed a
+  `## Failure Context` section that runs a **live git/disk drift audit** at
+  assemble time (`render_failure_context` → `control.diagnose`, see §3.2). Their
+  prompt is intentionally *not* reproducible, so `prompt_hash` is **not** a valid
+  replay key for them; the purity guarantee and the tests above cover the five
+  core actions only. (`test_prompt_golden` already treats the recovery full prompt
+  as non-deterministic inside a git repo.) Enforcing this in telemetry data —
+  recording a null `prompt_hash` for recovery actions rather than a misleading one
+  — is deferred to the provenance manifest work (FU-64).
+
 ---
 
 ## 13. Implementation Notes
