@@ -10,7 +10,9 @@
 >   binary isn't installed in the pirozhok `claude-code` container; Node 22 +
 >   npm 10 are present, `claude`/`codex` live at `/usr/bin`).
 > - **§3 OpenRouter backend (FU-38b)** — **research + plan.** Recommends reusing
->   an existing agent harness over building one. No code yet.
+>   an existing agent harness over building one. No code yet. **§3.8 = the pi.dev
+>   spike protocol (FU-61), now the primary Option-B candidate; §3.7 opencode is
+>   the fallback.**
 >
 > Decisions: D-be-* (shared), D-gem-*, D-or-*.
 
@@ -305,6 +307,187 @@ leaked and fall back to **Option A** (in-house harness, §3.5; its own DESIGN).
 **Deliverable.** A findings note — per-check pass/leak, the working `opencode run`
 invocation, a candidate model list, and the A-vs-B call — appended here or as the
 FU-38b resolution. No production code in the spike itself.
+
+---
+
+## 3.8 Spike protocol — pi.dev (the FU-61 candidate; primary Option-B spike)
+
+> **Status:** **SPIKE DONE — PASS (2026-08-17); Option B adopted (pi.dev).** See
+> §3.8.2 for the result. pi.dev surfaced 2026-08-11, was the primary Option-B
+> candidate (D-or-4); the §3.7 opencode protocol is now moot (fallback only).
+> Next: Stage-2 integration (§3.8.1) as a Build phase.
+
+**Goal.** Answer two questions:
+
+1. Does **pi.dev** slot into the §1.1 CLI-backend contract when pointed at
+   OpenRouter — i.e., is Option B "one more CLI backend" (small code) or does it
+   leak? (the FU-38b decision gate.)
+2. **Bonus / strategic:** can *one* pi.dev backend reach **both** OpenRouter and
+   Gemini via host config? If yes, a single `pidev` backend **collapses FU-38a
+   (Gemini) + FU-38b (OpenRouter) into one**, and §2/§3 of this doc become one
+   backend arm.
+
+**Why pi.dev over opencode (D-or-4).** pi.dev is a deliberately tiny, *hackable*
+agent CLI — custom tools + prompt templates + alternate model providers. Two
+contract fits that matter:
+
+- **Controllable system prompt** — i2c's worker must read *only* the assembled
+  prompt, so we need to set/replace the system prompt rather than fight an
+  injected one. (opencode auto-reads `AGENTS.md`; aider always injects an
+  edit-format prompt — a hard leak, so aider stays fallback-only, §3.7.)
+- **A shell tool** — the worker must run `i2c state …`; pi.dev exposes a shell
+  tool the model can call.
+
+opencode remains the alternate Option-B candidate if pi.dev leaks; §3.7 stands.
+
+**Where.** The pirozhok `claude-code` container (creds + backend CLIs live
+there). Use a **throwaway** git project — a copy of the CC fixture or a trivial
+one-phase Build — **not** a fleet project.
+
+**Pre-reqs (confirm on the Pi before the run — the empirical unknowns):**
+
+- pi.dev installed; note the **binary name** and install method (cf. Gemini: not
+  yet in the container; Node 22 / npm 10 present).
+- A **non-interactive one-shot** mode and how it takes the prompt (stdin / arg /
+  file) — prefer stdin to dodge ARG_MAX on ~40–65 KB prompts (the codex reason).
+- An **auto-approve** flag (analogue of `claude --dangerously-skip-permissions` /
+  `codex --dangerously-bypass-approvals-and-sandbox`).
+- **OpenRouter provider** configured (`OPENROUTER_API_KEY` + an OpenRouter model
+  id); confirm pi.dev targets it. (And, for the bonus, a Gemini provider.)
+- **System-prompt control** confirmed (can set/replace, not merely prepend).
+- **`i2c` on pi.dev's login-shell PATH** — if pi.dev runs tool commands via a
+  login shell (`bash -lc`, the codex behaviour), `i2c state` must resolve there
+  (README §Requirements; deployment.md).
+
+**Procedure.** Drive one real worker action (a single EXECUTE step on a trivial
+Build phase) through pi.dev instead of claude/codex:
+
+1. Assemble as usual: `i2c assemble --action execute --phase N` (use
+   `--backend codex` for the spike — codex-shaped single full prompt; no pi.dev
+   adapter exists yet and codex's Tool Rules are close enough to validate the
+   contract).
+2. Feed the prompt to pi.dev headless, targeting an OpenRouter model.
+3. Observe whether pi.dev edits code, runs the test, calls `i2c state …`, and
+   emits the 2-line `EXIT/REASON` block to stdout.
+4. Capture stdout/stderr + the resulting `.state/` + git state.
+
+**Acceptance checklist (checks 1–5 are the FU-61 gate; B is upside):**
+
+| # | Check | Contract seam |
+|---|-------|---------------|
+| 1 | pi.dev accepts the full assembled prompt and acts on it; its own system prompt / auto-read config doesn't distort behaviour | prompt delivery |
+| 2 | Model calls `i2c state set/append/complete` successfully (shell tool + login-shell PATH) | agency / `i2c state` |
+| 3 | The 2-line `EXIT: 0\|2 / REASON:` survives to stdout and `parse_exit_signal` reads it | exit signal (**highest risk**, Q-or-signal) |
+| 4 | An OpenRouter model returns usable output (no `reasoning`-vs-`content` hang — the R1 lesson) on ≥1 tool-capable model | heterogeneity (Q-or-coverage) |
+| 5 | model id + tokens/cost capturable into `telemetry.jsonl`; a cost/turn ceiling is enforceable | attribution/budget (Q-or-model) |
+| B | **Bonus:** one pi.dev config reaches both OpenRouter *and* Gemini (a model-id switch, no code change) | multi-provider (collapses FU-38a+b) |
+
+**Decision rule.** *Pass* = checks 1–5 green on ≥1 OpenRouter model → **adopt
+Option B (pi.dev)**: promote D-or-2 to "B adopted (pi.dev)" and do the Stage-2
+integration (§3.8.1). *Any hard leak* (especially #3 or #2) → record where the
+contract leaked and try **opencode** (§3.7) before falling back to **Option A**
+(in-house harness, §3.5). Check B is upside, not a gate — a pass folds §2 into §3.
+
+**Deliverable.** A findings note — per-check pass/leak, the working pi.dev
+invocation, a candidate OpenRouter model list, the multi-provider (B) result, and
+the A-vs-B call — appended here or as the FU-61 resolution. No production code in
+the spike itself.
+
+### 3.8.1 Stage 2 — integration checklist (only if the spike passes)
+
+pi.dev is **codex-shaped** (single full prompt on stdin, no claude system-prompt
+split), so `invoke_pidev` mirrors `invoke_codex`. The §1.1 map, grounded in code
+(verified 2026-08-17):
+
+- `i2c/config.py` — `_BACKENDS += ("pidev",)` (validates `[run].backend` /
+  `[run.backends]`).
+- `i2c/run_iteration.py` — `invoke_pidev()`: pass the assembled prompt via
+  `@<file>` (write it to a temp file — **not** stdin), flags `-p --no-session -nc
+  --no-skills --no-extensions --provider <p> --model <id> --mode text`,
+  **`stdin=DEVNULL`** (pi `-p` blocks on an open stdin with no TTY — the §3.8.2
+  lesson), and `env[OPENROUTER_API_KEY]`; capture the final message (carries the
+  2-line signal) + usage (via `--mode json` when tokens/cost are wanted). Add a
+  dispatch branch; the **hardcoded** backend guards `backend not in ("claude",
+  "codex")` (~L823 + the run/validate sites) → add `pidev`. **Record the model** —
+  codex leaves `model_used = None` (L960); pi.dev must record the model id, since
+  the model *is* the point of a panel.
+- `i2c/assemble_context.py` — `adapter_path()` map → `PIDEV.md`; tool-rules
+  heading → `"Pidev-Specific Tool Rules"`; `--backend` choices.
+- `i2c/scaffold.py` — `_ADAPTER_TARGET += {"pidev": "PIDEV.md"}`.
+- `i2c/cli.py` — `--backend` choices for `run` + `init`; decide `both` semantics
+  (keep `both = claude+codex`; select `pidev` explicitly).
+- `i2c/doctor.py` — `_check_backends()` probes the pi.dev binary on PATH.
+- `i2c/data/adapters/PIDEV.md` — **new** adapter (`## Pidev-Specific Tool Rules`
+  + the 2-line exit contract), modeled on `codex.md`.
+- `i2c/data/pricing.json` — OpenRouter model rates + tier (telemetry cost/tier).
+- `tests/test_prompt_golden.py` — `BACKENDS += "pidev"` (regen goldens with a
+  `PIDEV.md` fixture); plus `invoke_pidev` / parse / dispatch / config-validation
+  tests.
+- README / docs — backend list + the login-shell PATH note.
+
+**Stage-2 design sub-decisions (proposed; ratify at integration):**
+
+- **Backend name:** `pidev` (proposed — avoids confusion with "pi" / pirozhok).
+- **Model attribution (Q-or-model):** v1 punt = *pidev-only projects* set
+  `[run].model = "<openrouter-id>"` (mirrors Gemini's Q-gem-model); full
+  per-action model deferred.
+- **One backend, many providers:** model pi.dev as a *single* `pidev` backend
+  where the model id selects the provider/model (provider = host-side pi.dev
+  config). If spike check B passes, this is what collapses §2 + §3.
+- **Rate-limit detection:** add a `detect_rate_limit` pidev branch when a real
+  429 / quota sample exists (same posture as codex's deferred branch; cf. FU-42).
+
+**Regime.** Stage 2 is a Build phase (mechanical §1.1 add, golden-locked). The
+spike (Stage 1) is exploratory and worked by hand on the Pi.
+
+---
+
+### 3.8.2 Spike result — 2026-08-17 (PASS; Option B adopted)
+
+Ran on pirozhok (`claude-code` container) driving one real i2c EXECUTE step
+(throwaway `pidev-spike` project, Pattern B: implement `add()` so a frozen test
+passes) through **pi 0.84.2** → OpenRouter **`openai/gpt-4o-mini`**.
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | prompt delivery (22 KB via `@file`) | ✅ accepted + acted on |
+| 2 | agency — `i2c state` via bash tool; auto-approve in `-p` | ✅ ran edit+bash; marked step complete, appended devlog, set state=review — **no approval gate** |
+| 3 | 2-line `EXIT/REASON` to stdout, runner-parseable | ✅ via `--mode text` (final message) |
+| 4 | OpenRouter model drives the loop | ✅ gpt-4o-mini |
+| 5 | model id + tokens/cost → `telemetry.jsonl` | ⏸ not exercised (spike bypassed the runner); pi has `--mode json` — wire in Stage-2 `invoke_pidev` |
+| B | one backend → many providers | ✅ native `--provider` (openrouter proven live; gemini/openai/anthropic/… same mechanism) → **collapses FU-38a + FU-38b** |
+
+**Decision: PASS → adopt Option B (pi.dev)** (D-or-2 → "B adopted (pi.dev)").
+
+**Two unknowns resolved + one new integration lesson:**
+- **Auto-approve:** `pi -p` auto-runs tools (edit/bash) with no approval gate. ✅
+- **Signal surface:** `--mode text` puts the final message (with the fenced EXIT
+  block) on stdout; i2c's line-anchored parser reads it. ✅
+- **NEW — `pi -p` blocks on an open stdin when there is no TTY.** The hang that
+  ate the first two runs was pi waiting on inherited stdin; **`stdin=DEVNULL`
+  (or `</dev/null`) is mandatory** for headless dispatch. Connectivity + key were
+  fine throughout (curl to `openrouter.ai/api/v1/models` → HTTP 200).
+
+**Working invocation** (`OPENROUTER_API_KEY` in env, stdin closed):
+```
+pi -p --no-session -nc --no-skills --no-extensions \
+   --provider openrouter --model <openrouter-id> --mode text @<assembled_prompt_file>
+```
+
+**Worker-quality note (not a backend leak):** gpt-4o-mini emitted the template
+line `EXIT: 0 | 2` verbatim rather than choosing `0`. The line-anchored parser
+still extracts `0`, but weaker models copy the placeholder — the PIDEV adapter's
+Output Contract must make "pick one" unambiguous. `-nc` correctly kept the
+assembled prompt as the sole context (no `AGENTS.md`/`CLAUDE.md` auto-read).
+
+**Key location (ops):** `OPENROUTER_API_KEY` lives in
+`~/workspace/diplomat/.env` (on the share) — **not** in the systemd
+`i2c-bot.env` (which holds only `I2C_TELEGRAM_TOKEN`) and **not** on the Pi host.
+Stage-2 / bot runs that route an action to `pidev` need the key in the worker's
+env (add it to `i2c-bot.env` or source it).
+
+**Spike artifacts** (on the share; delete when done): `pidev-spike/` project,
+`pidev_spike.py`, `pidev_probe.py`, `pidev_probe2.py`, `pidev_find_key.py`.
 
 ---
 

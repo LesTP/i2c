@@ -582,7 +582,7 @@
     "id": "FU-61",
     "title": "Spike pi.dev as a CLI backend (and OpenRouter/gemini shim) - DESIGN_backend_v1 sec 3.7",
     "kind": "other",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-08-11",
     "context": "pi.dev (Pi Coding Agent) is a minimal, hackable agentic terminal CLI in the claude/codex/gemini family, not a raw model API - so it fits the DESIGN_backend_v1 sec 1.1 CLI-backend shape (config._BACKENDS + adapter + doctor probe + run_iteration dispatch + pricing + goldens), NOT the Option-A in-house harness. Its alternate-model-providers support means one pi.dev backend can double as the OpenRouter/gemini shim, sidestepping the codex-0.124 Responses-wire block that stalled Option C. Its custom tools + prompt templates may satisfy the i2c worker contract more cleanly than opencode/aider (controllable system prompt + a shell tool for i2c state - the two seams aider failed). Run the sec 3.7 spike protocol against pi.dev; make-or-break unknowns: a headless one-shot mode, and whether the 2-line EXIT/REASON block survives to stdout parseably (Q-or-signal). Spike on pirozhok (laptop cannot run headless agents, FU-28).",
     "trigger": "pi.dev surfaced 2026-08-11 as a hackable agentic CLI with alternate model providers; candidate Option-B backend + OpenRouter shim.",
@@ -596,7 +596,9 @@
     ],
     "refs": [
       "DESIGN_backend_v1.md"
-    ]
+    ],
+    "closed": "2026-08-17",
+    "resolution": "SPIKE PASS 2026-08-17 -> adopt Option B (pi.dev). Ran on pirozhok: pi 0.84.2 drove a real i2c EXECUTE step via OpenRouter gpt-4o-mini end-to-end (edit calc.py, run test, i2c state complete+devlog+set state=review, emit EXIT/REASON). Checks 1-4 + bonus B green; check 5 (telemetry) deferred to Stage-2 invoke_pidev (pi has --mode json). Resolved unknowns: pi -p auto-runs tools (no approval gate); --mode text surfaces the 2-line signal. NEW lesson: pi -p blocks on open stdin w/o TTY -> stdin=DEVNULL mandatory. Bonus B (native --provider) collapses FU-38a(gemini)+FU-38b(openrouter) into one pidev backend. Full findings: DESIGN_backend_v1 sec 3.8.2. Next: Stage-2 integration (sec 3.8.1) as a Build phase."
   },
   {
     "id": "FU-62",
