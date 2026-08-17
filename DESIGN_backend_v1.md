@@ -491,6 +491,77 @@ env (add it to `i2c-bot.env` or source it).
 
 ---
 
+## 3.9 Provider & model selection (pidev) — layered plan
+
+pidev makes *which model* a first-class concern (OpenRouter alone exposes
+hundreds of models, and the list + prices churn constantly). Three layers i2c
+conflates today:
+
+- **backend** — which agent CLI drives the loop (`claude` / `codex` / `pidev`);
+  set by `--backend` / `[run.backends]`.
+- **provider** — where pidev sources the model (`openrouter` / `google` / …); a
+  pidev-only concept, invisible to claude/codex.
+- **model** — the specific id (e.g. `deepseek/deepseek-chat`).
+
+Today i2c has only *backend* + a single `[run].model`. The layers below add the
+provider and per-action model dimensions.
+
+### Decisions
+
+```
+D-or-5: The backend is `pidev` (the agent); OpenRouter is its *provider*.
+Status: Accepted (2026-08-17) | Priority: —
+Decision: backend name = `pidev`; provider is config, defaulting to openrouter.
+Rationale: backends are agents (D-be-1). Naming it "openrouter" conflates
+agent+provider and forfeits pidev's native reach to Gemini/others (spike bonus B).
+```
+```
+D-or-6: Per-action model via a `[run.models]` table (parallel to [run.backends]).
+Status: Accepted (2026-08-17) | Priority: Important
+Decision: resolve Q-or-model with `[run.models][action]`, keyed by the same
+actions as `[run.backends]`; precedence `[run.models][action] > [run].model >
+built-in default`.
+Rationale: routing (D-bench-7) wants cheap-execute / strong-plan; a single
+`[run].model` can't serve a panel or a mixed-backend project.
+```
+```
+D-or-7: Model choice is a *curated, reviewed panel*, not live auto-selection.
+Status: Accepted (2026-08-17) | Priority: —
+Decision: maintain a small vetted set of tool-capable models (cost/tier known),
+updated by a human via a review command; do NOT auto-pick from the live list.
+Rationale: most OpenRouter models can't reliably drive a tool loop (the R1-hang,
+§3.1); prices/availability churn. Extends `pricing.json`.
+```
+```
+D-or-8: Model *review* may surface on the bot (read-only); *selection* stays CLI.
+Status: Accepted (2026-08-17) | Priority: —
+Decision: a read-only `/models [search]` fits the bot's read hub; setting a model
+mutates `i2c.toml`, which the bot does not author today — keep selection in the
+CLI. Revisit an admin-gated `/setmodel` only if the phone-first workflow demands it.
+```
+```
+D-or-9: No dedicated model-catalog module until a consumer exists.
+Status: Accepted (2026-08-17) | Priority: —
+Decision: a thin `i2c models` review command + a config panel suffice; a module
+belongs with the benchmark/routing + pricing cluster when the router consumes it.
+Rationale: YAGNI — build the module when something reads it.
+```
+
+### Layers (roadmap)
+
+| Layer | What | Tracked / where |
+|---|---|---|
+| **L0 — pidev backend** | `pidev` selectable via `--backend` / `[run.backends]`; single `[run].model`; provider defaults openrouter. The mechanical §1.1 add (§3.8.1). | **FU-65** |
+| **L1 — per-action model** | `[run.models]` table (D-or-6) — the routing lever. | **FU-66** |
+| **L2 — review + curated panel** | `i2c models` review (live OpenRouter `/models` + `pi --list-models`: id, price, context, tool-support) feeding a vetted panel; read-only `/models` on the bot (D-or-7/8). | model-benchmark thread |
+| **L3 — catalog module + router** | only when L2 grows / the benchmark router consumes it (D-or-9). | deferred |
+
+**Sequencing:** L0 + L1 are companions (pidev's routing value is thin without
+per-action model) and are the next work. L2 rides the model-benchmark initiative
+(`DESIGN_benchmark_v1`); L3 is deferred.
+
+---
+
 ## 4. Relationship to existing work
 
 - **FU-38:** (a) Gemini = §2; (b) OpenRouter = §3; (c) the toolkit-dep call

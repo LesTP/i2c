@@ -662,5 +662,48 @@
       "DESIGN_benchmark_v1.md",
       "FU-63"
     ]
+  },
+  {
+    "id": "FU-65",
+    "title": "pidev Layer 0: integrate pi.dev as a first-class backend (DESIGN_backend sec 3.8.1/3.9)",
+    "kind": "structural-refactor",
+    "status": "open",
+    "opened": "2026-08-17",
+    "context": "Mechanical sec 1.1 backend add, modeled on codex but prompt via @file not stdin. Surface: config._BACKENDS += pidev; run_iteration.invoke_pidev (pi -p @promptfile --no-session -nc --no-skills --no-extensions --provider openrouter --model <id> --mode text; stdin=DEVNULL [MANDATORY, sec 3.8.2 lesson]; env OPENROUTER_API_KEY; RECORD the model [codex leaves model_used=None L960]; --mode json when tokens/cost wanted) + dispatch branch + the hardcoded backend guards backend not in (claude,codex) ~L823 + run/validate sites; assemble_context adapter_path->PIDEV.md + tool-rules heading 'Pidev-Specific Tool Rules' + --backend choices; scaffold _ADAPTER_TARGET; cli --backend for run+init; doctor _check_backends PATH probe; NEW i2c/data/adapters/PIDEV.md (model on codex.md; Output Contract must say 'pick ONE of 0|2' per the gpt-4o-mini template-copy quality note, sec 3.8.2); pricing.json OpenRouter rates+tier; test_prompt_golden BACKENDS += pidev (regen goldens w/ PIDEV.md fixture) + invoke/parse/dispatch/config tests. v1 = single [run].model (pidev-only projects), provider defaults openrouter. Worked by hand (i2c not self-hosted); shared tree is load-bearing -> keep green+committed.",
+    "trigger": "Chosen to start next (with Layer 1). Ops prereq for bot/autonomous pidev runs: OPENROUTER_API_KEY must be in the worker env (currently only in diplomat/.env, not i2c-bot.env).",
+    "priority": "next",
+    "files": [
+      "i2c/config.py",
+      "i2c/run_iteration.py",
+      "i2c/assemble_context.py",
+      "i2c/scaffold.py",
+      "i2c/cli.py",
+      "i2c/doctor.py",
+      "i2c/data/adapters/PIDEV.md",
+      "i2c/data/pricing.json",
+      "tests/test_prompt_golden.py"
+    ],
+    "refs": [
+      "DESIGN_backend_v1.md",
+      "FU-61"
+    ]
+  },
+  {
+    "id": "FU-66",
+    "title": "pidev Layer 1: per-action model via [run.models] (resolves Q-or-model)",
+    "kind": "structural-refactor",
+    "status": "open",
+    "opened": "2026-08-17",
+    "context": "i2c has per-action BACKEND ([run.backends]) but not per-action MODEL. Add a [run.models] table keyed by action (plan/tests/execute/review/close + diagnose/reconcile), parallel to [run.backends]: parse+validate in config.py (RunConfig.models dict), resolve in run_iteration alongside the backend pick. Precedence: [run.models][action] > [run].model > built-in default. Enables cheap-model-for-execute / strong-for-plan routing (D-bench-7) and per-model benchmark attribution across mixed backends. Depends on Layer 0 (pidev). Small change: config + runner + tests.",
+    "trigger": "Immediately after Layer 0 - natural companion; the routing value of pidev is limited without per-action model since OpenRouter is a whole panel.",
+    "priority": "next",
+    "files": [
+      "i2c/config.py",
+      "i2c/run_iteration.py",
+      "tests/test_config.py"
+    ],
+    "refs": [
+      "DESIGN_backend_v1.md"
+    ]
   }
 ]
