@@ -67,9 +67,12 @@ machine script. When any fires, EXIT 2 with a reason.
 The **final lines** of every invocation must be:
 
 ```
-EXIT: 0 | 2
+EXIT: <0 or 2>
 REASON: <one-line summary>
 ```
+
+Write exactly one digit on the EXIT line (`0` or `2`), not the literal
+`<0 or 2>`.
 
 | Code | Meaning |
 |------|---------|

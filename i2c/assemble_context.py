@@ -647,11 +647,13 @@ _OUTPUT_CONTRACT_REMINDER = """\
 **End your response with EXACTLY these two lines. No prose after.**
 
 ```
-EXIT: 0 | 2
+EXIT: <0 or 2>
 REASON: <one-line summary>
 ```
 
-The runner parses these via line-anchored regex. Omitting them causes the
+Write exactly one digit on the EXIT line — `0` (success) or `2`
+(error/escalation) — not the literal `<0 or 2>`. The runner parses these via
+line-anchored regex. Omitting them causes the
 iteration to be reported as `exit=2 "signal missing or malformed"` even if
 your work landed correctly in `.state/` and the commit. See your adapter's
 `## Output Contract` section for full semantics.

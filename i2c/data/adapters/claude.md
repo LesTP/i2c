@@ -95,9 +95,12 @@ already in your assembled prompt via `instructions/*.md`.
 End every invocation with exactly these two lines — no additional text after:
 
 ```
-EXIT: 0 | 2
+EXIT: <0 or 2>
 REASON: <one-line summary>
 ```
+
+Write exactly one digit on the EXIT line (`0` or `2`), not the literal
+`<0 or 2>`.
 
 | Code | Meaning |
 |------|---------|
