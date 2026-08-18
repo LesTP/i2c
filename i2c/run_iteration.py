@@ -793,7 +793,9 @@ def run_iteration(
     backend: str | None = None,
     backend_map: dict[str, str] | None = None,
     default_backend: str = "claude",
-    model: str,
+    model: str | None = None,
+    model_map: dict[str, str] | None = None,
+    default_model: str = DEFAULT_MODEL,
     max_budget_usd: float,
     max_iteration_seconds: float | None = DEFAULT_MAX_ITERATION_SECONDS,
     action_override: str | None = None,
@@ -880,6 +882,11 @@ def run_iteration(
     if backend not in ("claude", "codex", "pidev"):
         sys.stderr.write(f"ERROR: unknown backend {backend!r}\n")
         return 2
+
+    # 1c. Resolve the model for this action, mirroring backend precedence:
+    #     explicit --model override > [run.models][action] > [run].model / default
+    #     (D-or-6, FU-66). Recorded in telemetry for claude/pidev.
+    model = model or (model_map or {}).get(action.lower()) or default_model
 
     # 2. ACTION: EXIT short-circuit (state-machine path only).
     if action == "EXIT":

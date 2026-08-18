@@ -253,7 +253,9 @@ def cmd_clear_boundary(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     # Resolve run settings. Backend precedence: --backend flag (forces a single
     # backend) > [run.backends][action] (per-action map, resolved in the runner)
-    # > [run].backend > built-in claude. Model/budget: flag > i2c.toml > default.
+    # > [run].backend > built-in claude. Model mirrors this: --model flag >
+    # [run.models][action] > [run].model > default (resolved in the runner).
+    # Budget: flag > i2c.toml > default.
     if args.target is not None and args.action is None:
         return _fail(
             ValueError("--target requires --action (diagnose/reconcile)")
@@ -262,7 +264,6 @@ def cmd_run(args: argparse.Namespace) -> int:
         cfg = config.load_run_config()
     except config.ConfigError as e:
         return _fail(e)
-    model = args.model or cfg.model or run_iteration.DEFAULT_MODEL
     if args.max_budget_usd is not None:
         max_budget_usd = args.max_budget_usd
     elif cfg.max_budget_usd is not None:
@@ -279,7 +280,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         backend=args.backend,
         backend_map=cfg.backends,
         default_backend=cfg.backend or "claude",
-        model=model,
+        model=args.model,
+        model_map=cfg.models,
+        default_model=cfg.model or run_iteration.DEFAULT_MODEL,
         max_budget_usd=max_budget_usd,
         max_iteration_seconds=max_iteration_seconds,
         action_override=args.action,

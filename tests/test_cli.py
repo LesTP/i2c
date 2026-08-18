@@ -466,7 +466,8 @@ class TestRun(unittest.TestCase):
         # and the explicit override is None (resolution happens in the runner).
         self.assertIsNone(cap["backend"])
         self.assertEqual(cap["default_backend"], "codex")
-        self.assertEqual(cap["model"], "opus")
+        self.assertIsNone(cap["model"])
+        self.assertEqual(cap["default_model"], "opus")
         self.assertEqual(cap["max_budget_usd"], 2.5)
 
     def test_toml_backends_map_forwarded(self):
@@ -480,6 +481,18 @@ class TestRun(unittest.TestCase):
                 cap = self._run_capture("run")
         self.assertEqual(cap["backend_map"], {"execute": "codex"})
         self.assertEqual(cap["default_backend"], "claude")
+
+    def test_toml_models_map_forwarded(self):
+        with tempfile.TemporaryDirectory(prefix="i2c_cli_mmap_") as tmp:
+            (Path(tmp) / "i2c.toml").write_text(
+                '[run]\nmodel = "sonnet"\n'
+                '[run.models]\nexecute = "openai/gpt-4o-mini"\n',
+                encoding="utf-8",
+            )
+            with ChdirFixture(Path(tmp)):
+                cap = self._run_capture("run")
+        self.assertEqual(cap["model_map"], {"execute": "openai/gpt-4o-mini"})
+        self.assertEqual(cap["default_model"], "sonnet")
 
     def test_cli_flag_overrides_toml(self):
         with tempfile.TemporaryDirectory(prefix="i2c_cli_toml2_") as tmp:
@@ -497,7 +510,9 @@ class TestRun(unittest.TestCase):
         self.assertIsNone(cap["backend"])
         self.assertEqual(cap["default_backend"], "claude")
         self.assertEqual(cap["backend_map"], {})
-        self.assertEqual(cap["model"], run_iteration.DEFAULT_MODEL)
+        self.assertEqual(cap["model_map"], {})
+        self.assertIsNone(cap["model"])
+        self.assertEqual(cap["default_model"], run_iteration.DEFAULT_MODEL)
         self.assertEqual(cap["max_budget_usd"], run_iteration.DEFAULT_MAX_BUDGET_USD)
 
     def test_malformed_toml_exits_2(self):

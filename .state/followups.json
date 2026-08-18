@@ -694,7 +694,7 @@
     "id": "FU-66",
     "title": "pidev Layer 1: per-action model via [run.models] (resolves Q-or-model)",
     "kind": "structural-refactor",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-08-17",
     "context": "i2c has per-action BACKEND ([run.backends]) but not per-action MODEL. Add a [run.models] table keyed by action (plan/tests/execute/review/close + diagnose/reconcile), parallel to [run.backends]: parse+validate in config.py (RunConfig.models dict), resolve in run_iteration alongside the backend pick. Precedence: [run.models][action] > [run].model > built-in default. Enables cheap-model-for-execute / strong-for-plan routing (D-bench-7) and per-model benchmark attribution across mixed backends. Depends on Layer 0 (pidev). Small change: config + runner + tests.",
     "trigger": "Immediately after Layer 0 - natural companion; the routing value of pidev is limited without per-action model since OpenRouter is a whole panel.",
@@ -706,6 +706,8 @@
     ],
     "refs": [
       "DESIGN_backend_v1.md"
-    ]
+    ],
+    "closed": "2026-08-18",
+    "resolution": "Shipped Layer 1: per-action model via [run.models] (parallel to [run.backends]). config.py parses/validates the table (action keys checked; free-form string model ids); run_iteration resolves per-action model with precedence --model flag > [run.models][action] > [run].model > default; cli.cmd_run forwards flag/map/default separately. Enables cheap-for-execute / strong-for-plan routing across the pidev OpenRouter panel (D-bench-7) + mixed-backend model attribution. Green: test_config (+4), test_cli (updated 2 + new map test), test_run_iteration (+3 resolution tests); validate_changes clean."
   }
 ]

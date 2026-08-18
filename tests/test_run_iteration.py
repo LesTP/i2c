@@ -650,6 +650,51 @@ class TestBackendResolution(unittest.TestCase):
             self.assertEqual(pidev_calls, ["openai/gpt-4o-mini"])
 
 
+class TestModelResolution(unittest.TestCase):
+    """Per-action model resolution (FU-66): --model override > [run.models][action]
+    > [run].model / default. The fixture dispatches EXECUTE, so the 'execute'
+    key (or the default) decides. Uses a model-capturing claude invoker."""
+
+    def _run(self, *, model=None, model_map=None, default_model="sonnet"):
+        seen: list[str] = []
+
+        def fake_claude(prompt, *, cwd, model, max_budget_usd,
+                        system_prompt_file=None, timeout=None):
+            seen.append(model)
+            return 0, "EXIT: 0\nREASON: ok\n"
+
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            rc = ri.run_iteration(
+                backend="claude",
+                model=model,
+                model_map=model_map,
+                default_model=default_model,
+                max_budget_usd=5.0,
+                claude_invoker=fake_claude,
+            )
+        return rc, seen, err.getvalue()
+
+    def test_map_selects_model_for_execute(self):
+        with TempProject():
+            rc, seen, err = self._run(model_map={"execute": "opus"})
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(seen, ["opus"])
+
+    def test_override_beats_map(self):
+        with TempProject():
+            rc, seen, err = self._run(model="haiku", model_map={"execute": "opus"})
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(seen, ["haiku"])
+
+    def test_falls_back_to_default_when_action_absent(self):
+        with TempProject():
+            rc, seen, err = self._run(
+                model_map={"plan": "opus"}, default_model="sonnet")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(seen, ["sonnet"])
+
+
 class TestCommitState(unittest.TestCase):
     """commit_state / dirty_tracked_outside_state against a real temp git repo."""
 

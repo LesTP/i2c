@@ -107,6 +107,35 @@ class TestLoadRunConfig(unittest.TestCase):
             self.assertEqual(cfg.backend, "pidev")
             self.assertEqual(cfg.backends, {"execute": "pidev"})
 
+    def test_no_models_is_empty_dict(self):
+        with TempDir() as root:
+            _write(root, '[run]\nmodel = "sonnet"\n')
+            cfg = config.load_run_config(root)
+            self.assertEqual(cfg.models, {})
+
+    def test_reads_models_map(self):
+        with TempDir() as root:
+            _write(
+                root,
+                '[run]\nmodel = "sonnet"\n'
+                '[run.models]\nexecute = "openai/gpt-4o-mini"\nplan = "opus"\n',
+            )
+            cfg = config.load_run_config(root)
+            self.assertEqual(
+                cfg.models, {"execute": "openai/gpt-4o-mini", "plan": "opus"})
+
+    def test_models_invalid_action_key_raises(self):
+        with TempDir() as root:
+            _write(root, '[run.models]\nbuild = "opus"\n')
+            with self.assertRaises(config.ConfigError):
+                config.load_run_config(root)
+
+    def test_models_non_string_value_raises(self):
+        with TempDir() as root:
+            _write(root, "[run.models]\nexecute = 3\n")
+            with self.assertRaises(config.ConfigError):
+                config.load_run_config(root)
+
     def test_found_from_subdir(self):
         with TempDir() as root:
             _write(root, '[run]\nbackend = "codex"\n')

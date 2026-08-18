@@ -47,6 +47,12 @@ class RunConfig:
     worker action (plan/tests/execute/review/close) to a backend. Empty when
     unset. ``tests`` (Build-only acceptance-suite authoring, D-tests-6) should
     be pinned to a capable tier, not the cheapest."""
+    models: dict[str, str] = field(default_factory=dict)
+    """Optional per-action model overrides from ``[run.models]`` — maps a worker
+    action to a model id (D-or-6, FU-66). Parallel to ``backends``; precedence is
+    ``[run.models][action] > [run].model > built-in default``. Values are
+    free-form model ids (e.g. OpenRouter ``vendor/model``) and are NOT
+    enum-checked, unlike ``backends``."""
 
 
 @dataclass
@@ -147,9 +153,25 @@ def load_run_config(start: Path | None = None) -> RunConfig:
             )
         backends[action] = be
 
+    models_raw = run.get("models", {})
+    if not isinstance(models_raw, dict):
+        raise ConfigError(f"{path}: [run.models] must be a table")
+    models: dict[str, str] = {}
+    for action, mdl in models_raw.items():
+        if action not in _RUN_ACTIONS:
+            raise ConfigError(
+                f"{path}: [run.models] key {action!r} is not a valid action; "
+                f"expected one of {_RUN_ACTIONS}"
+            )
+        if not isinstance(mdl, str) or not mdl:
+            raise ConfigError(
+                f"{path}: [run.models].{action} must be a non-empty string model id"
+            )
+        models[action] = mdl
+
     return RunConfig(
         backend=backend, model=model, max_budget_usd=budget,
-        max_iteration_seconds=max_iter_s, backends=backends
+        max_iteration_seconds=max_iter_s, backends=backends, models=models
     )
 
 
