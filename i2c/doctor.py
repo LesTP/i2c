@@ -194,8 +194,12 @@ def _check_toml() -> Check:
 def _check_backends() -> Check:
     claude = shutil.which("claude")
     codex = shutil.which("codex")
-    detail = f"claude: {claude or 'not found'}; codex: {codex or 'not found'}"
-    if claude or codex:
+    pidev = shutil.which("pi")  # pi.dev's binary is `pi`
+    detail = (
+        f"claude: {claude or 'not found'}; codex: {codex or 'not found'}; "
+        f"pi: {pidev or 'not found'}"
+    )
+    if claude or codex or pidev:
         return Check("backend CLI", OK, detail)
     return Check(
         "backend CLI",

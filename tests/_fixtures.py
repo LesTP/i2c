@@ -41,18 +41,20 @@ def copy_fixture(dst) -> None:
 
 
 def cached_adapters() -> dict[str, str]:
-    """Adapter file contents (CLAUDE.md/CODEX.md), read from the share once."""
+    """Adapter file contents (CLAUDE.md/CODEX.md/PIDEV.md), read from the share once."""
     global _ADAPTER_CACHE
     if _ADAPTER_CACHE is None:
         _ADAPTER_CACHE = {
             "CLAUDE.md": (_ADAPTERS_DIR / "claude.md").read_text(encoding="utf-8"),
             "CODEX.md": (_ADAPTERS_DIR / "codex.md").read_text(encoding="utf-8"),
+            "PIDEV.md": (_ADAPTERS_DIR / "pidev.md").read_text(encoding="utf-8"),
         }
     return _ADAPTER_CACHE
 
 
 def write_adapters(root) -> None:
-    """Write CLAUDE.md + CODEX.md into ``root`` from the cached adapter contents."""
+    """Write CLAUDE.md + CODEX.md + PIDEV.md into ``root`` from cached contents."""
     a = cached_adapters()
     Path(root, "CLAUDE.md").write_text(a["CLAUDE.md"], encoding="utf-8")
     Path(root, "CODEX.md").write_text(a["CODEX.md"], encoding="utf-8")
+    Path(root, "PIDEV.md").write_text(a["PIDEV.md"], encoding="utf-8")

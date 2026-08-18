@@ -21,7 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover - 3.10 fallback
     import tomli as tomllib  # type: ignore[no-redef]
 
 CONFIG_FILENAME = "i2c.toml"
-_BACKENDS = ("claude", "codex")
+_BACKENDS = ("claude", "codex", "pidev")
 # Lifecycle actions plus the out-of-band recovery actions; [run.backends] may
 # map a backend for any of them (e.g. diagnose = claude, execute = codex).
 _RUN_ACTIONS = ("plan", "tests", "execute", "review", "close", "diagnose", "reconcile")

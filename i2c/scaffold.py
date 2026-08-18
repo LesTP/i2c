@@ -24,8 +24,11 @@ from i2c.assemble_context import ACTIONS, packaged_data_dir
 from i2c.migrate import CURRENT_SCHEMA_VERSION
 
 # Backend → scaffolded adapter filename at the project root.
-_ADAPTER_TARGET = {"claude": "CLAUDE.md", "codex": "CODEX.md"}
+_ADAPTER_TARGET = {"claude": "CLAUDE.md", "codex": "CODEX.md", "pidev": "PIDEV.md"}
 BACKENDS = tuple(_ADAPTER_TARGET)
+# Default adapters scaffolded by `i2c init` (matches the CLI `--backend both`).
+# pidev is a valid, explicitly-selectable backend but not scaffolded by default.
+DEFAULT_BACKENDS = ("claude", "codex")
 
 # [run.backends] activation policies for `i2c init --run-split`.
 RUN_SPLIT_MODES = ("auto", "on", "off")
@@ -166,7 +169,7 @@ def init_project(
     root: Path,
     *,
     name: str,
-    backends: tuple[str, ...] = BACKENDS,
+    backends: tuple[str, ...] = DEFAULT_BACKENDS,
     pattern: str = "A",
     run_split: str = "auto",
     force: bool = False,

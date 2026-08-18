@@ -49,7 +49,7 @@ Append-only event storage with atomic writes.
 """
 
 ACTIONS = ("plan", "tests", "execute", "review", "close")
-BACKENDS = ("claude", "codex")
+BACKENDS = ("claude", "codex", "pidev")
 MODES = ("autonomous", "supervised")
 
 

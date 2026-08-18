@@ -37,7 +37,7 @@ from tests._fixtures import copy_fixture, write_adapters
 # The core lifecycle actions whose prompt purity we guarantee. Recovery actions
 # (diagnose/reconcile) are excluded by design — see the module docstring.
 CORE_ACTIONS = ("plan", "tests", "execute", "review", "close")
-BACKENDS = ("claude", "codex")
+BACKENDS = ("claude", "codex", "pidev")
 
 # The committed fixture is a phase-2 project whose module is ``event_store`` but
 # omits its ARCH file; the worker prompt requires it (render_contract errors when

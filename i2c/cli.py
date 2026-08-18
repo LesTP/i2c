@@ -819,10 +819,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Drive one cold-start worker iteration (delegates to run_iteration).",
     )
     p_run.add_argument(
-        "--backend", choices=("claude", "codex"), default=None,
+        "--backend", choices=("claude", "codex", "pidev"), default=None,
         help="Force a single backend for every action this run. Without it, "
         "the per-action [run.backends] map applies, then [run].backend, then "
-        "claude.",
+        "claude. (pidev = pi.dev over OpenRouter, see DESIGN_backend_v1 §3.9.)",
     )
     p_run.add_argument(
         "--model", default=None,
@@ -873,8 +873,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project name for templates. Default: current directory name.",
     )
     p_init.add_argument(
-        "--backend", choices=("claude", "codex", "both"), default="both",
-        help="Which adapter(s) to scaffold. Default: both.",
+        "--backend", choices=("claude", "codex", "pidev", "both"), default="both",
+        help="Which adapter(s) to scaffold. Default: both (claude+codex); "
+             "pidev scaffolds PIDEV.md for the pi.dev/OpenRouter backend.",
     )
     p_init.add_argument(
         "--run-split", choices=scaffold.RUN_SPLIT_MODES, default="auto",

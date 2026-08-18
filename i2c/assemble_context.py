@@ -156,7 +156,9 @@ def resolve_asset(project_root: Path, relpath: str) -> Path:
 
 
 def adapter_path(root: Path, backend: str) -> Path:
-    return root / ("CLAUDE.md" if backend == "claude" else "CODEX.md")
+    return root / {
+        "claude": "CLAUDE.md", "codex": "CODEX.md", "pidev": "PIDEV.md",
+    }.get(backend, "CODEX.md")
 
 
 def instruction_path(root: Path, action: str) -> Path:
@@ -1003,7 +1005,11 @@ def render_tool_rules(ctx: AssemblerContext) -> str:
     Adapter heading is "Claude-Specific Tool Rules" or "Codex-Specific Tool Rules".
     """
     text = _adapter_text(ctx)
-    heading = "Claude-Specific Tool Rules" if ctx.backend == "claude" else "Codex-Specific Tool Rules"
+    heading = {
+        "claude": "Claude-Specific Tool Rules",
+        "codex": "Codex-Specific Tool Rules",
+        "pidev": "Pidev-Specific Tool Rules",
+    }.get(ctx.backend, "Codex-Specific Tool Rules")
     body = _extract_section_by_heading(text, heading)
     if body is None:
         return f"## {heading}\n\n{PLACEHOLDER_EMPTY}"
@@ -1355,7 +1361,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--backend", choices=("claude", "codex"), default="claude",
+        "--backend", choices=("claude", "codex", "pidev"), default="claude",
         help="Which adapter to read for Tool Rules. Default: claude.",
     )
     parser.add_argument(

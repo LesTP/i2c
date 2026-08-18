@@ -628,6 +628,27 @@ class TestBackendResolution(unittest.TestCase):
             self.assertEqual(rc, 0, msg=err)
             self.assertEqual((len(cc), len(xc)), (0, 1))
 
+    def test_pidev_dispatch_calls_pidev_invoker_and_records_model(self):
+        """backend=pidev routes to pidev_invoker (@file/OpenRouter path) and the
+        runner records the OpenRouter model id (unlike codex, which is null)."""
+        pidev_calls: list[str] = []
+
+        def fake_pidev(prompt, *, cwd, model, timeout=None):
+            pidev_calls.append(model)
+            return 0, "EXIT: 0\nREASON: done\n"
+
+        with TempProject():
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="pidev",
+                    model="openai/gpt-4o-mini",
+                    max_budget_usd=5.0,
+                    pidev_invoker=fake_pidev,
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertEqual(pidev_calls, ["openai/gpt-4o-mini"])
+
 
 class TestCommitState(unittest.TestCase):
     """commit_state / dirty_tracked_outside_state against a real temp git repo."""

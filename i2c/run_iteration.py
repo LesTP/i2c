@@ -45,9 +45,11 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -365,6 +367,60 @@ def invoke_codex(
     if not last_agent_text:
         last_agent_text = jsonl_raw + (proc.stderr or "")
     return proc.returncode, jsonl_raw, last_agent_text
+
+
+def invoke_pidev(
+    prompt: str,
+    *,
+    cwd: Path,
+    model: str,
+    timeout: float | None = None,
+) -> tuple[int, str]:
+    """Run pi.dev (``pi -p``) against an OpenRouter model; return (rc, combined).
+
+    pi.dev is a multi-provider agentic CLI (DESIGN_backend_v1 §3.8). Delivery +
+    isolation choices come from the FU-61 spike (§3.8.2):
+
+    - The assembled prompt is passed via pi's ``@<file>`` include, NOT stdin --
+      ``pi -p`` blocks on an open stdin with no TTY, so stdin is closed
+      (``DEVNULL``). The temp file lives outside ``cwd`` so the runner's EXECUTE
+      code-commit never sweeps it.
+    - ``-nc --no-skills --no-extensions`` keep the assembled prompt as the sole
+      context (no ``AGENTS.md``/``CLAUDE.md`` auto-read).
+    - ``--mode text`` puts the final agent message -- which carries the 2-line
+      exit signal -- on stdout, parsed by the standard ``parse_exit_signal`` flow.
+    - Provider is ``openrouter`` in v1 (D-or-5); ``model`` is the OpenRouter id.
+      ``OPENROUTER_API_KEY`` is inherited from the environment (D-be-2) -- the bot
+      supplies it via its systemd EnvironmentFile.
+
+    Token/cost usage (pi ``--mode json``) is deferred to a later layer; the
+    runner records ``usage=None`` for pidev today.
+    """
+    fd, prompt_file = tempfile.mkstemp(suffix=".md", prefix="i2c_pidev_prompt_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        cmd = [
+            "pi", "-p", "--no-session", "-nc", "--no-skills", "--no-extensions",
+            "--provider", "openrouter", "--model", model, "--mode", "text",
+            "@" + prompt_file,
+        ]
+        proc = subprocess.run(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=timeout,
+        )
+        combined = proc.stdout + (proc.stderr if proc.stderr else "")
+        return proc.returncode, combined
+    finally:
+        try:
+            os.remove(prompt_file)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -744,6 +800,7 @@ def run_iteration(
     target: int | None = None,
     claude_invoker=invoke_claude,
     codex_invoker=invoke_codex,
+    pidev_invoker=invoke_pidev,
     state_committer=commit_state,
     execute_committer=commit_execute,
 ) -> int:
@@ -820,7 +877,7 @@ def run_iteration(
     #     (EXIT is not a real action — it resolves to the default and is only
     #     used as the summary label.)
     backend = backend or (backend_map or {}).get(action.lower(), default_backend)
-    if backend not in ("claude", "codex"):
+    if backend not in ("claude", "codex", "pidev"):
         sys.stderr.write(f"ERROR: unknown backend {backend!r}\n")
         return 2
 
@@ -899,13 +956,20 @@ def run_iteration(
                 system_prompt_file=system_path,
                 timeout=iter_timeout,
             )
-        else:  # codex
+        elif backend == "codex":
             worker_rc, jsonl_raw, captured = codex_invoker(
                 stdin_prompt,
                 cwd=root,
                 timeout=iter_timeout,
             )
             jsonl_path.write_text(jsonl_raw, encoding="utf-8")
+        else:  # pidev
+            worker_rc, captured = pidev_invoker(
+                stdin_prompt,
+                cwd=root,
+                model=model,
+                timeout=iter_timeout,
+            )
     except subprocess.TimeoutExpired:
         # The subprocess was killed for exceeding the ceiling. No usable result;
         # handled as exit 4 below (after the telemetry scaffold is set up).
@@ -933,9 +997,12 @@ def run_iteration(
     # claude (fallback) or empty codex streams.
     if backend == "claude":
         signal_text, usage = parse_claude_output(captured)
-    else:
+    elif backend == "codex":
         signal_text = captured  # codex agent_message text
         usage = parse_codex_usage(jsonl_raw)
+    else:  # pidev -- token/cost via pi --mode json is deferred (Layer 2)
+        signal_text = captured
+        usage = None
 
     # 7. Parse + validate the exit signal.
     signal = parse_exit_signal(signal_text)
@@ -956,8 +1023,9 @@ def run_iteration(
 
     # Telemetry emit (best-effort, never fatal). The runner authors the
     # execution-envelope sidecar; the worker still owns devlog.jsonl. codex's
-    # model is config-driven and not known to the runner (left null in v1).
-    model_used = model if backend == "claude" else None
+    # model is config-driven and not known to the runner (left null in v1);
+    # pidev is invoked with an explicit --model, so its model is recorded.
+    model_used = model if backend in ("claude", "pidev") else None
 
     # Telemetry config: pricing table (bundled + [telemetry.pricing] overrides)
     # for cost/tier, and the opt-in tests oracle. All best-effort; a malformed
@@ -1232,10 +1300,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        choices=("claude", "codex"),
+        choices=("claude", "codex", "pidev"),
         default="claude",
-        help="Which backend to invoke. Supports 'claude' (uses --model / "
-             "--max-budget-usd) and 'codex' (config-driven; CLI flags ignored).",
+        help="Which backend to invoke: 'claude' (uses --model / "
+             "--max-budget-usd), 'codex' (config-driven), or 'pidev' (pi.dev "
+             "over OpenRouter; uses --model as the OpenRouter model id).",
     )
     parser.add_argument(
         "--model",

@@ -96,6 +96,17 @@ class TestLoadRunConfig(unittest.TestCase):
             with self.assertRaises(config.ConfigError):
                 config.load_run_config(root)
 
+    def test_pidev_is_a_valid_backend(self):
+        with TempDir() as root:
+            _write(
+                root,
+                '[run]\nbackend = "pidev"\nmodel = "openai/gpt-4o-mini"\n'
+                '[run.backends]\nexecute = "pidev"\n',
+            )
+            cfg = config.load_run_config(root)
+            self.assertEqual(cfg.backend, "pidev")
+            self.assertEqual(cfg.backends, {"execute": "pidev"})
+
     def test_found_from_subdir(self):
         with TempDir() as root:
             _write(root, '[run]\nbackend = "codex"\n')

@@ -667,7 +667,7 @@
     "id": "FU-65",
     "title": "pidev Layer 0: integrate pi.dev as a first-class backend (DESIGN_backend sec 3.8.1/3.9)",
     "kind": "structural-refactor",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-08-17",
     "context": "Mechanical sec 1.1 backend add, modeled on codex but prompt via @file not stdin. Surface: config._BACKENDS += pidev; run_iteration.invoke_pidev (pi -p @promptfile --no-session -nc --no-skills --no-extensions --provider openrouter --model <id> --mode text; stdin=DEVNULL [MANDATORY, sec 3.8.2 lesson]; env OPENROUTER_API_KEY; RECORD the model [codex leaves model_used=None L960]; --mode json when tokens/cost wanted) + dispatch branch + the hardcoded backend guards backend not in (claude,codex) ~L823 + run/validate sites; assemble_context adapter_path->PIDEV.md + tool-rules heading 'Pidev-Specific Tool Rules' + --backend choices; scaffold _ADAPTER_TARGET; cli --backend for run+init; doctor _check_backends PATH probe; NEW i2c/data/adapters/PIDEV.md (model on codex.md; Output Contract must say 'pick ONE of 0|2' per the gpt-4o-mini template-copy quality note, sec 3.8.2); pricing.json OpenRouter rates+tier; test_prompt_golden BACKENDS += pidev (regen goldens w/ PIDEV.md fixture) + invoke/parse/dispatch/config tests. v1 = single [run].model (pidev-only projects), provider defaults openrouter. Worked by hand (i2c not self-hosted); shared tree is load-bearing -> keep green+committed.",
     "trigger": "Chosen to start next (with Layer 1). Ops prereq for bot/autonomous pidev runs: OPENROUTER_API_KEY must be in the worker env (currently only in diplomat/.env, not i2c-bot.env).",
@@ -686,7 +686,9 @@
     "refs": [
       "DESIGN_backend_v1.md",
       "FU-61"
-    ]
+    ],
+    "closed": "2026-08-17",
+    "resolution": "Shipped Layer 0: pidev is a first-class backend (--backend pidev / [run.backends]=pidev), invoked as pi -p @file --provider openrouter --model <id> --mode text with stdin closed (FU-61 spike path). Adapter PIDEV.md + OpenRouter pricing + doctor pi probe + scaffold/cli surfaces. model_used records the OpenRouter id. Single [run].model for now; per-action model is FU-66 (Layer 1). Green: goldens (claude/codex unchanged + 10 new pidev), affected+ripple suites, 2 new coverage tests, validate_changes. Follow-ups: real i2c run --backend pidev e2e on the Pi; shared Output-Contract reminder still prints 'EXIT: 0 | 2'."
   },
   {
     "id": "FU-66",
