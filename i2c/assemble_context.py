@@ -219,6 +219,7 @@ def _load_optional_array(root: Path, name: str) -> list[Any]:
 
 _MARKER_RE = re.compile(r"<!--\s*assembler:([A-Za-z_][A-Za-z0-9_]*)(?:=([^\s>-]+))?\s*-->")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 def read_markdown(path: Path) -> str:
@@ -245,6 +246,25 @@ def heading_level(line: str) -> int | None:
     if not m:
         return None
     return len(m.group(1))
+
+
+def heading_levels(lines: list[str]) -> list[int | None]:
+    """Per-line heading level, with lines inside fenced code blocks forced to None."""
+    levels: list[int | None] = []
+    fence: str | None = None
+    for ln in lines:
+        m = _FENCE_RE.match(ln)
+        if fence is None:
+            if m:
+                fence = m.group(1)
+                levels.append(None)
+            else:
+                levels.append(heading_level(ln))
+        else:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and ln.strip() == m.group(1):
+                fence = None
+            levels.append(None)
+    return levels
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +355,9 @@ def strip_conditional_sections(markdown: str, ctx: "AssemblerContext") -> str:
     """
     lines = markdown.splitlines()
     n = len(lines)
+    levels = heading_levels(lines)
+
+    # First pass: locate
 
     # First pass: locate (heading_index, marker_dict) for every heading. A
     # marker is recognized only if it appears on a line within the heading's
@@ -345,14 +368,14 @@ def strip_conditional_sections(markdown: str, ctx: "AssemblerContext") -> str:
 
     i = 0
     while i < n:
-        level = heading_level(lines[i])
+        level = levels[i]
         if level is None:
             i += 1
             continue
         # Find next heading of <= level (or EOF).
         end = n
         for j in range(i + 1, n):
-            lvl_j = heading_level(lines[j])
+            lvl_j = levels[j]
             if lvl_j is not None and lvl_j <= level:
                 end = j
                 break
@@ -555,8 +578,8 @@ def _extract_after_first_h2(markdown: str) -> str:
     """
     lines = markdown.splitlines()
     trailing_nl = markdown.endswith("\n")
-    for i, ln in enumerate(lines):
-        if heading_level(ln) == 2:
+    for i, lvl in enumerate(heading_levels(lines)):
+        if lvl == 2:
             tail = "\n".join(lines[i:])
             if trailing_nl and not tail.endswith("\n"):
                 tail += "\n"
@@ -574,10 +597,11 @@ def _extract_section_by_heading(markdown: str, heading_text: str) -> str | None:
     """
     lines = markdown.splitlines()
     n = len(lines)
+    levels = heading_levels(lines)
     start_idx: int | None = None
     start_level: int | None = None
     for i, ln in enumerate(lines):
-        lvl = heading_level(ln)
+        lvl = levels[i]
         if lvl is None:
             continue
         m = _HEADING_RE.match(ln)
@@ -589,7 +613,7 @@ def _extract_section_by_heading(markdown: str, heading_text: str) -> str | None:
         return None
     end = n
     for j in range(start_idx + 1, n):
-        lvl_j = heading_level(lines[j])
+        lvl_j = levels[j]
         if lvl_j is not None and lvl_j <= start_level:
             end = j
             break

@@ -636,58 +636,6 @@ start the first execute step in this invocation.
 
 ---
 
-# Emit exit signal.
-```
-
-### Build phase, non-leaf module (with dependency probe)
-
-Phase 11 (`orchestrator`, Build, depends on `event_store`). Probe runs
-first; mismatch surfaces; one step added to handle the gap.
-
-```bash
-i2c state append-record phases.json '{"id":11,"module":"orchestrator","title":"Pipeline + event loop","regime":"build","dependencies":["event_store"],"status":"pending"}'
-
-# Probe finds idempotency_key kwarg is in the real surface but not the fake.
-i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"probe","outcome":"complete","summary":"Probed event_store: append() takes idempotency_key kwarg in real impl; fake omits it. Will adapt orchestrator to pass it; bug logged for fake.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T07:30:00Z"}'
-
-i2c state append-record decisions.json '{"id":"D-22","phase":11,"title":"Orchestrator passes idempotency_key","status":"closed","priority":"high","decision":"Generate idempotency_key from (worker_id, action_id, timestamp_minute). Pass through on every event_store.append call.","rationale":"Probe surfaced gap; adopting the real surface now avoids a retrofit."}'
-
-i2c state append-record steps.json '{"phase":11,"step":1,"title":"Pipeline topology with DI","status":"pending"}'
-i2c state append-record steps.json '{"phase":11,"step":2,"title":"Event loop with debounced extraction","status":"pending"}'
-i2c state append-record steps.json '{"phase":11,"step":3,"title":"Slash command routing","status":"pending"}'
-i2c state append-record steps.json '{"phase":11,"step":4,"title":"Idempotency_key generation + boundary test","status":"pending","notes":"Added after dep-probe surfaced gap. Boundary test exercises real event_store through orchestrator."}'
-
-i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"plan","outcome":"complete","summary":"Phase 11 (orchestrator, Build, non-leaf): 4 steps after dep-probe added step 4 for idempotency_key. D-22 records the decision.","contracts":[],"timestamp":"2026-06-04T07:45:00Z"}'
-
-git add .state/
-git commit -m "11: plan — orchestrator pipeline + event loop"
-
-i2c state set project.json state=tests  # Build regime → TESTS next
-```
-
-### Refine phase
-
-Phase 14 (`formatting`, Refine, no dependencies). Goal-based, time-budgeted.
-
-```bash
-i2c state append-record phases.json '{"id":14,"module":"formatting","title":"Telegram message formatting polish","regime":"refine","dependencies":[],"status":"pending"}'
-
-i2c state append-record decisions.json '{"id":"D-30","title":"Phase 14 goal","status":"closed","priority":"high","decision":"MarkdownV2 escaping handles all edge cases observed in last week of group activity; messages render correctly on iOS, Android, Web.","rationale":"Recurring formatting bugs in production; correctness is perceptual."}'
-
-i2c state append-record decisions.json '{"id":"D-31","title":"First item: 3-paragraph workflow update","status":"open","priority":"high","decision":"First iteration produces a 3-paragraph workflow update with code fences, bold, bullet list; show to operator.","rationale":"Smallest input that exercises the markdown surface."}'
-
-i2c state set project.json budget_type=time time_budget_seconds=10800 time_started_at=2026-06-04T07:30:00Z
-
-i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"plan","outcome":"complete","summary":"Phase 14 (formatting, Refine): 3-hour time budget. Goal D-30 closed; first item D-31 open. No step pre-plan.","contracts":[],"timestamp":"2026-06-04T07:45:00Z"}'
-
-git add .state/
-git commit -m "14: plan — telegram formatting Refine"
-
-i2c state set project.json state=execute  # Refine regime → execute directly (no TESTS)
-```
-
----
-
 ═══════════════════════════════════════════════
 OUTPUT CONTRACT — REMINDER
 ═══════════════════════════════════════════════

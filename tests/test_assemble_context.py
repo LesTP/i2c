@@ -162,6 +162,22 @@ class TestHeadingParsing(unittest.TestCase):
         self.assertIsNone(ac.heading_level("regular text"))
         self.assertIsNone(ac.heading_level("#no-space"))
 
+    def test_heading_levels_ignore_fenced_lines(self):
+        lines = ["## A", "```bash", "# comment", "```", "~~~", "## fake", "~~~", "### B"]
+        self.assertEqual(ac.heading_levels(lines), [2, None, None, None, None, None, None, 3])
+
+    def test_heading_levels_fence_closes_only_on_matching_char(self):
+        lines = ["````", "~~~", "# still code", "```", "# still code", "````", "# real"]
+        self.assertEqual(ac.heading_levels(lines)[-1], 1)
+        self.assertEqual(ac.heading_levels(lines)[:-1], [None] * 6)
+
+    def test_extract_section_ignores_fenced_heading(self):
+        md = "## Target\nbody\n```\n## fake\n```\nmore\n## Next\nnext\n"
+        out = ac._extract_section_by_heading(md, "Target")
+        self.assertIn("more", out)
+        self.assertNotIn("## Next", out)
+        self.assertIsNone(ac._extract_section_by_heading(md, "fake"))
+
 
 # ---------------------------------------------------------------------------
 # Shared snapshot renderers — against the fixture
@@ -516,6 +532,17 @@ class TestOmitInPromptEvaluator(unittest.TestCase):
             self.assertNotIn("## Drop", out)
             self.assertNotIn("operator-only prose", out)
             self.assertIn("## Tail", out)
+
+    def test_strips_through_fenced_hash_comments(self):
+        with TempProject():
+            md = (
+                "## Keep\nbody\n\n## Examples\n"
+                "<!-- assembler:omit_in_prompt -->\n\n"
+                "### Ex1\n```bash\n# Edit the files.\ni2c state set x\n```\n\n"
+                "### Ex2\n~~~\n# another\n~~~\n\n## Tail\ntail body\n"
+            )
+            out = ac.strip_conditional_sections(md, self._ctx())
+            self.assertEqual(out, "## Keep\nbody\n\n## Tail\ntail body\n")
 
 
 # ---------------------------------------------------------------------------

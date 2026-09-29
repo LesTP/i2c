@@ -709,5 +709,80 @@
     ],
     "closed": "2026-08-18",
     "resolution": "Shipped Layer 1: per-action model via [run.models] (parallel to [run.backends]). config.py parses/validates the table (action keys checked; free-form string model ids); run_iteration resolves per-action model with precedence --model flag > [run.models][action] > [run].model > default; cli.cmd_run forwards flag/map/default separately. Enables cheap-for-execute / strong-for-plan routing across the pidev OpenRouter panel (D-bench-7) + mixed-backend model attribution. Green: test_config (+4), test_cli (updated 2 + new map test), test_run_iteration (+3 resolution tests); validate_changes clean."
+  },
+  {
+    "id": "FU-67",
+    "title": "Assembler section parsing is not code-fence aware - omit_in_prompt sections leak into every action prompt",
+    "kind": "bugfix",
+    "status": "closed",
+    "opened": "2026-09-29",
+    "context": "heading_level() is per-line with no fence tracking, so a bash comment like '# Edit the files' inside a fenced block reads as an H1. strip_conditional_sections() ends an omit_in_prompt section at the first such line; the rest of Examples/Known-tooling-gaps leaks into the worker prompt with a stray closing fence and example phase/step numbers (11.3, 5.2) that contradict the real ones. Locked into goldens for every action x backend. _extract_section_by_heading and _extract_after_first_h2 share the blind spot.",
+    "trigger": "pidev-spike review 2026-09-29: spike_prompt.md lines 474-523 show leaked Examples body without its header.",
+    "priority": "now",
+    "files": [
+      "i2c/assemble_context.py",
+      "tests/test_assemble_context.py",
+      "tests/golden"
+    ],
+    "refs": [
+      "FU-61"
+    ],
+    "closed": "2026-09-29",
+    "resolution": "Fence-aware heading detection: new heading_levels() in assemble_context.py tracks backtick/tilde fences; strip_conditional_sections, _extract_section_by_heading, _extract_after_first_h2 use it. omit_in_prompt sections no longer leak. Goldens regenerated: deletions only (21-112 lines per prompt golden, all inside omit sections). +4 unit tests; full suite 733 passed."
+  },
+  {
+    "id": "FU-68",
+    "title": "Exit-signal parser may accept the literal placeholder 'EXIT: 0 | 2' as EXIT 0",
+    "kind": "bugfix",
+    "status": "open",
+    "opened": "2026-09-29",
+    "context": "FU-61 spike stdout was exactly 'EXIT: 0 | 2' (gpt-4o-mini copied the template) and was scored as success. Placeholder since changed to '<0 or 2>', but the parser/schema should reject an ambiguous value so a copied template (or a failed run that copies it) cannot read as success.",
+    "trigger": "pidev-spike review 2026-09-29: spike_stdout.txt.",
+    "priority": "next",
+    "files": [
+      "i2c/run_iteration.py",
+      "schemas/exit_signal.schema.json"
+    ],
+    "refs": [
+      "FU-61"
+    ]
+  },
+  {
+    "id": "FU-69",
+    "title": "Worker-supplied devlog timestamps are untrustworthy - have i2c state append stamp/override them",
+    "kind": "structural-refactor",
+    "status": "open",
+    "opened": "2026-09-29",
+    "context": "gpt-4o-mini wrote timestamp 2023-10-05T12:00:00Z into pidev-spike/.state/devlog.jsonl on 2026-08-17 - cheap models have no clock. With pidev routing cheap OpenRouter models to execute, devlog ordering/audit and telemetry correlation degrade. i2c state append (devlog) should set timestamp itself (or override when absent/implausible) and instructions should drop the 'use the current time' burden.",
+    "trigger": "pidev-spike review 2026-09-29: .state/devlog.jsonl.",
+    "priority": "next",
+    "files": [
+      "i2c/state_cli.py",
+      "schemas/devlog_entry.schema.json",
+      "i2c/data/instructions"
+    ],
+    "refs": [
+      "FU-61",
+      "FU-66"
+    ]
+  },
+  {
+    "id": "FU-70",
+    "title": "Real 'i2c run --backend pidev' end-to-end on pirozhok (pidev-spike harness)",
+    "kind": "experiment-log",
+    "status": "open",
+    "opened": "2026-09-29",
+    "context": "FU-61 spike hand-invoked pi -p; Layer 0 resolution left 'real i2c run --backend pidev e2e on the Pi' as an untracked follow-up. Use p:\\shared\\pidev-spike: reset .state from review back to plan/execute, set [run.backends]/[run.models] to pidev + OpenRouter ids, run from pirozhok (FU-28), check commit, telemetry (--mode json deferred check 5), and exit parsing.",
+    "trigger": "Layer 0 pidev resolution follow-up; pidev-spike parked at state=review.",
+    "priority": "next",
+    "files": [
+      "p:/shared/pidev-spike/i2c.toml",
+      "i2c/run_iteration.py"
+    ],
+    "refs": [
+      "FU-61",
+      "FU-66",
+      "DESIGN_backend_v1.md"
+    ]
   }
 ]
