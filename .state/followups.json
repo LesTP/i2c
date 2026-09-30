@@ -784,5 +784,26 @@
       "FU-66",
       "DESIGN_backend_v1.md"
     ]
+  },
+  {
+    "id": "FU-71",
+    "title": "Enforce the no-hand-edit .state/ rule: Devmate PreToolUse hook (ask) + runner/pre-commit .state validation backstop",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-09-29",
+    "context": "WHY: .state/ is the single source of truth the loop, bot (/audit fu), dashboard and CLI all read; a hand edit that breaks the schema does not fail where it is made - it silently poisons the file and the next *legitimate* write fails far from the cause. Concretely: masorah's backlog was unwritable for a month and nobody knew until an unrelated i2c fu add on 2026-09-29 failed, and fixing it then needed a human-approved hand edit (itself risky - the edit tool corrupted the JSON twice during that fix). The existing guard does not work: the i2c.md rule (NEVER hand-edit .state/) is only advisory context, and a 2026-08-24 laptop Devmate session wrote masorah FU-4..8 directly with off-schema kinds/priority (bug, enhancement, test-gap, done) with that rule loaded. Only the i2c CLI validates; edit tools and shell/python writes bypass it. So the rule needs enforcement, not rewording. WHAT: (1) Devmate PreToolUse hook matching file-edit tools on paths under .state\\ with decision=ask (not deny), so a one-off human-approved exception stays possible but every attempt is surfaced. (2) Backstop for shell/python writes the hook cannot reliably catch: validate all .state/ files before the runner commits (and/or an opt-in pre-commit hook in consumer projects), so a bad write is caught at the next commit instead of the next unrelated write. Doctor already covers followups.json (46a2865). Load the agent_customization skill for hook format.",
+    "trigger": "masorah followups.json cleanup 2026-09-29/30; rule existed since 2026-06-30 but did not prevent it.",
+    "priority": "next",
+    "files": [
+      "~/.llms/hooks.json",
+      "i2c/run_iteration.py",
+      "i2c/invariants.py",
+      "i2c/validate.py"
+    ],
+    "refs": [
+      "46a2865",
+      "masorah FU-4..FU-8",
+      "FU-67"
+    ]
   }
 ]
