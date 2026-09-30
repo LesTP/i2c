@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -163,6 +165,39 @@ class TestGitTrust(unittest.TestCase):
 
     def test_run_checks_includes_git_trust(self):
         self.assertIn("git trust", {c.name for c in doctor.run_checks().checks})
+
+
+class TestProjectFollowups(unittest.TestCase):
+    def _check_in_project(self, followups: str | None) -> doctor.Check:
+        from i2c import scaffold
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scaffold.init_project(root, name="x", backends=("claude",))
+            fu = root / ".state" / "followups.json"
+            if followups is None:
+                fu.unlink(missing_ok=True)
+            else:
+                fu.write_text(followups, encoding="utf-8")
+            cwd = os.getcwd()
+            os.chdir(root)
+            try:
+                return doctor._check_project()
+            finally:
+                os.chdir(cwd)
+
+    def test_absent_followups_ok(self):
+        self.assertEqual(self._check_in_project(None).status, doctor.OK)
+
+    def test_valid_followups_ok(self):
+        body = '[{"id": "FU-1", "title": "t", "kind": "bugfix", "status": "open"}]'
+        self.assertEqual(self._check_in_project(body).status, doctor.OK)
+
+    def test_invalid_followups_kind_fails(self):
+        body = '[{"id": "FU-1", "title": "t", "kind": "bug", "status": "open"}]'
+        check = self._check_in_project(body)
+        self.assertEqual(check.status, doctor.FAIL)
+        self.assertIn("followups.json", check.detail)
 
 
 if __name__ == "__main__":

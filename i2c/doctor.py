@@ -227,6 +227,8 @@ def _check_project() -> Check:
     try:
         for name in ("project.json", "phases.json", "steps.json", "decisions.json"):
             v.validate_state_file(state_dir / name)
+        if (state_dir / "followups.json").is_file():
+            v.validate_state_file(state_dir / "followups.json")
         v.validate_devlog_jsonl(state_dir / "devlog.jsonl")
     except Exception as e:
         return Check(
