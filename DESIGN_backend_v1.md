@@ -486,8 +486,7 @@ assembled prompt as the sole context (no `AGENTS.md`/`CLAUDE.md` auto-read).
 Stage-2 / bot runs that route an action to `pidev` need the key in the worker's
 env (add it to `i2c-bot.env` or source it).
 
-**Spike artifacts** (on the share; delete when done): `pidev-spike/` project,
-`pidev_spike.py`, `pidev_probe.py`, `pidev_probe2.py`, `pidev_find_key.py`.
+**Spike artifacts** (on the share): `pidev-spike/` (driver inside), delete when FU-70 closes.
 
 ---
 
