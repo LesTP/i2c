@@ -274,6 +274,32 @@ class TestExitSignalParsing(unittest.TestCase):
     def test_parse_exit_signal_returns_none_when_missing(self):
         self.assertIsNone(ri.parse_exit_signal("nothing relevant"))
 
+    def test_parse_exit_signal_last_exit_line_wins(self):
+        text = (
+            "Per the contract I will end with:\nEXIT: 0\nREASON: example\n"
+            "...the test still fails...\nEXIT: 2\nREASON: real failure\n"
+        )
+        signal = ri.parse_exit_signal(text)
+        self.assertEqual(signal, {"exit_code": 2, "reason": "real failure"})
+
+    def test_parse_exit_signal_malformed_last_line_does_not_fall_back(self):
+        text = "EXIT: 0\nREASON: drafted early\n...\nEXIT: 0 | 2\nREASON: copied template\n"
+        self.assertIsNone(ri.parse_exit_signal(text))
+
+    def test_parse_exit_signal_rejects_template_placeholders(self):
+        for placeholder in ("0 | 2", "<0 or 2>", "0|2", ""):
+            with self.subTest(placeholder=placeholder):
+                text = f"EXIT: {placeholder}\nREASON: x\n"
+                self.assertIsNone(ri.parse_exit_signal(text))
+
+    def test_parse_exit_signal_reason_only_after_last_exit(self):
+        text = "REASON: stale earlier reason\nEXIT: 0\n"
+        self.assertEqual(ri.parse_exit_signal(text), {"exit_code": 0})
+
+    def test_parse_exit_signal_tolerates_crlf(self):
+        text = "work done\r\nEXIT: 0\r\nREASON: ok\r\n"
+        self.assertEqual(ri.parse_exit_signal(text), {"exit_code": 0, "reason": "ok"})
+
 
 class TestCloseInvariantHalt(unittest.TestCase):
     """A CLOSE worker that doesn't set state=audit_boundary must trip FU-22."""

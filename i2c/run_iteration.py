@@ -86,7 +86,8 @@ EXIT_NOT_READY = 5
 
 # Regexes for the 2-line exit signal. Tolerant to surrounding whitespace
 # so the parser succeeds when claude pads with trailing blank lines.
-RE_EXIT = re.compile(r"^EXIT:\s*([02])\s*$", re.MULTILINE)
+RE_EXIT_LINE = re.compile(r"^EXIT:(.*)$", re.MULTILINE)
+RE_EXIT_VALUE = re.compile(r"\s*([02])\s*")
 RE_REASON = re.compile(r"^REASON:\s*(.+?)\s*$", re.MULTILINE)
 
 
@@ -207,16 +208,24 @@ def parse_exit_signal(output: str) -> dict[str, Any] | None:
     """Extract the 2-line exit signal from worker output.
 
     Returns a dict with ``exit_code`` and ``reason``. Returns ``None`` when
-    the EXIT line is missing (caller treats as exit_code 2). The structured
+    the EXIT line is missing or malformed (caller treats as exit_code 2).
+    The LAST ``EXIT:`` line is authoritative and the reason is read only
+    after it: a worker may quote or draft an EXIT line mid-output (pidev
+    hands the runner its whole stdout), and an earlier ``EXIT: 0`` must not
+    mask a final ``EXIT: 2`` or a malformed final line. The structured
     state in ``.state/project.json`` is the canonical source for everything
     else — action_type, action_id, step counts are recoverable from there
     or from what the runner dispatched.
     """
-    m_exit = RE_EXIT.search(output)
-    if not m_exit:
+    exit_lines = list(RE_EXIT_LINE.finditer(output))
+    if not exit_lines:
         return None
-    signal: dict[str, Any] = {"exit_code": int(m_exit.group(1))}
-    m_reason = RE_REASON.search(output)
+    last = exit_lines[-1]
+    m_value = RE_EXIT_VALUE.fullmatch(last.group(1))
+    if not m_value:
+        return None
+    signal: dict[str, Any] = {"exit_code": int(m_value.group(1))}
+    m_reason = RE_REASON.search(output, last.end())
     if m_reason:
         signal["reason"] = m_reason.group(1)
     return signal

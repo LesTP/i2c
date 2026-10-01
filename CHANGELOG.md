@@ -119,6 +119,13 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Fixed
 
+- **The exit-signal parser now reads the last `EXIT:` line, not the first (FU-68).**
+  Previously an `EXIT: 0` that the worker quoted or drafted mid-output won over
+  its real final `EXIT: 2`, so a failed iteration was recorded as a success.
+  This mattered most for pidev, whose whole stdout is parsed. Now the last
+  `EXIT:` line decides; if it isn't exactly `0` or `2` (e.g. a copied
+  `0 | 2` template), the signal is malformed (`exit 2`) rather than falling
+  back to an earlier line, and `REASON` is read only after that final line.
 - **PLAN no longer wedges single-document (Pattern B) projects (FU-48).**
   Previously PLAN could write a `module` onto a phase record even for a project
   with no `ARCH_<module>.md`, after which the assembler hard-required that file
