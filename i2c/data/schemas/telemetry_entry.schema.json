@@ -21,7 +21,7 @@
     },
     "exit_code": { "type": ["integer", "null"], "enum": [0, 2, 3, 4, null] },
     "mode": { "type": "string", "enum": ["autonomous", "supervised"] },
-    "backend": { "type": "string", "enum": ["claude", "codex"] },
+    "backend": { "type": "string", "enum": ["claude", "codex", "pidev"] },
     "model": { "type": ["string", "null"] },
     "tier": { "type": ["string", "null"] },
     "timestamp": { "type": "string", "format": "date-time" },

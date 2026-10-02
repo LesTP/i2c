@@ -76,6 +76,14 @@ class TestSchema(unittest.TestCase):
         with self.assertRaises(ValueError):
             v.validate_json_schema(_valid_row(exit_code=1), self.schema)
 
+    def test_backend_enum_matches_config_backends(self):
+        # A backend missing here makes every row it produces fail validation,
+        # and the best-effort writer drops it with only a stderr NOTE.
+        enum = self.schema["properties"]["backend"]["enum"]
+        self.assertEqual(set(enum), set(cfg._BACKENDS))
+        for backend in cfg._BACKENDS:
+            v.validate_json_schema(_valid_row(backend=backend), self.schema)
+
     def test_phase_zero_allowed(self):
         # First PLAN dispatches while project.phase is still 0.
         v.validate_json_schema(_valid_row(phase=0, action="plan"), self.schema)
@@ -272,6 +280,28 @@ class TestRunnerWritesTelemetry(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["backend"], "codex")
             self.assertIsNone(rows[0]["model"])
+
+    def test_pidev_row_written_with_model(self):
+        with TempProject() as p:
+            def fake_pidev(prompt, *, cwd, model, timeout=None):
+                return 0, signal_block(exit_code=0, reason="ok")
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="pidev", model="openai/gpt-4o-mini",
+                    max_budget_usd=5.0, pidev_invoker=fake_pidev,
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            self.assertNotIn("telemetry skipped", err.getvalue())
+            rows = self._telemetry_rows(p.root)
+            self.assertEqual(len(rows), 1)
+            v.validate_jsonl(
+                p.root / ".state" / "telemetry.jsonl", v.TELEMETRY_ENTRY_SCHEMA)
+            self.assertEqual(rows[0]["backend"], "pidev")
+            self.assertEqual(rows[0]["model"], "openai/gpt-4o-mini")
+            # Token/cost capture for pidev is FU-72; until then usage is null.
+            self.assertIsNone(rows[0]["tokens_in"])
 
     def test_telemetry_failure_is_non_fatal(self):
         with TempProject() as p:
