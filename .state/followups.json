@@ -809,5 +809,46 @@
       "masorah FU-4..FU-8",
       "FU-67"
     ]
+  },
+  {
+    "id": "FU-72",
+    "title": "pidev token/cost telemetry (Layer 2): parse pi --mode json usage into telemetry.jsonl",
+    "kind": "structural-refactor",
+    "status": "open",
+    "opened": "2026-10-02",
+    "context": "invoke_pidev runs pi with --mode text and the runner sets usage=None for pidev (run_iteration.py ~L1019), so every pidev iteration records no tokens or cost_usd. This was the FU-61 spike check 5, deferred to Stage 2 and never wired. It defeats the purpose of pidev, which is pricing cheap OpenRouter models for the benchmark (D-bench-7). It also means no dollar ceiling applies to pidev runs (only the FU-53 wall-clock guard). Fix: switch to (or add) --mode json, parse usage the way parse_codex_usage does, and still extract the final message for the EXIT/REASON parser; derive cost_usd/tier from pricing.json OpenRouter rates (or OpenRouter-reported cost if pi surfaces it). Naming: the code comment calls this Layer 2, but DESIGN_backend_v1 sec 3.9 defines L2 as the i2c models review panel. Reconcile the doc when this lands.",
+    "trigger": "Needs a real pi --mode json sample. Capture one on pirozhok during the FU-70 e2e run, then wire the parser against it.",
+    "priority": "next",
+    "files": [
+      "i2c/run_iteration.py",
+      "i2c/telemetry.py",
+      "i2c/data/pricing.json",
+      "DESIGN_backend_v1.md"
+    ],
+    "refs": [
+      "FU-61",
+      "FU-65",
+      "FU-70",
+      "DESIGN_backend_v1.md"
+    ]
+  },
+  {
+    "id": "FU-73",
+    "title": "pidev rate-limit / quota detection (exit 3) in detect_rate_limit",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-10-02",
+    "context": "detect_rate_limit() only handles claude (codex is FU-42); for pidev it returns None, so an OpenRouter 429 or credit exhaustion surfaces as a generic exit 2 (signal missing/malformed) instead of the retryable exit 3, and could be mistaken for a worker failure. pidev is likely to hit this first: cheap/free OpenRouter models are heavily rate-limited and the account is prepaid credit. Same safety rule as FU-42: never string-match model content (429/rate appear in normal output); match only a protocol-level anchor, i.e. a pi error event in --mode json output or a distinct process rc, verified from a real sample.",
+    "trigger": "Capture a real pidev rate-limit or out-of-credit sample (an OpenRouter :free model hits 429 quickly). Best done together with FU-72, since both depend on the pi --mode json stream.",
+    "priority": "next",
+    "files": [
+      "i2c/run_iteration.py"
+    ],
+    "refs": [
+      "FU-42",
+      "FU-72",
+      "FU-70",
+      "DESIGN_backend_v1.md"
+    ]
   }
 ]
