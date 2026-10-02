@@ -734,7 +734,7 @@
     "id": "FU-68",
     "title": "Exit-signal parser may accept the literal placeholder 'EXIT: 0 | 2' as EXIT 0",
     "kind": "bugfix",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-09-29",
     "context": "FU-61 spike stdout was exactly 'EXIT: 0 | 2' (gpt-4o-mini copied the template) and was scored as success. Placeholder since changed to '<0 or 2>', but the parser/schema should reject an ambiguous value so a copied template (or a failed run that copies it) cannot read as success.",
     "trigger": "pidev-spike review 2026-09-29: spike_stdout.txt.",
@@ -745,13 +745,15 @@
     ],
     "refs": [
       "FU-61"
-    ]
+    ],
+    "closed": "2026-10-01",
+    "resolution": "Premise was wrong for the runner: RE_EXIT already rejected the literal EXIT: 0 | 2 (returned None, i.e. exit 2); the spike was scored a success by its own driver (pidev_spike.py checked only startswith EXIT:). Fixed the real adjacent bug instead: the parser took the FIRST EXIT match, so an EXIT: 0 quoted mid-output (pidev parses whole stdout) masked a final EXIT: 2. Now the last EXIT: line is authoritative; a malformed final line is treated as malformed (exit 2, no fallback); REASON is read only after it. +5 tests. Commit bbf5b4c."
   },
   {
     "id": "FU-69",
     "title": "Worker-supplied devlog timestamps are untrustworthy - have i2c state append stamp/override them",
     "kind": "structural-refactor",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-09-29",
     "context": "gpt-4o-mini wrote timestamp 2023-10-05T12:00:00Z into pidev-spike/.state/devlog.jsonl on 2026-08-17 - cheap models have no clock. With pidev routing cheap OpenRouter models to execute, devlog ordering/audit and telemetry correlation degrade. i2c state append (devlog) should set timestamp itself (or override when absent/implausible) and instructions should drop the 'use the current time' burden.",
     "trigger": "pidev-spike review 2026-09-29: .state/devlog.jsonl.",
@@ -764,7 +766,9 @@
     "refs": [
       "FU-61",
       "FU-66"
-    ]
+    ],
+    "closed": "2026-10-01",
+    "resolution": "Timestamps are now stamped by i2c state, never by the worker: append devlog.jsonl and append-record decisions.json always set timestamp (UTC, Z suffix), overwriting a supplied value with a stderr note; update-record keeps a decision creation timestamp. Instructions no longer put timestamp in payloads or tell the model to use the current time; goldens regenerated; test_instruction_examples fails if an example supplies a clock-owned field. Stored-record schema unchanged. The Refine/Explore time budget (the other worker-supplied clock value, time_started_at) was removed outright rather than stamped: it was never enforced (schema v4 -> v5 migration)."
   },
   {
     "id": "FU-70",

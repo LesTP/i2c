@@ -85,7 +85,7 @@ cd /tmp/i2c-demo
 
 # Mark step 2.2 done and log it.
 i2c state complete steps.json --phase 2 --step 2 --commit abc1234
-i2c state append devlog.jsonl '{"phase":2,"step":2,"action":"execute","outcome":"complete","summary":"Reader API implemented.","contracts":[],"commit":"abc1234","timestamp":"2026-01-01T00:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":2,"step":2,"action":"execute","outcome":"complete","summary":"Reader API implemented.","contracts":[],"commit":"abc1234"}'
 
 # Re-check: step 2.2 now shows complete, steps_remaining drops.
 i2c status

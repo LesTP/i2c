@@ -362,8 +362,7 @@ i2c state append devlog.jsonl '{
   "action": "close",
   "outcome": "complete",
   "summary": "Phase 11 closed: tests pass; integration check vs event_store passes; 2 gotchas promoted; D-16, D-22 closed; ARCH_orchestrator.md propagated.",
-  "contracts": ["ARCH_orchestrator.md"],
-  "timestamp": "2026-06-04T11:00:00Z"
+  "contracts": ["ARCH_orchestrator.md"]
 }'
 ```
 

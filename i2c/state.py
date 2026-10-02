@@ -33,6 +33,10 @@ Subcommands:
 
 All writes are atomic: temp file in the same directory, then os.replace().
 Every write is validated against the registered schema before commit.
+
+Timestamps are stamped here, never taken from the caller: a worker model has
+no clock. ``devlog.jsonl`` and ``decisions.json`` records get ``timestamp`` on
+creation (a supplied value is overwritten).
 """
 
 from __future__ import annotations
@@ -42,10 +46,44 @@ import json
 import os
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from i2c import validate as v
+
+
+# ---------------------------------------------------------------------------
+# Clock-owned fields
+# ---------------------------------------------------------------------------
+
+CREATION_STAMPS = {"devlog.jsonl": "timestamp", "decisions.json": "timestamp"}
+
+
+def now_utc() -> str:
+    """Current UTC time as ISO 8601, second precision, ``Z`` suffix."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _stamp_creation(record: dict[str, Any], filename: str) -> None:
+    key = CREATION_STAMPS.get(filename)
+    if key is None:
+        return
+    if key in record:
+        sys.stderr.write(
+            f"NOTE: ignored supplied {key!r}; i2c state stamps it at write time.\n"
+        )
+    record[key] = now_utc()
+
+
+def _drop_clock_owned_updates(updates: dict[str, Any], filename: str) -> None:
+    key = CREATION_STAMPS.get(filename)
+    if key is not None and key in updates:
+        del updates[key]
+        sys.stderr.write(
+            f"NOTE: ignored {key!r} update; it records creation time and is "
+            f"set by i2c state.\n"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +393,7 @@ def cmd_append(args: argparse.Namespace) -> int:
             f"{sorted(v.JSONL_SCHEMA_BY_FILENAME)}\n"
         )
         return 2
+    _stamp_creation(record, path.name)
     try:
         append_validated_jsonl(path, record, schema_name=schema_name)
     except ValueError as e:
@@ -405,6 +444,7 @@ def cmd_append_record(args: argparse.Namespace) -> int:
         )
         return 2
 
+    _stamp_creation(record, path.name)
     data.append(record)
 
     schema = v.load_schema(schema_name)
@@ -484,6 +524,11 @@ def cmd_update_record(args: argparse.Namespace) -> int:
             f"ERROR: `update-record` requires a JSON array file; "
             f"{path} contains {type(data).__name__}.\n"
         )
+        return 2
+
+    _drop_clock_owned_updates(updates, path.name)
+    if not updates:
+        sys.stderr.write("ERROR: no updatable fields left after dropping clock-owned fields.\n")
         return 2
 
     schema_name = v.SCHEMA_BY_FILENAME.get(path.name)

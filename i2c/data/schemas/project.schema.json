@@ -51,18 +51,8 @@
     },
     "budget_type": {
       "type": "string",
-      "enum": ["steps", "time"],
-      "description": "Active phase's budget mode. 'steps' uses steps_remaining (Build regime); 'time' uses time_budget_seconds + time_started_at (Refine regime). Inferred from the current phase's regime when omitted."
-    },
-    "time_budget_seconds": {
-      "type": "integer",
-      "minimum": 0,
-      "description": "Total wall-clock budget for the current phase in seconds. Used when budget_type='time' (Refine regime). The state machine compares (now - time_started_at) against this value."
-    },
-    "time_started_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "ISO 8601 timestamp when the current time-budgeted phase started. Set when transitioning to execute under Refine regime; cleared at phase close."
+      "enum": ["steps"],
+      "description": "Active phase's budget mode. 'steps' uses steps_remaining (Build regime). Refine phases carry no budget: they end when the goal is met, on escalation, or at the driver's iteration cap. Inferred from the current phase's regime when omitted."
     }
   }
 }

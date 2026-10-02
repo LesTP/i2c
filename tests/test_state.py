@@ -285,6 +285,96 @@ class TestAppend(unittest.TestCase):
             self.assertEqual(rc, 2)
 
 
+FIXED_NOW = "2026-10-01T20:00:00Z"
+
+
+class TestClockOwnedFields(unittest.TestCase):
+    """Timestamps come from the CLI's clock, never from the caller (FU-69)."""
+
+    def setUp(self):
+        patcher = mock.patch.object(state, "now_utc", return_value=FIXED_NOW)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _devlog(self, **extra):
+        return json.dumps({
+            "phase": 1, "step": 2, "action": "execute",
+            "outcome": "complete", "summary": "wired", **extra,
+        })
+
+    def test_devlog_append_without_timestamp_is_stamped(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append", str(t.state_dir / "devlog.jsonl"), self._devlog())
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(err, "")
+            line = (t.state_dir / "devlog.jsonl").read_text().splitlines()[0]
+            self.assertEqual(json.loads(line)["timestamp"], FIXED_NOW)
+
+    def test_devlog_supplied_timestamp_is_overwritten(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append", str(t.state_dir / "devlog.jsonl"),
+                self._devlog(timestamp="2023-10-05T12:00:00Z"))
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("ignored supplied 'timestamp'", err)
+            line = (t.state_dir / "devlog.jsonl").read_text().splitlines()[0]
+            self.assertEqual(json.loads(line)["timestamp"], FIXED_NOW)
+
+    def test_decision_append_is_stamped_and_overwritten(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "decisions.json"
+            path.write_text("[]")
+            for i, extra in enumerate(({}, {"timestamp": "2023-01-01T00:00:00Z"}), 1):
+                rc, out, err = run_state("append-record", str(path), json.dumps({
+                    "id": f"D-{i}", "title": "t", "status": "open",
+                    "decision": "d", **extra,
+                }))
+                self.assertEqual(rc, 0, msg=err)
+            data = json.loads(path.read_text())
+            self.assertEqual([d["timestamp"] for d in data], [FIXED_NOW, FIXED_NOW])
+
+    def test_non_decision_append_record_is_not_stamped(self):
+        with TempStateDir() as t:
+            rc, out, err = run_state(
+                "append-record", str(t.state_dir / "steps.json"),
+                json.dumps({"phase": 1, "step": 3, "title": "x", "status": "pending"}))
+            self.assertEqual(rc, 0, msg=err)
+            data = json.loads((t.state_dir / "steps.json").read_text())
+            self.assertNotIn("timestamp", data[-1])
+
+    def test_decision_update_keeps_creation_timestamp(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "decisions.json"
+            write_json(path, [{
+                "id": "D-1", "title": "t", "status": "open", "decision": "d",
+                "timestamp": "2026-09-01T00:00:00Z",
+            }])
+            rc, out, err = run_state(
+                "update-record", str(path), "--match", "id=D-1",
+                "status=closed", "timestamp=2030-01-01T00:00:00Z")
+            self.assertEqual(rc, 0, msg=err)
+            self.assertIn("ignored 'timestamp' update", err)
+            rec = json.loads(path.read_text())[0]
+            self.assertEqual(rec["status"], "closed")
+            self.assertEqual(rec["timestamp"], "2026-09-01T00:00:00Z")
+
+    def test_decision_update_of_only_timestamp_is_rejected(self):
+        with TempStateDir() as t:
+            path = t.state_dir / "decisions.json"
+            write_json(path, [{"id": "D-1", "title": "t", "status": "open", "decision": "d"}])
+            rc, out, err = run_state(
+                "update-record", str(path), "--match", "id=D-1",
+                "timestamp=2030-01-01T00:00:00Z")
+            self.assertEqual(rc, 2)
+            self.assertNotIn("timestamp", json.loads(path.read_text())[0])
+
+
+class TestNowUtc(unittest.TestCase):
+    def test_format(self):
+        self.assertRegex(state.now_utc(), r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+
 # ---------------------------------------------------------------------------
 # `append-record` subcommand
 # ---------------------------------------------------------------------------

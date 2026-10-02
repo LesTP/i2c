@@ -318,8 +318,7 @@ i2c state append devlog.jsonl '{
   "action": "review",
   "outcome": "complete",
   "summary": "Phase 11 review: 0 Must, 2 Should (dead helper, redundant null check) applied, 1 Optional skipped (D-25). All tests pass after fixes.",
-  "contracts": [],
-  "timestamp": "2026-06-04T10:30:00Z"
+  "contracts": []
 }'
 ```
 

@@ -137,6 +137,39 @@ class TestMigrateProject(unittest.TestCase):
             self.assertEqual(data["schema_version"], migrate.CURRENT_SCHEMA_VERSION)
             v.validate_state_file(root / ".state" / "project.json")
 
+    def test_four_to_five_drops_retired_time_budget(self):
+        v4 = {
+            "schema_version": 4, "phase": 6, "state": "audit_boundary",
+            "gotchas": [], "budget_type": "steps",
+            "time_budget_seconds": 21600, "time_started_at": "2026-07-12T00:00:00Z",
+        }
+        with TempState(v4) as root:
+            result = migrate.migrate_project(root)
+            data = json.loads((root / ".state" / "project.json").read_text(encoding="utf-8"))
+            self.assertNotIn("time_budget_seconds", data)
+            self.assertNotIn("time_started_at", data)
+            self.assertEqual(data["budget_type"], "steps")
+            self.assertEqual(sum("retired" in c for c in result.changes), 2)
+            v.validate_state_file(root / ".state" / "project.json")
+
+    def test_four_to_five_drops_time_budget_type(self):
+        v4 = {"schema_version": 4, "phase": 2, "state": "execute", "budget_type": "time"}
+        with TempState(v4) as root:
+            migrate.migrate_project(root)
+            data = json.loads((root / ".state" / "project.json").read_text(encoding="utf-8"))
+            self.assertNotIn("budget_type", data)
+            v.validate_state_file(root / ".state" / "project.json")
+
+    def test_four_to_five_dry_run_writes_nothing(self):
+        v4 = {"schema_version": 4, "phase": 2, "state": "execute",
+              "budget_type": "time", "time_budget_seconds": 60}
+        with TempState(v4) as root:
+            before = (root / ".state" / "project.json").read_text(encoding="utf-8")
+            result = migrate.migrate_project(root, dry_run=True)
+            self.assertEqual(sum("retired" in c for c in result.changes), 2)
+            self.assertEqual(
+                (root / ".state" / "project.json").read_text(encoding="utf-8"), before)
+
     def test_already_current_is_noop(self):
         current = {
             "schema_version": migrate.CURRENT_SCHEMA_VERSION,

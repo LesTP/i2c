@@ -25,6 +25,7 @@ from pathlib import Path
 I2C_ROOT = Path(__file__).resolve().parent.parent
 INSTRUCTIONS_DIR = I2C_ROOT / "i2c" / "data" / "instructions"
 
+from i2c import state
 from i2c import validate as v
 
 # file token in the state.py command → (schema filename, is_array_file).
@@ -102,6 +103,16 @@ class TestInstructionJsonExamples(unittest.TestCase):
                 failures.append(f"{md.name}: not valid JSON ({e}): {raw[:60]}...")
                 continue
             schema_name, is_array = _RECORD_SCHEMA[file_token]
+            # Examples are CLI payloads: clock-owned fields must be absent
+            # (FU-69) and are stamped by i2c state before validation.
+            owned = state.CREATION_STAMPS.get(file_token)
+            if owned is not None and owned in data:
+                failures.append(
+                    f"{md.name} → {file_token}: example supplies clock-owned "
+                    f"{owned!r}; i2c state stamps it")
+                continue
+            if owned is not None:
+                data[owned] = state.now_utc()
             if schema_name not in schema_cache:
                 s = v.load_schema(schema_name)
                 schema_cache[schema_name] = s["items"] if is_array else s

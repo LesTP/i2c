@@ -253,7 +253,7 @@ your plan devlog summary.
 i2c state append devlog.jsonl '{
   "phase": 11, "step": null, "action": "plan", "outcome": "blocked",
   "summary": "Escalating: <trigger>. <what you observed>. <what unblocks>.",
-  "contracts": [], "timestamp": "2026-06-04T07:30:00Z"
+  "contracts": []
 }'
 i2c state set project.json state=audit_escalation
 # Emit exit signal: EXIT 2; REASON matches the trigger.
@@ -272,8 +272,8 @@ human?*
 | Regime | Criterion | Budget mechanism |
 |--------|-----------|------------------|
 | **Build** | Yes — tests, type checks, objective criteria settle correctness | Step count (`project.json.steps_remaining`) |
-| **Refine** | No — perception, taste, or human judgment settles correctness | Wall-clock time (`project.json.time_budget_seconds`) |
-| **Explore** | The output is a decision, not shipping code | Wall-clock time, with an explicit decision as exit condition |
+| **Refine** | No — perception, taste, or human judgment settles correctness | None — iterate toward the stated goal; ends when it is met, on escalation, or at the driver's iteration cap |
+| **Explore** | The output is a decision, not shipping code | None — the closed decision is the exit condition |
 
 Common examples:
 - Data models, parsers, integration wiring, build config → **Build**
@@ -395,7 +395,7 @@ directly from PLAN.
 #### 6b. Refine regime
 
 Do **not** pre-list steps. Refine work emerges iteratively from
-show → react → adjust cycles. Plan a **time budget**, not a step count.
+show → react → adjust cycles. Plan a **goal**, not a step count.
 
 1. State the goal in the phase record's `title` (already written in
    step 4) and add a longer-form goal description as a decision:
@@ -415,17 +415,7 @@ show → react → adjust cycles. Plan a **time budget**, not a step count.
    Use `status: "closed"` for goal statements — they are immediate decisions
    already made. Reserve `status: "open"` for choices the phase will resolve.
 
-2. Set the time budget on `project.json`:
-
-   ```bash
-   i2c state set project.json budget_type=time time_budget_seconds=10800 time_started_at=2026-06-04T07:30:00Z
-   ```
-
-   Choose `time_budget_seconds` based on the phase's perceived size.
-   Reasonable bounds for a Refine phase: 1–8 hours of focused work (3600s
-   to 28800s). The state machine compares wall-clock elapsed against this.
-
-3. Identify the **first item to show**: the smallest concrete output that
+2. Identify the **first item to show**: the smallest concrete output that
    exemplifies the goal. Record it as a decision with `status: "open"`:
 
    ```bash
@@ -445,8 +435,8 @@ and the current state of the phase, not from a pre-listed step list.
 
 #### 6c. Explore regime
 
-The goal is a closed decision, not shipping code. Plan a **time box** and
-the decision the phase must produce.
+The goal is a closed decision, not shipping code. Plan the decision the
+phase must produce; closing it ends the phase.
 
 1. Write the decision record with `status: "open"`:
 
@@ -464,19 +454,9 @@ the decision the phase must produce.
    ```
 
    `decision` may be `"TBD"` for an open Explore; the closing iteration
-   will rewrite it.
+   will rewrite it. The point is a decision, not exhaustive exploration.
 
-2. Set the time box on `project.json`:
-
-   ```bash
-   i2c state set project.json budget_type=time time_budget_seconds=7200 time_started_at=2026-06-04T07:30:00Z
-   ```
-
-   Explore time boxes are typically tighter than Refine: 30 minutes to
-   4 hours (1800s to 14400s). The point is a decision, not exhaustive
-   exploration.
-
-3. Identify the alternatives the phase will compare. Optionally record one
+2. Identify the alternatives the phase will compare. Optionally record one
    step per alternative in `steps.json` so EXECUTE has a concrete loop to
    follow, but this is optional — Explore EXECUTE may also work
    open-endedly toward the decision.
@@ -524,8 +504,7 @@ i2c state append devlog.jsonl '{
   "action": "plan",
   "outcome": "complete",
   "summary": "Phase 11 (orchestrator, Build): 4 steps covering pipeline, event loop, slash commands, end-to-end test. Dependency probe on event_store: 2 matches, 1 mismatch logged. Decisions D-17 records the split with phase 12.",
-  "contracts": [],
-  "timestamp": "2026-06-04T07:45:00Z"
+  "contracts": []
 }'
 ```
 

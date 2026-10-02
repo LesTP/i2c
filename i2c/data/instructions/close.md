@@ -92,8 +92,7 @@ For each name in `dependencies`:
      "action": "integration_check",
      "outcome": "complete",
      "summary": "Integration check orchestrator <- event_store: types match; boundary test passes; no bridge needed; no import-discipline violations.",
-     "contracts": [],
-     "timestamp": "2026-06-04T10:50:00Z"
+     "contracts": []
    }'
    ```
 
@@ -262,8 +261,7 @@ i2c state append devlog.jsonl '{
   "action": "close",
   "outcome": "complete",
   "summary": "Phase 11 closed: tests pass; integration check vs event_store passes; 2 gotchas promoted; D-16, D-22 closed; ARCH_orchestrator.md propagated.",
-  "contracts": ["ARCH_orchestrator.md"],
-  "timestamp": "2026-06-04T11:00:00Z"
+  "contracts": ["ARCH_orchestrator.md"]
 }'
 ```
 
@@ -340,7 +338,7 @@ i2c state complete phases.json --phase 5
 # .state/ tail as two commits ("5: <close summary>" and the .state/ persist).
 
 # Devlog:
-i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule); ARCHITECTURE.md event_store row → Complete. No ARCH_<module> contract changes.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"close","outcome":"complete","summary":"Phase 5 closed: 24 tests pass; D-16 resolved (JSONL backend); 1 gotcha promoted (fsync rule); ARCHITECTURE.md event_store row → Complete. No ARCH_<module> contract changes.","contracts":[]}'
 
 # Set the gate:
 i2c state set project.json state=audit_boundary
@@ -360,7 +358,7 @@ pytest tests/orchestrator tests/boundary
 # 31 passed in 4.2s
 
 # Integration check (because dependencies == ["event_store"]):
-i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"integration_check","outcome":"complete","summary":"orchestrator <- event_store: types match; boundary test exercising real event_store through orchestrator.dispatch_action passes; no bridge; no import violations.","contracts":[],"timestamp":"2026-06-04T10:50:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"integration_check","outcome":"complete","summary":"orchestrator <- event_store: types match; boundary test exercising real event_store through orchestrator.dispatch_action passes; no bridge; no import violations.","contracts":[]}'
 
 # Gotcha promotion (one learning from the phase):
 i2c state append-gotcha project.json \
@@ -395,7 +393,7 @@ i2c state complete phases.json --phase 11
 # coupling-note update) and the .state/ tail after you exit.
 
 # Devlog:
-i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed; ARCHITECTURE.md orchestrator row → Complete plus coupling-note refresh. ARCH_orchestrator.md propagation confirmed in step 11.4 commit.","contracts":[],"timestamp":"2026-06-04T11:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"close","outcome":"complete","summary":"Phase 11 closed: 31 tests pass; integration check vs event_store passes; 1 gotcha (idempotency_key composition); D-22, D-17 closed; ARCHITECTURE.md orchestrator row → Complete plus coupling-note refresh. ARCH_orchestrator.md propagation confirmed in step 11.4 commit.","contracts":[]}'
 
 # Set the gate:
 i2c state set project.json state=audit_boundary
@@ -413,7 +411,7 @@ pytest tests/orchestrator
 # 18 passed
 
 # Integration check fails:
-i2c state append devlog.jsonl '{"phase":8,"step":null,"action":"integration_check","outcome":"failed","summary":"orchestrator -> event_store: orchestrator passes idempotency_key as positional arg; event_store.append requires kwarg. Boundary test errors with TypeError. Bug in orchestrator; needs fix before close.","contracts":["ARCH_event_store.md","ARCH_orchestrator.md"],"timestamp":"2026-06-04T11:15:00Z"}'
+i2c state append devlog.jsonl '{"phase":8,"step":null,"action":"integration_check","outcome":"failed","summary":"orchestrator -> event_store: orchestrator passes idempotency_key as positional arg; event_store.append requires kwarg. Boundary test errors with TypeError. Bug in orchestrator; needs fix before close.","contracts":["ARCH_event_store.md","ARCH_orchestrator.md"]}'
 
 # Do NOT promote gotchas, do NOT close decisions, do NOT mark phase complete.
 # Emit EXIT 2 with reason "integration check failed: orchestrator/event_store call signature mismatch".

@@ -196,15 +196,9 @@ class TestProjectSchemaBudgetFields(unittest.TestCase):
             self._project(budget_type="steps"), self.schema,
         )
 
-    def test_budget_type_time(self):
-        v.validate_json_schema(
-            self._project(
-                budget_type="time",
-                time_budget_seconds=3600,
-                time_started_at="2026-06-04T04:00:00Z",
-            ),
-            self.schema,
-        )
+    def test_budget_type_time_retired(self):
+        with self.assertRaisesRegex(ValueError, "budget_type"):
+            v.validate_json_schema(self._project(budget_type="time"), self.schema)
 
     def test_invalid_budget_type(self):
         with self.assertRaisesRegex(ValueError, "budget_type"):
@@ -212,11 +206,11 @@ class TestProjectSchemaBudgetFields(unittest.TestCase):
                 self._project(budget_type="hours"), self.schema,
             )
 
-    def test_negative_time_budget(self):
-        with self.assertRaisesRegex(ValueError, "time_budget_seconds"):
-            v.validate_json_schema(
-                self._project(time_budget_seconds=-1), self.schema,
-            )
+    def test_time_budget_fields_retired(self):
+        for key, val in (("time_budget_seconds", 3600),
+                         ("time_started_at", "2026-06-04T04:00:00Z")):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, key):
+                v.validate_json_schema(self._project(**{key: val}), self.schema)
 
     def test_budget_fields_all_optional(self):
         # Pure step-mode project doesn't need to set budget fields.

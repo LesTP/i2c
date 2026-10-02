@@ -506,8 +506,6 @@ def _phase_steps(st: ProjectState, phase: int) -> list[StepView]:
 def _compute_budget(project: dict[str, Any]) -> dict[str, int] | None:
     if "steps_remaining" in project:
         return {"steps_remaining": project["steps_remaining"]}
-    if project.get("budget_type") == "time" and "time_budget_seconds" in project:
-        return {"time_budget_seconds": project["time_budget_seconds"]}
     return None
 
 
@@ -1416,8 +1414,6 @@ def _append_refreeze_devlog(root: Path, phase: int, *, reason: str) -> None:
     sanctioned ``state`` path (validated JSONL append). Uses the ``tests`` action
     (phase-level acceptance-suite authoring) so the entry is legible next to the
     original freeze."""
-    from datetime import datetime, timezone
-
     ns = argparse.Namespace(
         file=str(_state_path(root, "devlog.jsonl")),
         record=json.dumps(
@@ -1428,7 +1424,6 @@ def _append_refreeze_devlog(root: Path, phase: int, *, reason: str) -> None:
                 "outcome": "complete",
                 "summary": f"Manual acceptance-suite refreeze (D-tests-4 "
                 f"escape hatch): {reason}",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         ),
         from_file=None,

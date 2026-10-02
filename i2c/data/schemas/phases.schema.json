@@ -27,7 +27,7 @@
       "regime": {
         "type": "string",
         "enum": ["build", "refine", "explore"],
-        "description": "Work regime. 'build' uses step-budget execution; 'refine' uses time-budget (see project.json budget_type); 'explore' is open-ended investigation."
+        "description": "Work regime. 'build' uses step-budget execution; 'refine' is iteration-driven toward a goal with no budget (ends on goal met, escalation, or the driver's iteration cap); 'explore' is open-ended investigation."
       },
       "dependencies": {
         "type": "array",

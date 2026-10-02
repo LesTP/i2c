@@ -27,8 +27,10 @@ stamp bump — a forward-compat guard for the refine tier's additive schema
 changes (D-refine-8: the ``devlog_entry`` ``action="refine"`` value, nullable
 ``phase``, and the optional ``kind`` / ``iteration`` fields), so an older i2c
 rejects a refine-using project cleanly rather than failing opaquely on an
-unknown devlog ``action``. The registry is the extension point for future
-versions.
+unknown devlog ``action``. The ``4 → 5`` migration removes the retired Refine
+time budget (``budget_type="time"``, ``time_budget_seconds``,
+``time_started_at``) from ``project.json``; nothing ever enforced it. The
+registry is the extension point for future versions.
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ from i2c import state as _state
 from i2c import validate as v
 
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 class MigrationError(Exception):
@@ -163,6 +165,32 @@ def _migrate_3_to_4(state_dir: Path, *, dry_run: bool = False) -> list[str]:
     return []
 
 
+_RETIRED_TIME_BUDGET_FIELDS = ("time_budget_seconds", "time_started_at")
+
+
+def _migrate_4_to_5(state_dir: Path, *, dry_run: bool = False) -> list[str]:
+    """4 → 5: drop the Refine time budget from ``project.json``.
+
+    No code ever compared elapsed time against the budget, and a worker cannot
+    read a clock, so the fields only carried model-guessed values. Removes
+    ``time_budget_seconds`` / ``time_started_at`` and a ``budget_type`` of
+    ``"time"`` (Refine phases carry no budget; ``"steps"`` is kept).
+    """
+    project_path = Path(state_dir) / "project.json"
+    data = _read_raw(project_path)
+    changes: list[str] = []
+    for key in _RETIRED_TIME_BUDGET_FIELDS:
+        if key in data:
+            changes.append(f"project.json: removed retired '{key}' field")
+            del data[key]
+    if data.get("budget_type") == "time":
+        changes.append("project.json: removed retired budget_type='time'")
+        del data["budget_type"]
+    if changes and not dry_run:
+        _state.atomic_write_json(project_path, data)
+    return changes
+
+
 # Ordered registry: from-version → step. Sequential application from the
 # project's current version up to (but not including) CURRENT_SCHEMA_VERSION.
 _MIGRATIONS: dict[int, Callable[..., list[str]]] = {
@@ -170,6 +198,7 @@ _MIGRATIONS: dict[int, Callable[..., list[str]]] = {
     1: _migrate_1_to_2,
     2: _migrate_2_to_3,
     3: _migrate_3_to_4,
+    4: _migrate_4_to_5,
 }
 
 

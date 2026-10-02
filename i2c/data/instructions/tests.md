@@ -122,8 +122,7 @@ i2c state append devlog.jsonl '{
   "action": "tests",
   "outcome": "complete",
   "summary": "Phase 2 acceptance suite: 8 contract tests under tests/acceptance/phase_2/ covering append/read guarantees, fsync durability, and cursor ordering. Red as expected (event_store not implemented yet).",
-  "contracts": [],
-  "timestamp": "2026-07-06T07:30:00Z"
+  "contracts": []
 }'
 ```
 
@@ -183,7 +182,7 @@ log the devlog entry, transition to execute.
 # Write tests/acceptance/phase_2/test_event_store_contract.py etc.
 # Do NOT run git — the runner commits them as "2.tests: <summary>".
 
-i2c state append devlog.jsonl '{"phase":2,"step":null,"action":"tests","outcome":"complete","summary":"Phase 2 acceptance suite: 8 contract tests under tests/acceptance/phase_2/ covering append/read guarantees, fsync durability, cursor ordering. Red as expected.","contracts":[],"timestamp":"2026-07-06T07:30:00Z"}'
+i2c state append devlog.jsonl '{"phase":2,"step":null,"action":"tests","outcome":"complete","summary":"Phase 2 acceptance suite: 8 contract tests under tests/acceptance/phase_2/ covering append/read guarantees, fsync durability, cursor ordering. Red as expected.","contracts":[]}'
 
 i2c state set project.json state=execute
 # Emit exit signal (EXIT 0).
@@ -196,7 +195,7 @@ routed straight to execute. Halt.
 
 ```bash
 i2c state set project.json state=audit_escalation
-i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"tests","outcome":"escalate","summary":"TESTS dispatched on a Refine phase; acceptance-suite authoring is Build-only (D-tests-5). PLAN should have set state=execute. Needs human to correct the phase regime or state.","contracts":[],"timestamp":"2026-07-06T07:30:00Z"}'
+i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"tests","outcome":"escalate","summary":"TESTS dispatched on a Refine phase; acceptance-suite authoring is Build-only (D-tests-5). PLAN should have set state=execute. Needs human to correct the phase regime or state.","contracts":[]}'
 
 # Emit EXIT 2 with reason "tests dispatched on non-Build phase".
 ```

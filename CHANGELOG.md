@@ -70,6 +70,15 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Changed
 
+- **`i2c state` owns timestamps; workers no longer supply them (FU-69).** A
+  worker model has no clock: a cheap model wrote `2023-10-05T12:00:00Z` into a
+  2026 devlog. Now `i2c state append devlog.jsonl` and `i2c state append-record
+  decisions.json` stamp `timestamp` with the current UTC time at write time,
+  overwriting any supplied value (with a stderr note). `update-record` leaves a
+  decision's creation `timestamp` unchanged. Worker instructions no
+  longer include `timestamp` in payloads or tell the model to "use the current
+  time". Stored records are unchanged (the schema still requires `timestamp`
+  on devlog rows), so no migration is needed.
 - **Runner owns all git commits (FU-40 complete).** The deterministic runner
   now commits REVIEW fix-ups (`<phase>: <review summary>`) and CLOSE docs
   (`<phase>: <close summary>`, alongside the separate `.state/` + telemetry
@@ -85,8 +94,15 @@ This is the public counterpart to `STATUS.md` (internal tracking).
   regenerated.
 
 ### Removed
-
-- **Autonomous refine loop (`i2c refine` + `/refine`) — DESIGN_refine_v1
+- **Refine / Explore time budget (`budget_type="time"`, `time_budget_seconds`,
+  `time_started_at`).** Nothing ever enforced it: the state machine never
+  compared elapsed time against the budget, even though `plan.md` said it did,
+  and a worker has no clock, so the values were model guesses. Refine phases
+  now end when the goal is met, on escalation, or at the driver's iteration
+  cap (`/batch` stops after 50); Explore phases end when their decision is
+  closed. Runaway protection is unchanged: the per-iteration wall-clock
+  ceiling (exit 4) and the `/batch` cap. `budget_type` keeps only `"steps"`.
+- **Autonomous refine loop (`i2c refine` + `/refine`) - DESIGN_refine_v1
   Proposal B.** Removed the single-shot refine engine (`run_refine.py`:
   `run_refine`, `commit_refine`), the `i2c refine <fu-id>` CLI command, the
   `/refine` Telegram command + its runner wiring, `instructions/refine.md`, the
@@ -142,8 +158,11 @@ This is the public counterpart to `STATUS.md` (internal tracking).
   verbatim no longer errors out at first `i2c assemble`.
 
 ### Migrations
-
-- **`schema_version` 2 → 3 (no-op stamp).** Guards the additive optional
+- **`schema_version` 4 → 5 (drops the retired time budget).** Removes
+  `time_budget_seconds`, `time_started_at`, and `budget_type="time"` from
+  `project.json`. Run `i2c migrate` in each project: a `project.json` that
+  still carries those fields no longer validates.
+- **`schema_version` 2 
   `project.json.pattern` field: an older i2c (whose `project.json` schema is
   `additionalProperties: false`) rejects a newer, `pattern`-stamped project via
   the newer-than-current guard ("upgrade i2c") rather than an opaque validation

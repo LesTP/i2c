@@ -168,7 +168,7 @@ class TestImportProject(unittest.TestCase):
             with self.assertRaises(import_e2e.ImportE2EError):
                 import_e2e.import_project(root, apply=True)
 
-    def test_refine_current_phase_sets_time_budget(self):
+    def test_refine_current_phase_has_no_budget(self):
         with TempDir() as root:
             _make_e2e_project(root)
             (root / "DEVPLAN.md").write_text(
@@ -180,7 +180,7 @@ class TestImportProject(unittest.TestCase):
             )
             import_e2e.import_project(root, apply=True)
             project = v.validate_state_file(root / ".state" / "project.json")
-            self.assertEqual(project["budget_type"], "time")
+            self.assertNotIn("budget_type", project)
 
     def test_refuses_non_integer_phase(self):
         with TempDir() as root:

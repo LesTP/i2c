@@ -276,8 +276,7 @@ i2c state append devlog.jsonl '{
   "action": "tests",
   "outcome": "complete",
   "summary": "Phase 2 acceptance suite: 8 contract tests under tests/acceptance/phase_2/ covering append/read guarantees, fsync durability, and cursor ordering. Red as expected (event_store not implemented yet).",
-  "contracts": [],
-  "timestamp": "2026-07-06T07:30:00Z"
+  "contracts": []
 }'
 ```
 

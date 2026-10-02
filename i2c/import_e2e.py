@@ -367,15 +367,11 @@ def import_project(
         report.warnings.append("DECISIONS.md not found — decisions.json is empty.")
 
     # budget_type follows the *current* phase's regime (the schema infers it
-    # when omitted). Don't assume 'steps' — single-pass projects commonly end
-    # in a Refine (time-budget) phase. Omit when the current phase isn't a
-    # converted record or is Explore, and let i2c infer.
+    # when omitted). Only Build carries a budget ('steps'); Refine and Explore
+    # phases have none, so omit it for them and let i2c infer.
     current = next((p for p in phases if p["id"] == project["phase"]), None)
-    if current is not None:
-        if current["regime"] == "refine":
-            project["budget_type"] = "time"
-        elif current["regime"] == "build":
-            project["budget_type"] = "steps"
+    if current is not None and current["regime"] == "build":
+        project["budget_type"] = "steps"
 
     steps: list[dict[str, Any]] = []  # snapshot-don't-port
     if port_history:

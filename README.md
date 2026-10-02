@@ -144,7 +144,7 @@ Diffs of these files cleanly show every state transition.
 
 | File | Shape | What it holds |
 |------|-------|---------------|
-| `project.json` | JSON object | Current phase number, lifecycle state, architecture `pattern` (A/B), gotchas, step or time budget |
+| `project.json` | JSON object | Current phase number, lifecycle state, architecture `pattern` (A/B), gotchas, step budget (Build) |
 | `phases.json` | Array of objects | One record per phase — id, module, title, regime (build/refine/explore), dependencies, status |
 | `steps.json` | Array of objects | One record per step across all phases — (phase, step), title, status, commit hash |
 | `devlog.jsonl` | One JSON object per line | Append-only history of every action's outcome |
@@ -184,7 +184,7 @@ the worker performs them. Each has a single-purpose instruction file.
 
 | Action | Trigger | What the worker does | Instruction file |
 |--------|---------|----------------------|------------------|
-| `PLAN` | `state == "plan"` | Identify the next phase, choose the regime, break work into steps (Build) or set a time budget (Refine/Explore), write the phase record and dependency-probe results if non-leaf | [`instructions/plan.md`](instructions/plan.md) |
+| `PLAN` | `state == "plan"` | Identify the next phase, choose the regime, break work into steps (Build) or record the goal / decision to reach (Refine/Explore), write the phase record and dependency-probe results if non-leaf | [`instructions/plan.md`](instructions/plan.md) |
 | `TESTS` | `state == "tests"` (Build phases only) | Read the module contract and author a phase-level acceptance suite under `tests/acceptance/phase_<N>/` *before* EXECUTE, so the implementation is graded against tests it did not write | [`instructions/tests.md`](instructions/tests.md) |
 | `EXECUTE` | `state == "execute"` with pending steps | Pick the next pending step, implement and test (against the frozen acceptance suite), commit, log to devlog, transition to review when the last step is done | [`instructions/execute.md`](instructions/execute.md) |
 | `REVIEW` | `state == "review"` | Read all phase code, categorize findings as Must/Should/Optional, apply Must+Should, log skipped Optionals as decisions | [`instructions/review.md`](instructions/review.md) |

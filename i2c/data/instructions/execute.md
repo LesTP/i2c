@@ -52,7 +52,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
 
 6. **Append a devlog entry.** One entry per step, JSON envelope matching
    `schemas/devlog_entry.schema.json`. Required fields: `phase`, `step`,
-   `action`, `outcome`, `summary`, `timestamp`. Optional: `contracts`.
+   `action`, `outcome`, `summary`. Optional: `contracts`.
 
    ```bash
    i2c state append devlog.jsonl '{
@@ -61,8 +61,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
      "action": "execute",
      "outcome": "complete",
      "summary": "Wired orchestrator slash commands through CodexClient with 7 new tests.",
-     "contracts": [],
-     "timestamp": "2026-06-04T04:30:00Z"
+     "contracts": []
    }'
    ```
 
@@ -74,7 +73,7 @@ in the assembled `Current Phase` section, then follow the matching branch.
    `contracts` lists any `ARCH_*.md` files modified or whose contracts were
    logically changed. Empty array if none — see Contract Changes below.
 
-   `timestamp` is ISO 8601 UTC. Use the current time.
+   `timestamp` is stamped by `i2c state` at write time, so leave it out.
 
 7. **Decide what's next.**
 
@@ -89,11 +88,11 @@ in the assembled `Current Phase` section, then follow the matching branch.
 
      Then emit the exit signal. The next invocation will be a REVIEW action.
 
-### Refine regime — time-based, iteration-driven
+### Refine regime — goal-driven, iteration-driven
 
 Refine work is open-ended toward a stated goal. Steps emerge as you go rather
-than being pre-listed. Budget is wall-clock, not step count
-(`project.json.time_budget_seconds` with `time_started_at`).
+than being pre-listed. There is no step or time budget: the phase ends when
+the goal is met or you escalate.
 
 1. **Read the goal.** From the `Module Contract` section of your prompt
    (`ARCH_module.md`) and the phase title in `phases.json`. The goal is
@@ -122,18 +121,15 @@ than being pre-listed. Budget is wall-clock, not step count
      "step": null,
      "action": "execute",
      "outcome": "partial",
-     "summary": "First pass at telegram message formatting. MarkdownV2 escape edge cases need a second look.",
-     "timestamp": "2026-06-04T05:00:00Z"
+     "summary": "First pass at telegram message formatting. MarkdownV2 escape edge cases need a second look."
    }'
    ```
 
 6. **Decide what's next.**
 
-   - **Time budget remaining and more work to do?** Stay in `execute` and
-     emit the exit signal — the runner re-invokes for the next increment
-     (the state machine's time check returns EXECUTE again while budget
-     remains).
-   - **Time exhausted OR phase goal met?** Transition to `review`:
+   - **More work toward the goal?** Stay in `execute` and emit the exit
+     signal — the runner re-invokes for the next increment.
+   - **Phase goal met?** Transition to `review`:
 
      ```bash
      i2c state set project.json state=review
@@ -264,7 +260,7 @@ Step 11.3 in phase 11 (orchestrator). All tests pass. No contract changes.
 ```bash
 # Edit the files. Do NOT run git — the runner commits after you exit.
 i2c state complete steps.json --phase 11 --step 3
-i2c state append devlog.jsonl '{"phase":11,"step":3,"action":"execute","outcome":"complete","summary":"Wired orchestrator slash commands through CodexClient. 7 new tests pass.","contracts":[],"timestamp":"2026-06-04T04:30:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":3,"action":"execute","outcome":"complete","summary":"Wired orchestrator slash commands through CodexClient. 7 new tests pass.","contracts":[]}'
 
 # Last step of the phase? Transition:
 i2c state set project.json state=review
@@ -284,7 +280,7 @@ change.
 
 ```bash
 i2c state set project.json state=audit_escalation
-i2c state append devlog.jsonl '{"phase":5,"step":2,"action":"execute","outcome":"escalate","summary":"Idempotency key on EventStore.append would break orchestrator (already built). Needs decision: bump consumer or pick non-breaking shape.","contracts":["ARCH_event_store.md"],"timestamp":"2026-06-04T04:45:00Z"}'
+i2c state append devlog.jsonl '{"phase":5,"step":2,"action":"execute","outcome":"escalate","summary":"Idempotency key on EventStore.append would break orchestrator (already built). Needs decision: bump consumer or pick non-breaking shape.","contracts":["ARCH_event_store.md"]}'
 
 # Emit EXIT 2 with reason "contract change affects built module: orchestrator".
 ```
@@ -295,7 +291,7 @@ Step 8.4 keeps failing the same flaky test across three tries.
 
 ```bash
 i2c state set project.json state=audit_escalation
-i2c state append devlog.jsonl '{"phase":8,"step":4,"action":"execute","outcome":"escalate","summary":"test_orchestrator_recovery fails on third attempt with same TimeoutError. Tried: (1) bumping timeout, (2) seeding deterministic clock, (3) running test in isolation. Pattern suggests deeper race in PatchManager.","timestamp":"2026-06-04T05:15:00Z"}'
+i2c state append devlog.jsonl '{"phase":8,"step":4,"action":"execute","outcome":"escalate","summary":"test_orchestrator_recovery fails on third attempt with same TimeoutError. Tried: (1) bumping timeout, (2) seeding deterministic clock, (3) running test in isolation. Pattern suggests deeper race in PatchManager."}'
 
 # Do NOT mark the step complete. Do NOT commit a half-working fix.
 # Emit EXIT 2 with reason "3 consecutive failures on step 8.4".
@@ -307,7 +303,7 @@ Phase 14, message formatting Refine. Iteration 3 of N.
 
 ```bash
 # Edit the files. Do NOT run git — the runner commits after you exit.
-i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outcome":"partial","summary":"Iteration 3: closed the parens-in-link bug. Still surfacing one MarkdownV2 edge case with nested code blocks.","timestamp":"2026-06-04T05:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"execute","outcome":"partial","summary":"Iteration 3: closed the parens-in-link bug. Still surfacing one MarkdownV2 edge case with nested code blocks."}'
 
 # Time remaining, more iterations planned. Stay in execute, emit exit signal.
 # The runner then commits your edit as "14: Iteration 3: closed the parens-in-link bug...".

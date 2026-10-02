@@ -153,8 +153,7 @@ i2c state append devlog.jsonl '{
   "action": "review",
   "outcome": "complete",
   "summary": "Phase 11 review: 0 Must, 2 Should (dead helper, redundant null check) applied, 1 Optional skipped (D-25). All tests pass after fixes.",
-  "contracts": [],
-  "timestamp": "2026-06-04T10:30:00Z"
+  "contracts": []
 }'
 ```
 
@@ -228,7 +227,7 @@ Phase 5, three steps complete, code looks good. Single devlog entry, no
 fixes, no decisions.
 
 ```bash
-i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"review","outcome":"complete","summary":"Phase 5 review: 0 Must, 0 Should, 0 Optional. Code matches ARCH_event_store.md; no dead code; tests pass.","contracts":[],"timestamp":"2026-06-04T10:00:00Z"}'
+i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"review","outcome":"complete","summary":"Phase 5 review: 0 Must, 0 Should, 0 Optional. Code matches ARCH_event_store.md; no dead code; tests pass.","contracts":[]}'
 
 i2c state set project.json state=close
 # Emit exit signal.
@@ -248,7 +247,7 @@ Should; skipped Optional.
 i2c state append-record decisions.json '{"id":"D-25","title":"Skip rename: tmp -> events_to_retry","status":"closed","priority":"low","decision":"Leave the local name as-is.","rationale":"Renames in this file should batch with the next pass; isolated rename adds noise to git blame.","revisit_if":"Next significant edit to event_loop touches this function."}'
 
 # Devlog entry:
-i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"review","outcome":"complete","summary":"Phase 11 review: 1 Must (unchecked error path), 2 Should (dead helper, redundant null check) applied. 1 Optional (rename) skipped, D-25. Tests pass after fixes.","contracts":[],"timestamp":"2026-06-04T10:30:00Z"}'
+i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"review","outcome":"complete","summary":"Phase 11 review: 1 Must (unchecked error path), 2 Should (dead helper, redundant null check) applied. 1 Optional (rename) skipped, D-25. Tests pass after fixes.","contracts":[]}'
 
 i2c state set project.json state=close
 ```
@@ -261,7 +260,7 @@ doesn't list). Halt.
 
 ```bash
 i2c state set project.json state=audit_escalation
-i2c state append devlog.jsonl '{"phase":8,"step":null,"action":"review","outcome":"escalate","summary":"Review halted: dispatch_action in code takes idempotency_key kwarg, ARCH_orchestrator.md does not list it. Drift originated in step 8.3 — devlog there should have flagged contract change. Needs decision: align code to ARCH or update ARCH.","contracts":["ARCH_orchestrator.md"],"timestamp":"2026-06-04T10:45:00Z"}'
+i2c state append devlog.jsonl '{"phase":8,"step":null,"action":"review","outcome":"escalate","summary":"Review halted: dispatch_action in code takes idempotency_key kwarg, ARCH_orchestrator.md does not list it. Drift originated in step 8.3 — devlog there should have flagged contract change. Needs decision: align code to ARCH or update ARCH.","contracts":["ARCH_orchestrator.md"]}'
 
 # Do NOT apply any fixes. Do NOT transition to close.
 # Emit EXIT 2 with reason "review surfaced contract drift".
