@@ -850,5 +850,49 @@
       "FU-70",
       "DESIGN_backend_v1.md"
     ]
+  },
+  {
+    "id": "FU-74",
+    "title": "CLOSE step 2: run the acceptance suite only if tests/acceptance/phase_<N>/ exists",
+    "kind": "prose",
+    "status": "open",
+    "opened": "2026-10-02",
+    "context": "close.md step 2 tells the worker the phase-level run includes the frozen acceptance suite under tests/acceptance/phase_<N>/ and that it must be green. It never says what to do when the phase had no TESTS action (a phase predating the tests action, a migrated phase, or Refine) and the folder does not exist. On pidev-spike phase 1 CLOSE (gpt-4o-mini, 2026-10-02) the worker filled the gap by creating a placeholder tests/acceptance/phase_2/test_phase_2.py (assert True) plus package __init__ files, and the runner committed them (da7b577; removed by hand in 4f5608e). Fix: make the suite conditional (run it if tests/acceptance/phase_<N>/ exists; if it is absent, note that in the devlog summary and never create it), and add authoring tests or acceptance suites to the What this action does NOT do list. Regenerate the goldens.",
+    "trigger": "Next touch of close.md, or before routing CLOSE to cheap models (pidev/OpenRouter) on any phase without a TESTS action.",
+    "priority": "next",
+    "files": [
+      "i2c/data/instructions/close.md",
+      "tests/golden"
+    ],
+    "refs": [
+      "FU-70",
+      "FU-75",
+      "D-tests-4",
+      "pidev-spike:da7b577",
+      "pidev-spike:4f5608e"
+    ]
+  },
+  {
+    "id": "FU-75",
+    "title": "Runner CLOSE commit: flag or refuse worker-created test files (protect acceptance-suite dirs)",
+    "kind": "test-hardening",
+    "status": "open",
+    "opened": "2026-10-02",
+    "context": "commit_execute commits every non-.state path the worker newly dirtied, and the CLOSE docs commit takes the same path, so CLOSE can land arbitrary files. Nothing limits it to docs. On pidev-spike phase 1 CLOSE the worker wrote a stub tests/acceptance/phase_2/ suite and the runner committed it (da7b577). That directory is where the next phase TESTS action freezes the acceptance oracle, and the FU-43 digest is recorded at the N.tests commit, so a stub written by an earlier action gets frozen into it. The CLOSE-time integrity invariant only guards the current phase suite, not a future one. Fix options: (a) at CLOSE, refuse to commit any path under tests/acceptance/ (or any tests/ path) and exit 2 with a clear reason; (b) commit docs only (an allowlist: *.md, ARCHITECTURE/ARCH files) and leave everything else uncommitted with a NOTE, as is already done for pre-existing operator changes; (c) at minimum warn loudly and record a devlog/telemetry flag. Prefer (a) for tests/acceptance/ in any action other than TESTS, since that directory belongs to the oracle.",
+    "trigger": "Before benchmark-grade autonomous runs on cheap models, or the next time the runner commit paths are touched.",
+    "priority": "next",
+    "files": [
+      "i2c/run_iteration.py",
+      "i2c/invariants.py",
+      "tests/test_run_iteration.py"
+    ],
+    "refs": [
+      "FU-43",
+      "FU-40",
+      "FU-74",
+      "FU-70",
+      "D-tests-4",
+      "pidev-spike:da7b577"
+    ]
   }
 ]
