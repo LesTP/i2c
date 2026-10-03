@@ -10,6 +10,16 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Added
 
+- **pidev records tokens, cost and tool calls (FU-72).**
+  runs pi with `--mode json`. The runner adds up the token usage and pi's own
+  cost across the assistant messages, so pidev telemetry rows have
+  `tokens_in/out/cached`, `cost_usd` (with `cost_source: "backend"`; the tier
+  still comes from the pricing table) and `tool_calls`. The worker's final text
+  still carries the exit signal and is saved as the iteration transcript. The
+  raw event stream is kept as `logs/loop/iteration_NNN.jsonl` and written to
+  disk as pi produces it, so a run killed by the wall-clock ceiling still
+  shows what it did and records what it cost.
+
 - **Action contracts: the runner verifies `EXIT: 0` before committing
   (`DESIGN_action_contracts_v1.md`).** Each lifecycle action (plan, tests,
   execute, review, close) now has one declarative contract in `i2c/contracts.py`:

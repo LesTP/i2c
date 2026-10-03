@@ -21,7 +21,7 @@ from i2c import telemetry as tel
 from i2c import validate as v
 
 # Reuse the runner's end-to-end fixture (copies initial_state + framework).
-from test_run_iteration import TempProject, make_fake_invoker, run_iter, signal_block
+from test_run_iteration import TempProject, make_fake_invoker, pi_events, run_iter, signal_block
 
 
 def _valid_row(**overrides):
@@ -283,7 +283,7 @@ class TestRunnerWritesTelemetry(unittest.TestCase):
 
     def test_pidev_row_written_with_model(self):
         with TempProject() as p:
-            def fake_pidev(prompt, *, cwd, model, timeout=None):
+            def fake_pidev(prompt, *, cwd, model, timeout=None, events_path=None):
                 return 0, signal_block(exit_code=0, reason="ok")
 
             out, err = io.StringIO(), io.StringIO()
@@ -300,8 +300,73 @@ class TestRunnerWritesTelemetry(unittest.TestCase):
                 p.root / ".state" / "telemetry.jsonl", v.TELEMETRY_ENTRY_SCHEMA)
             self.assertEqual(rows[0]["backend"], "pidev")
             self.assertEqual(rows[0]["model"], "openai/gpt-4o-mini")
-            # Token/cost capture for pidev is FU-72; until then usage is null.
+            # Plain-text output (no pi JSON events) carries no usage.
             self.assertIsNone(rows[0]["tokens_in"])
+
+    def test_pidev_json_usage_and_backend_cost_recorded(self):
+        # FU-72: pi --mode json events -> tokens, pi's own cost, tool calls.
+        stream = pi_events(
+            ("toolUse", "", {"input": 1000, "output": 20, "cacheRead": 0, "total": 0.0002}),
+            ("stop", signal_block(exit_code=0, reason="ok"),
+             {"input": 100, "output": 10, "cacheRead": 900, "total": 0.0001}),
+            tool_calls=1,
+        )
+        with TempProject() as p:
+            def fake_pidev(prompt, *, cwd, model, timeout=None, events_path=None):
+                events_path.write_text(stream, encoding="utf-8")
+                return 0, stream
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="pidev", model="openai/gpt-4o-mini",
+                    max_budget_usd=5.0, pidev_invoker=fake_pidev,
+                )
+            self.assertEqual(rc, 0, msg=err.getvalue())
+            row = self._telemetry_rows(p.root)[0]
+            v.validate_jsonl(
+                p.root / ".state" / "telemetry.jsonl", v.TELEMETRY_ENTRY_SCHEMA)
+            self.assertEqual(row["tokens_in"], 2000)   # 1100 fresh + 900 cached
+            self.assertEqual(row["tokens_out"], 30)
+            self.assertEqual(row["tokens_cached"], 900)
+            self.assertAlmostEqual(row["cost_usd"], 0.0003, places=9)
+            self.assertEqual(row["cost_source"], "backend")
+            self.assertEqual(row["tier"], "T0")        # still from pricing.json
+            self.assertEqual(row["tool_calls"], 1)
+            log_dir = p.root / "logs" / "loop"
+            # Raw events kept; the transcript is the final assistant text.
+            self.assertEqual(
+                (log_dir / "iteration_001.jsonl").read_text(encoding="utf-8"), stream)
+            transcript = (log_dir / "iteration_001.txt").read_text(encoding="utf-8")
+            self.assertIn("EXIT: 0", transcript)
+            self.assertNotIn('"type"', transcript)
+            self.assertIn("tokens_in=2000", (log_dir / "summary.log").read_text(encoding="utf-8"))
+
+    def test_pidev_timeout_keeps_partial_events_and_cost(self):
+        # FU-70 iteration 9: a run killed at the ceiling left no trace. Now the
+        # streamed events survive and telemetry records what it cost so far.
+        partial = pi_events(
+            ("toolUse", "", {"input": 500, "output": 5, "cacheRead": 0, "total": 0.00009}),
+            tool_calls=2,
+        )
+        with TempProject() as p:
+            def fake_pidev(prompt, *, cwd, model, timeout=None, events_path=None):
+                events_path.write_text(partial, encoding="utf-8")
+                raise ri.subprocess.TimeoutExpired(cmd="pi", timeout=timeout)
+
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = ri.run_iteration(
+                    backend="pidev", model="openai/gpt-4o-mini",
+                    max_budget_usd=5.0, pidev_invoker=fake_pidev,
+                )
+            self.assertEqual(rc, 4)
+            self.assertIn("partial pi event log kept", err.getvalue())
+            row = self._telemetry_rows(p.root)[0]
+            self.assertEqual(row["exit_code"], 4)
+            self.assertEqual(row["tokens_in"], 500)
+            self.assertEqual(row["tool_calls"], 2)
+            self.assertEqual(row["cost_source"], "backend")
 
     def test_telemetry_failure_is_non_fatal(self):
         with TempProject() as p:

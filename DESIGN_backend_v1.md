@@ -454,7 +454,7 @@ passes) through **pi 0.84.2** → OpenRouter **`openai/gpt-4o-mini`**.
 | 2 | agency — `i2c state` via bash tool; auto-approve in `-p` | ✅ ran edit+bash; marked step complete, appended devlog, set state=review — **no approval gate** |
 | 3 | 2-line `EXIT/REASON` to stdout, runner-parseable | ✅ via `--mode text` (final message) |
 | 4 | OpenRouter model drives the loop | ✅ gpt-4o-mini |
-| 5 | model id + tokens/cost → `telemetry.jsonl` | ⏸ not exercised (spike bypassed the runner); pi has `--mode json` — wire in Stage-2 `invoke_pidev` |
+| 5 | model id + tokens/cost → `telemetry.jsonl` | ⏸ not exercised (spike bypassed the runner); pi has `--mode json` — wire in Stage-2 `invoke_pidev`. **Done 2026-10-03 (FU-72):** `invoke_pidev` runs `--mode json`; tokens, pi's own cost (`cost_source: "backend"`) and tool calls are recorded, and the event stream is kept as `iteration_NNN.jsonl` (streamed, so it survives a wall-clock kill). |
 | B | one backend → many providers | ✅ native `--provider` (openrouter proven live; gemini/openai/anthropic/… same mechanism) → **collapses FU-38a + FU-38b** |
 
 **Decision: PASS → adopt Option B (pi.dev)** (D-or-2 → "B adopted (pi.dev)").

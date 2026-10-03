@@ -814,7 +814,7 @@
     "id": "FU-72",
     "title": "pidev token/cost telemetry (Layer 2): parse pi --mode json usage into telemetry.jsonl",
     "kind": "structural-refactor",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-10-02",
     "context": "invoke_pidev runs pi with --mode text and the runner sets usage=None for pidev (run_iteration.py ~L1019), so every pidev iteration records no tokens or cost_usd. This was the FU-61 spike check 5, deferred to Stage 2 and never wired. It defeats the purpose of pidev, which is pricing cheap OpenRouter models for the benchmark (D-bench-7). It also means no dollar ceiling applies to pidev runs (only the FU-53 wall-clock guard). Fix: switch to (or add) --mode json, parse usage the way parse_codex_usage does, and still extract the final message for the EXIT/REASON parser; derive cost_usd/tier from pricing.json OpenRouter rates (or OpenRouter-reported cost if pi surfaces it). Naming: the code comment calls this Layer 2, but DESIGN_backend_v1 sec 3.9 defines L2 as the i2c models review panel. Reconcile the doc when this lands.",
     "trigger": "Needs a real pi --mode json sample. Capture one on pirozhok during the FU-70 e2e run, then wire the parser against it.",
@@ -830,7 +830,9 @@
       "FU-65",
       "FU-70",
       "DESIGN_backend_v1.md"
-    ]
+    ],
+    "closed": "2026-10-03",
+    "resolution": "invoke_pidev now runs pi --mode json and streams the events to logs/loop/iteration_NNN.jsonl as they arrive, so a wall-clock kill keeps the partial log. parse_pidev_output sums usage (fresh + cacheRead + cacheWrite as gross input; output; cacheRead as cached) and pi own cost.total across assistant message_end events, counts tool_execution_start as tool_calls, and returns the last assistant text for the exit signal. Telemetry records cost_source=backend (tier still from pricing.json) and tool_calls. Verified with the real pi 0.84.2 sample (tests/data fixture) and a live invoke_pidev smoke on pirozhok. DESIGN_backend_v1 check 5 updated."
   },
   {
     "id": "FU-73",

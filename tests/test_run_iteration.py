@@ -106,6 +106,32 @@ def _passing_contract(root, action, *, baseline, changed_paths, worker_exit):
     return contracts.Verdict(action=action)
 
 
+def pi_events(*messages, tool_calls: int = 0) -> str:
+    """A minimal ``pi --mode json`` stream (shape from a real pi 0.84.2 run,
+    tests/data/pi_mode_json_gpt-4o-mini.jsonl). Each message is
+    ``(stopReason, text, {"input", "output", "cacheRead", "total"})``."""
+    evs = [{"type": "session", "version": 3}, {"type": "agent_start"}]
+    for i in range(tool_calls):
+        evs.append({"type": "tool_execution_start", "toolCallId": f"call_{i}", "toolName": "bash"})
+        evs.append({"type": "tool_execution_end", "toolCallId": f"call_{i}", "isError": False})
+    for stop, text, u in messages:
+        usage = {
+            "input": u["input"], "output": u["output"], "cacheRead": u["cacheRead"],
+            "cacheWrite": 0, "reasoning": 0,
+            "totalTokens": u["input"] + u["output"] + u["cacheRead"],
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0,
+                     "total": u["total"]},
+        }
+        content = [{"type": "text", "text": text}] if text else []
+        msg = {"role": "assistant", "content": content, "model": "openai/gpt-4o-mini",
+               "stopReason": stop, "usage": usage}
+        evs.append({"type": "message_start", "message": {**msg, "usage": {
+            **usage, "input": 0, "output": 0, "cost": {"total": 0}}}})
+        evs.append({"type": "message_end", "message": msg})
+    evs += [{"type": "agent_end", "willRetry": False}, {"type": "agent_settled"}]
+    return "".join(json.dumps(e) + "\n" for e in evs)
+
+
 def signal_block(
     *,
     exit_code: int = 0,
@@ -674,7 +700,7 @@ class TestBackendResolution(unittest.TestCase):
         runner records the OpenRouter model id (unlike codex, which is null)."""
         pidev_calls: list[str] = []
 
-        def fake_pidev(prompt, *, cwd, model, timeout=None):
+        def fake_pidev(prompt, *, cwd, model, timeout=None, events_path=None):
             pidev_calls.append(model)
             return 0, "EXIT: 0\nREASON: done\n"
 
@@ -689,6 +715,74 @@ class TestBackendResolution(unittest.TestCase):
                 )
             self.assertEqual(rc, 0, msg=err.getvalue())
             self.assertEqual(pidev_calls, ["openai/gpt-4o-mini"])
+
+
+class TestPidevJson(unittest.TestCase):
+    """pi --mode json parsing + streaming (FU-72)."""
+
+    SAMPLE = I2C_ROOT / "tests" / "data" / "pi_mode_json_gpt-4o-mini.jsonl"
+
+    def test_parses_real_pi_sample(self):
+        # Captured on pirozhok, pi 0.84.2 -> openai/gpt-4o-mini: one bash tool
+        # call, then the answer. Usage/cost live on assistant message_end only.
+        text, usage = ri.parse_pidev_output(self.SAMPLE.read_text(encoding="utf-8"))
+        self.assertEqual(text, "DONE fu72-sample")
+        self.assertEqual(usage["input"], 1095 + 101 + 1024)
+        self.assertEqual(usage["output"], 24)
+        self.assertEqual(usage["cached"], 1024)
+        self.assertEqual(usage["tool_calls"], 1)
+        self.assertAlmostEqual(usage["cost_usd"], 0.00027060, places=10)
+
+    def test_exit_signal_comes_from_last_assistant_text(self):
+        stream = pi_events(
+            ("toolUse", "Let me check.", {"input": 10, "output": 2, "cacheRead": 0, "total": 0.1}),
+            ("stop", signal_block(exit_code=0, reason="all good"),
+             {"input": 5, "output": 3, "cacheRead": 0, "total": 0.2}),
+        )
+        text, usage = ri.parse_pidev_output(stream)
+        self.assertEqual(ri.parse_exit_signal(text), {"exit_code": 0, "reason": "all good"})
+        self.assertAlmostEqual(usage["cost_usd"], 0.3)
+
+    def test_plain_text_falls_back(self):
+        raw = "no json here\nEXIT: 2\nREASON: boom\n"
+        self.assertEqual(ri.parse_pidev_output(raw), (raw, None))
+
+    def test_stream_with_no_assistant_message(self):
+        raw = '{"type":"session"}\n{"type":"agent_start"}\nError: provider unreachable\n'
+        text, usage = ri.parse_pidev_output(raw)
+        self.assertIsNone(usage)
+        self.assertIn("provider unreachable", text)
+
+    def test_invoke_uses_json_mode_and_streams_to_events_path(self):
+        stream = pi_events(("stop", "EXIT: 0\nREASON: ok\n",
+                            {"input": 1, "output": 1, "cacheRead": 0, "total": 0.0}))
+        seen = {}
+
+        def fake_run(cmd, *, stdin, stdout, stderr, cwd, text, encoding, timeout):
+            seen["cmd"] = cmd
+            seen["stdin"] = stdin
+            stdout.write(stream)
+            return subprocess.CompletedProcess(cmd, 0, stderr="")
+
+        tmp = tempfile.TemporaryDirectory(prefix="i2c_pidev_")
+        orig = ri.subprocess.run
+        ri.subprocess.run = fake_run
+        try:
+            events = Path(tmp.name) / "iteration_001.jsonl"
+            rc, raw = ri.invoke_pidev("PROMPT", cwd=Path(tmp.name),
+                                      model="openai/gpt-4o-mini", events_path=events)
+            self.assertEqual(rc, 0)
+            self.assertEqual(raw, stream)
+            self.assertEqual(events.read_text(encoding="utf-8"), stream)
+            cmd = seen["cmd"]
+            self.assertEqual(cmd[cmd.index("--mode") + 1], "json")
+            self.assertEqual(cmd[cmd.index("--model") + 1], "openai/gpt-4o-mini")
+            self.assertTrue(cmd[-1].startswith("@"))
+            self.assertIs(seen["stdin"], subprocess.DEVNULL)
+            self.assertFalse(Path(cmd[-1][1:]).exists())  # prompt temp file removed
+        finally:
+            ri.subprocess.run = orig
+            tmp.cleanup()
 
 
 class TestModelResolution(unittest.TestCase):

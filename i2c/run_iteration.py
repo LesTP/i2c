@@ -386,8 +386,9 @@ def invoke_pidev(
     cwd: Path,
     model: str,
     timeout: float | None = None,
+    events_path: Path | None = None,
 ) -> tuple[int, str]:
-    """Run pi.dev (``pi -p``) against an OpenRouter model; return (rc, combined).
+    """Run pi.dev (``pi -p``) against an OpenRouter model; return (rc, raw).
 
     pi.dev is a multi-provider agentic CLI (DESIGN_backend_v1 §3.8). Delivery +
     isolation choices come from the FU-61 spike (§3.8.2):
@@ -398,40 +399,53 @@ def invoke_pidev(
       code-commit never sweeps it.
     - ``-nc --no-skills --no-extensions`` keep the assembled prompt as the sole
       context (no ``AGENTS.md``/``CLAUDE.md`` auto-read).
-    - ``--mode text`` puts the final agent message -- which carries the 2-line
-      exit signal -- on stdout, parsed by the standard ``parse_exit_signal`` flow.
+    - ``--mode json`` emits one JSON event per line (FU-72): assistant messages
+      with per-message usage + cost, and every tool call. stdout is written
+      straight to ``events_path`` as pi produces it, so a run killed by the
+      wall-clock ceiling still leaves its event log on disk. ``raw`` is that
+      stream plus any stderr; ``parse_pidev_output`` extracts the final text
+      (which carries the exit signal) and the usage.
     - Provider is ``openrouter`` in v1 (D-or-5); ``model`` is the OpenRouter id.
       ``OPENROUTER_API_KEY`` is inherited from the environment (D-be-2) -- the bot
       supplies it via its systemd EnvironmentFile.
-
-    Token/cost usage (pi ``--mode json``) is deferred to a later layer; the
-    runner records ``usage=None`` for pidev today.
     """
     fd, prompt_file = tempfile.mkstemp(suffix=".md", prefix="i2c_pidev_prompt_")
+    own_events = events_path is None
+    if own_events:
+        efd, events_name = tempfile.mkstemp(suffix=".jsonl", prefix="i2c_pidev_events_")
+        os.close(efd)
+        events_path = Path(events_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(prompt)
         cmd = [
             "pi", "-p", "--no-session", "-nc", "--no-skills", "--no-extensions",
-            "--provider", "openrouter", "--model", model, "--mode", "text",
+            "--provider", "openrouter", "--model", model, "--mode", "json",
             "@" + prompt_file,
         ]
-        proc = subprocess.run(
-            cmd,
-            stdin=subprocess.DEVNULL,
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=timeout,
-        )
-        combined = proc.stdout + (proc.stderr if proc.stderr else "")
-        return proc.returncode, combined
+        with open(events_path, "w", encoding="utf-8") as events:
+            proc = subprocess.run(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=events,
+                stderr=subprocess.PIPE,
+                cwd=str(cwd),
+                text=True,
+                encoding="utf-8",
+                timeout=timeout,
+            )
+        raw = Path(events_path).read_text(encoding="utf-8")
+        if proc.stderr:
+            raw += proc.stderr
+        return proc.returncode, raw
     finally:
-        try:
-            os.remove(prompt_file)
-        except OSError:
-            pass
+        for path in (prompt_file, events_path if own_events else None):
+            if path is None:
+                continue
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +493,76 @@ def parse_claude_output(raw: str) -> tuple[str, dict | None]:
         "input": fresh_in + cache_creation + cache_read,
         "output": out,
         "cached": cache_read,
+    }
+
+
+def parse_pidev_output(raw: str) -> tuple[str, dict | None]:
+    """Extract (final_text, usage_dict) from ``pi --mode json`` output (FU-72).
+
+    Every assistant ``message_end`` event carries that message's ``usage``
+    (``input`` is fresh input; ``cacheRead`` / ``cacheWrite`` are separate,
+    like claude) and pi's own ``cost.total``. The last assistant message's text
+    carries the exit signal. ``tool_execution_start`` events count tool calls.
+
+    usage_dict: {"input": gross, "output": M, "cached": K, "cost_usd": float |
+    None, "tool_calls": int}. If no assistant message is found (plain text, or a
+    run that died before replying), returns ``(raw, None)`` so the exit-signal
+    parser still sees whatever was captured.
+    """
+    fresh = cache_read = cache_write = out = tool_calls = 0
+    cost = 0.0
+    saw_cost = saw_assistant = False
+    final_text = ""
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        etype = ev.get("type")
+        if etype == "tool_execution_start":
+            tool_calls += 1
+            continue
+        if etype != "message_end":
+            continue
+        msg = ev.get("message")
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        saw_assistant = True
+        text = "".join(
+            c.get("text", "") for c in msg.get("content") or []
+            if isinstance(c, dict) and c.get("type") == "text"
+        )
+        if text.strip():
+            final_text = text
+        u = msg.get("usage")
+        if not isinstance(u, dict):
+            continue
+        m_in = int(u.get("input", 0) or 0)
+        m_out = int(u.get("output", 0) or 0)
+        m_cr = int(u.get("cacheRead", 0) or 0)
+        m_cw = int(u.get("cacheWrite", 0) or 0)
+        m_reason = int(u.get("reasoning", 0) or 0)
+        # Count reasoning separately only when pi reports it outside `output`.
+        if m_reason and int(u.get("totalTokens", 0) or 0) == m_in + m_out + m_cr + m_cw + m_reason:
+            m_out += m_reason
+        fresh, out, cache_read, cache_write = fresh + m_in, out + m_out, cache_read + m_cr, cache_write + m_cw
+        c = u.get("cost")
+        if isinstance(c, dict) and c.get("total") is not None:
+            cost += float(c.get("total") or 0)
+            saw_cost = True
+    if not saw_assistant:
+        return raw, None
+    return final_text, {
+        "input": fresh + cache_read + cache_write,
+        "output": out,
+        "cached": cache_read,
+        "cost_usd": cost if saw_cost else None,
+        "tool_calls": tool_calls,
     }
 
 
@@ -943,7 +1027,7 @@ def run_iteration(
     prompt_path = log_dir / f"iteration_{iteration:03d}_prompt.md"
     system_path = log_dir / f"iteration_{iteration:03d}_system.md"  # claude only
     output_path = log_dir / f"iteration_{iteration:03d}.txt"
-    jsonl_path = log_dir / f"iteration_{iteration:03d}.jsonl"  # codex only
+    jsonl_path = log_dir / f"iteration_{iteration:03d}.jsonl"  # codex + pidev events
     try:
         if backend == "claude":
             system_prompt = assemble_prompt(
@@ -1023,6 +1107,7 @@ def run_iteration(
                 cwd=root,
                 model=model,
                 timeout=iter_timeout,
+                events_path=jsonl_path,
             )
     except subprocess.TimeoutExpired:
         # The subprocess was killed for exceeding the ceiling. No usable result;
@@ -1032,6 +1117,11 @@ def run_iteration(
             "iteration aborted: wall-clock ceiling exceeded "
             f"({iter_timeout:.0f}s)"
         )
+        # pidev streams its events to disk, so a killed run still shows how far
+        # it got (and what it cost) - FU-72.
+        if backend == "pidev" and jsonl_path.is_file():
+            captured = jsonl_path.read_text(encoding="utf-8", errors="replace")
+            sys.stderr.write(f"NOTE: partial pi event log kept at {jsonl_path}\n")
     except FileNotFoundError as e:
         os.environ.pop(contracts.BASELINE_ENV, None)
         cli_name = e.filename or backend
@@ -1057,9 +1147,11 @@ def run_iteration(
     elif backend == "codex":
         signal_text = captured  # codex agent_message text
         usage = parse_codex_usage(jsonl_raw)
-    else:  # pidev -- token/cost via pi --mode json is deferred (Layer 2)
-        signal_text = captured
-        usage = None
+    else:  # pidev: pi --mode json events (FU-72)
+        signal_text, usage = parse_pidev_output(captured)
+        # The transcript is the final assistant text; the raw events stay in
+        # iteration_NNN.jsonl.
+        output_path.write_text(signal_text, encoding="utf-8")
 
     # 7. Parse + validate the exit signal.
     signal = parse_exit_signal(signal_text)

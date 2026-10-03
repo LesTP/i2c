@@ -15,9 +15,10 @@ Two hard rules (see DESIGN_telemetry_v1.md):
   :func:`record_iteration` so a telemetry failure can never change an
   iteration's control flow or exit code.
 
-Cost/tier, the tests oracle, ``tool_calls`` and ``review_findings`` are left
-``None`` in v1 (the schema marks them nullable); they're populated by later
-increments without a schema change.
+``review_findings`` is still left ``None`` (the schema marks it nullable).
+``tool_calls`` and a backend-reported ``cost_usd`` (``cost_source: "backend"``)
+are populated when the backend's usage carries them (pidev, FU-72); otherwise
+cost/tier come from the bundled pricing table.
 """
 
 from __future__ import annotations
@@ -364,6 +365,12 @@ def record_iteration(
     cost_usd = cost_source = tier = None
     if pricing is not None:
         cost_usd, cost_source, tier = cost_and_tier(usage, model, pricing)
+    # A backend that reports its own per-message cost (pidev, FU-72) is more
+    # exact than the pricing table; the table still supplies the tier.
+    reported_cost = usage.get("cost_usd") if usage else None
+    if reported_cost is not None:
+        cost_usd, cost_source = float(reported_cost), "backend"
+    tool_calls = usage.get("tool_calls") if usage else None
 
     row = build_row(
         iteration=iteration,
@@ -383,6 +390,7 @@ def record_iteration(
         cost_usd=cost_usd,
         cost_source=cost_source,
         wall_clock_s=round(wall_clock_s, 3) if wall_clock_s is not None else None,
+        tool_calls=tool_calls,
         start_commit=start_commit,
         end_commit=end_commit,
         prompt_hash=prompt_hash(prompt_text) if prompt_text else None,
