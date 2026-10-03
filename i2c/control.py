@@ -557,7 +557,7 @@ def next_action(root: Path | None = None) -> Dispatch:
     root = root or find_project_root()
     st = load_state(root)
     try:
-        action, next_state = _sm.decide(st.project, st.steps)
+        action, next_state = _sm.decide(st.project, st.steps, st.phases)
     except ValueError as e:
         raise ControlError(str(e)) from e
     return Dispatch(action=action, next_state=next_state)
@@ -1223,15 +1223,18 @@ def readiness(
     # 4. Backend for the dispatched action resolvable on PATH; then dry-assemble.
     if action and action != "EXIT":
         backend = _resolve_dispatch_backend(root, action, backend_override)
-        if shutil.which(backend) is None:
+        command = _config.BACKEND_COMMANDS.get(backend, backend)
+        if shutil.which(command) is None:
             # Advisory (mirrors doctor._check_backends): supervised hosts / CI
             # legitimately lack a backend CLI, and the runner surfaces a missing
             # backend at invoke time — so surface it, but do not block the gate.
             findings.append(doctor.Check(
                 "backend CLI", doctor.WARN,
-                f"{backend!r} (for action {action.lower()}) is not on PATH",
-                remedy=f"Install the {backend} CLI on the run host's PATH, or route "
-                       "this action to an installed backend in [run.backends]."))
+                f"{backend!r} (for action {action.lower()}) is not on PATH "
+                f"(looked for `{command}`)",
+                remedy=f"Install the {backend} CLI (`{command}`) on the run host's "
+                       "PATH, or route this action to an installed backend in "
+                       "[run.backends]."))
         # 5. Dry-assemble the next action (the core check). Skip phase-0 (already
         #    flagged above; --phase 0 cannot assemble).
         if phase >= 1:

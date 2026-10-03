@@ -142,9 +142,21 @@ class TestDecideMatrix(unittest.TestCase):
     # ---- plan -------------------------------------------------------------
 
     def test_plan_dispatches_plan(self):
+        # No phase record yet (PLAN creates it): the Build default, as in the
+        # prompt's Next State.
         proj = self._project(state="plan")
         action, nxt = sm.decide(proj, [])
-        self.assertEqual((action, nxt), ("PLAN", "execute"))
+        self.assertEqual((action, nxt), ("PLAN", "tests"))
+
+    def test_plan_next_follows_phase_regime(self):
+        proj = self._project(state="plan")
+        phase = int(proj.get("phase", 1))
+        for regime, expected in (("build", "tests"), ("refine", "execute"),
+                                 ("explore", "execute")):
+            with self.subTest(regime=regime):
+                phases = [{"id": phase, "title": "t", "regime": regime,
+                           "status": "pending"}]
+                self.assertEqual(sm.decide(proj, [], phases), ("PLAN", expected))
 
     # ---- tests ------------------------------------------------------------
 
@@ -236,7 +248,7 @@ class TestStateMachineCli(unittest.TestCase):
             p.set_project(state="plan")
             rc, out, err = run_main()
             self.assertEqual(rc, 0, msg=err)
-            self.assertEqual(parse_output(out), ("PLAN", "execute"))
+            self.assertEqual(parse_output(out), ("PLAN", "tests"))  # fixture phase 2 is Build
 
     def test_tests_state_dispatches_tests(self):
         with TempProject() as p:

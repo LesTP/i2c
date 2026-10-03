@@ -24,7 +24,7 @@ Decision matrix (per DESIGN_state_lifecycle_v1.md §4):
 ============================  ===========================  =======  ================
 ``project.json.state``        pending steps for phase      ACTION   NEXT
 ============================  ===========================  =======  ================
-``plan``                      (any)                        PLAN     execute
+``plan``                      (any)                        PLAN     tests (Build) / execute
 ``tests``                     (any)                        TESTS    execute
 ``execute``                   > 1                          EXECUTE  execute
 ``execute``                   == 1                         EXECUTE  review
@@ -45,6 +45,7 @@ from typing import Any
 
 # Sibling package modules.
 from i2c import assemble_context as ac
+from i2c import contracts
 from i2c import validate as v
 
 
@@ -81,10 +82,14 @@ def count_pending_steps(steps: list[dict[str, Any]], phase: int) -> int:
 def decide(
     project: dict[str, Any],
     steps: list[dict[str, Any]],
+    phases: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     """Apply the dispatch matrix and return ``(ACTION, NEXT)``.
 
     Pure function: no I/O, no env lookups. Easy to test cell-by-cell.
+    ``phases`` lets PLAN's NEXT follow the phase regime (Build hands off to
+    TESTS); without a record the Build default applies, matching the prompt's
+    ``Next State`` (both come from ``contracts.CONTRACTS``).
     """
     state = project.get("state", "")
     if state not in VALID_STATES:
@@ -97,7 +102,9 @@ def decide(
 
     phase = int(project.get("phase", 0))
     if state == "plan":
-        return "PLAN", "execute"
+        record = next((p for p in phases or [] if p.get("id") == phase), None) or {}
+        regime = str(record.get("regime") or "build")
+        return "PLAN", contracts.get("plan").states_for(regime)[0]
     if state == "tests":
         return "TESTS", "execute"
     if state == "execute":
@@ -133,16 +140,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         project = v.validate_state_file(root / ".state" / "project.json")
         steps = v.validate_state_file(root / ".state" / "steps.json")
-        # phases.json is read to satisfy the same required-state invariants
-        # the assembler enforces; the decision matrix itself doesn't need it
-        # in v1, but reading + validating early lets us fail fast.
-        v.validate_state_file(root / ".state" / "phases.json")
+        phases = v.validate_state_file(root / ".state" / "phases.json")
     except ValueError as e:
         sys.stderr.write(f"ERROR: state file schema-invalid\nFile: {root}\nDetail: {e}\n")
         return 2
 
     try:
-        action, next_state = decide(project, steps)
+        action, next_state = decide(project, steps, phases)
     except ValueError as e:
         sys.stderr.write(f"ERROR: invalid state\nFile: {root / '.state' / 'project.json'}\nDetail: {e}\n")
         return 2

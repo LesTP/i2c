@@ -946,6 +946,40 @@ class TestReadiness(unittest.TestCase):
             d = c.diagnose(p.root)
             self.assertIsInstance(d.readiness, c.ReadinessReport)
 
+    def test_pidev_backend_looks_for_pi_command(self):
+        # pi.dev's executable is `pi`; probing for `pidev` warned on every run.
+        looked_up: list[str] = []
+
+        def fake_which(name):
+            looked_up.append(name)
+            return "/usr/bin/pi" if name == "pi" else None
+
+        with TempProject() as p:
+            _make_assemblable(p.root)
+            orig = c.shutil.which
+            c.shutil.which = fake_which
+            try:
+                rep = c.readiness(p.root, backend_override="pidev")
+            finally:
+                c.shutil.which = orig
+            self.assertIn("pi", looked_up)
+            self.assertNotIn("pidev", looked_up)
+            self.assertFalse(any(f.name == "backend CLI" for f in rep.findings),
+                             msg=[(f.name, f.detail) for f in rep.findings])
+
+    def test_missing_backend_names_the_command(self):
+        with TempProject() as p:
+            _make_assemblable(p.root)
+            orig = c.shutil.which
+            c.shutil.which = lambda name: None
+            try:
+                rep = c.readiness(p.root, backend_override="pidev")
+            finally:
+                c.shutil.which = orig
+            warn = next(f for f in rep.findings if f.name == "backend CLI")
+            self.assertIn("looked for `pi`", warn.detail)
+            self.assertTrue(rep.ready())  # advisory only
+
 
 if __name__ == "__main__":
     unittest.main()

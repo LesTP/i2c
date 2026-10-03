@@ -401,17 +401,11 @@ Use `outcome: "blocked"` if you finished partial scope but need human input
 before continuing (typically after a probe surfaced a contract gap that
 needs decision before steps can be written).
 
-### 9. Commit
+### 9. Do not commit — the runner does
 
-One commit per plan invocation. Message format: `phase: plan — short title`.
-
-```bash
-git add .state/
-git commit -m "11: plan — orchestrator pipeline + event loop"
-```
-
-Always pass `-m`. The full prohibitions on interactive git commands apply
-(see the Shell command discipline section in your Worker Contract).
+Leave your `.state/` writes in place; do **not** run `git`. The deterministic
+runner owns every commit (FU-40): the plan's `.state/` changes are committed
+with the rest of the phase's state after CLOSE.
 
 ### 10. Transition state
 
@@ -455,6 +449,7 @@ this invocation.
   multi-phase plans go stale)
 - Read governance files — all needed context is in your assembled prompt
 - Decide the next ACTION — the state machine does that after you exit
+- Run `git` / commit — the runner commits `.state/` after CLOSE
 
 ---
 
@@ -476,8 +471,7 @@ i2c state set project.json budget_type=steps
 
 i2c state append devlog.jsonl '{"phase":5,"step":null,"action":"plan","outcome":"complete","summary":"Phase 5 (event_store, Build, leaf): 3 steps covering writer, reader, crash-safety.","contracts":[]}'
 
-git add .state/
-git commit -m "5: plan — event_store core storage"
+i2c state set project.json state=tests
 
 i2c state set project.json state=tests  # Build regime → TESTS authors the acceptance suite next
 # Emit exit signal.
@@ -503,10 +497,7 @@ i2c state append-record steps.json '{"phase":11,"step":4,"title":"Idempotency_ke
 
 i2c state append devlog.jsonl '{"phase":11,"step":null,"action":"plan","outcome":"complete","summary":"Phase 11 (orchestrator, Build, non-leaf): 4 steps after dep-probe added step 4 for idempotency_key. D-22 records the decision.","contracts":[]}'
 
-git add .state/
-git commit -m "11: plan — orchestrator pipeline + event loop"
-
-i2c state set project.json state=tests  # Build regime → TESTS next
+i2c state set project.json state=tests
 ```
 
 ### Refine phase
@@ -522,8 +513,7 @@ i2c state append-record decisions.json '{"id":"D-31","title":"First item: 3-para
 
 i2c state append devlog.jsonl '{"phase":14,"step":null,"action":"plan","outcome":"complete","summary":"Phase 14 (formatting, Refine): goal D-30 closed; first item D-31 open. No step pre-plan.","contracts":[]}'
 
-git add .state/
-git commit -m "14: plan — telegram formatting Refine"
+i2c state set project.json state=execute
 
 i2c state set project.json state=execute  # Refine regime → execute directly (no TESTS)
 ```

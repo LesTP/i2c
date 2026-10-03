@@ -523,17 +523,11 @@ Use `outcome: "blocked"` if you finished partial scope but need human input
 before continuing (typically after a probe surfaced a contract gap that
 needs decision before steps can be written).
 
-### 9. Commit
+### 9. Do not commit — the runner does
 
-One commit per plan invocation. Message format: `phase: plan — short title`.
-
-```bash
-git add .state/
-git commit -m "11: plan — orchestrator pipeline + event loop"
-```
-
-Always pass `-m`. The full prohibitions on interactive git commands apply
-(see the Shell command discipline section in your Worker Contract).
+Leave your `.state/` writes in place; do **not** run `git`. The deterministic
+runner owns every commit (FU-40): the plan's `.state/` changes are committed
+with the rest of the phase's state after CLOSE.
 
 ### 10. Transition state
 
@@ -577,6 +571,7 @@ this invocation.
   multi-phase plans go stale)
 - Read governance files — all needed context is in your assembled prompt
 - Decide the next ACTION — the state machine does that after you exit
+- Run `git` / commit — the runner commits `.state/` after CLOSE
 
 ---
 

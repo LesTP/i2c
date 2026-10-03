@@ -192,14 +192,13 @@ def _check_toml() -> Check:
 
 
 def _check_backends() -> Check:
-    claude = shutil.which("claude")
-    codex = shutil.which("codex")
-    pidev = shutil.which("pi")  # pi.dev's binary is `pi`
-    detail = (
-        f"claude: {claude or 'not found'}; codex: {codex or 'not found'}; "
-        f"pi: {pidev or 'not found'}"
+    from i2c.config import BACKEND_COMMANDS
+
+    found = {b: shutil.which(cmd) for b, cmd in BACKEND_COMMANDS.items()}
+    detail = "; ".join(
+        f"{BACKEND_COMMANDS[b]}: {path or 'not found'}" for b, path in found.items()
     )
-    if claude or codex or pidev:
+    if any(found.values()):
         return Check("backend CLI", OK, detail)
     return Check(
         "backend CLI",

@@ -774,7 +774,7 @@
     "id": "FU-70",
     "title": "Real 'i2c run --backend pidev' end-to-end on pirozhok (pidev-spike harness)",
     "kind": "experiment-log",
-    "status": "open",
+    "status": "closed",
     "opened": "2026-09-29",
     "context": "FU-61 spike hand-invoked pi -p; Layer 0 resolution left 'real i2c run --backend pidev e2e on the Pi' as an untracked follow-up. Use p:\\shared\\pidev-spike: reset .state from review back to plan/execute, set [run.backends]/[run.models] to pidev + OpenRouter ids, run from pirozhok (FU-28), check commit, telemetry (--mode json deferred check 5), and exit parsing.",
     "trigger": "Layer 0 pidev resolution follow-up; pidev-spike parked at state=review.",
@@ -787,7 +787,9 @@
       "FU-61",
       "FU-66",
       "DESIGN_backend_v1.md"
-    ]
+    ],
+    "closed": "2026-10-03",
+    "resolution": "Done 2026-10-03 on pirozhok (pidev-spike, iterations 1-10). VERIFIED through the real runner: pidev end to end, incl. the bot /run path once the i2c-bot restart loaded OPENROUTER_API_KEY; per-action model routing + model attribution; exit-signal parsing (success, missing signal, false-success caught by the action contract); runner commits for TESTS (2.tests + suite digest), EXECUTE (eb2a1ba 2.1: + hash back-filled into steps.json) and CLOSE (docs + .state tail); telemetry rows incl. tokens, pi-reported cost and tool calls (after b6491f6 + FU-72); the action-contract gate on real weak-model runs. MODEL FINDINGS (pi tool loop): deepseek-chat (V3) wrote tool calls as text instead of making them (3 of 4 runs); deepseek-v4.1-flash did PLAN and TESTS correctly but its one EXECUTE hung 20 min to the ceiling with almost no spend, cause unknown (pre-FU-72, no event log); gpt-4o-mini did CLOSE but on EXECUTE replied it had read the contract and did nothing (unconfirmed guess: the prompt arrives only as an attached file); anthropic/claude-sonnet-5.5 did EXECUTE 2.1 in 12s for $0.0086 and its event log shows it ran i2c state + i2c check itself. NOT EXERCISED: rate-limit / quota (FU-73). Side findings: CLOSE wrote a stub next-phase suite (led to DESIGN_action_contracts_v1); the Pi container has no python command (FU-76). pidev-spike left at phase 2 execute, steps 2.2-2.4 pending; spike artifacts can be deleted or reused as the test project."
   },
   {
     "id": "FU-71",
@@ -900,5 +902,24 @@
     ],
     "closed": "2026-10-02",
     "resolution": "Superseded by DESIGN_action_contracts_v1 (increment 1), as an allowlist rather than a test-file denylist. Every lifecycle action has a write scope; protected paths (all tests/acceptance/** unless owned by that phase TESTS, i2c.toml, adapters, .git) fail the iteration with exit 2 and no commit, for CLOSE and REVIEW and every other action. Out-of-scope non-protected paths are left uncommitted and reported. The runner gate also verifies end states and required .state writes for every action (EXIT 0 is a claim). FU-70 iteration 3 is replayed in tests/test_contracts.py."
+  },
+  {
+    "id": "FU-76",
+    "title": "Pi container has no `python` command; project specs and the i2c.toml test_cmd example say `python`",
+    "kind": "other",
+    "status": "closed",
+    "opened": "2026-10-03",
+    "context": "The claude-code container on pirozhok has python3 (3.11.2) but no `python` (command -v python fails). The laptop is the reverse: `python` is the fb-python command. Specs and commands written on the laptop therefore break on the Pi. Seen in FU-70: the EXECUTE worker ran `python -m pytest` (copied from pidev-spike ARCHITECTURE.md), got `python: command not found`, and only recovered because claude-sonnet-5.5 retried with python3; a weaker model may not. i2c packaged instructions do not hard-code `python`; the only shipped occurrence is the commented test_cmd example in i2c/data/templates/i2c.toml. Options: (a) ops: install python-is-python3 in the container (one apt package, matches the laptop); (b) docs: use `python3` in the template example and in project specs meant for the Pi; (c) both. (a) fixes every project at once, incl. existing specs and worker habits.",
+    "trigger": "Next Pi maintenance touch, or before more autonomous runs on Python projects through cheap models.",
+    "priority": "next",
+    "files": [
+      "i2c/data/templates/i2c.toml",
+      "p:/shared/pidev-spike/ARCHITECTURE.md"
+    ],
+    "refs": [
+      "FU-70"
+    ],
+    "closed": "2026-10-03",
+    "resolution": "Option (a): installed python-is-python3 (3.11.2-1+deb12u1, 16 KB; /usr/bin/python -> python3, /usr/bin/pydoc -> pydoc3) in the claude-code container on 2026-10-03. Verified as user claude: command -v python -> /usr/bin/python, Python 3.11.2, imports the shared i2c checkout. Recorded in the pirozhok README Infrastructure list with a note that it is not in the fully-provisioned snapshot, so a container rebuilt from that snapshot needs the install re-run. The i2c.toml template example was left as `python`, which now works on both hosts."
   }
 ]
