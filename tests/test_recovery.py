@@ -462,8 +462,11 @@ class TestRunnerDispatchOverride(unittest.TestCase):
                     max_budget_usd=1.0,
                     claude_invoker=lambda prompt, **k: (0, "EXIT: 0\nREASON: ok"),
                 )
-            self.assertEqual(rc, 0)
+            self.assertEqual(rc, 2)
             self.assertIn("workflow drift detected", err_buf.getvalue())
+            # The contract gate also catches it: REVIEW claimed success but left
+            # state=execute and appended no review devlog entry.
+            self.assertIn("post-REVIEW invariants failed", err_buf.getvalue())
 
 
 if __name__ == "__main__":

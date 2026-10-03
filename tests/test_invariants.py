@@ -128,9 +128,32 @@ class TestCheckPostAction(unittest.TestCase):
             self.assertIn("must be 'close'", failures[0])
 
     # ---- plan -------------------------------------------------------------
+    # Fixture phase 2 is Build: PLAN hands off to TESTS (state=tests). Only a
+    # Refine/Explore PLAN goes straight to execute.
 
-    def test_plan_passes_when_state_is_execute(self):
+    def _set_regime(self, p, phase_id: int, regime: str) -> None:
+        path = p.root / ".state" / "phases.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for rec in data:
+            if rec["id"] == phase_id:
+                rec["regime"] = regime
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    def test_plan_passes_when_build_phase_hands_off_to_tests(self):
         with TempProject() as p:
+            p.patch_project(state="tests")
+            self.assertEqual(inv.check_post_action(p.root, "plan"), [])
+
+    def test_plan_build_phase_fails_when_state_is_execute(self):
+        with TempProject() as p:
+            p.patch_project(state="execute")
+            failures = inv.check_post_action(p.root, "plan")
+            self.assertEqual(len(failures), 1)
+            self.assertIn("must be 'tests'", failures[0])
+
+    def test_plan_refine_phase_passes_when_state_is_execute(self):
+        with TempProject() as p:
+            self._set_regime(p, 2, "refine")
             p.patch_project(state="execute")
             self.assertEqual(inv.check_post_action(p.root, "plan"), [])
 
@@ -139,12 +162,26 @@ class TestCheckPostAction(unittest.TestCase):
             p.patch_project(state="audit_escalation")
             self.assertEqual(inv.check_post_action(p.root, "plan"), [])
 
-    def test_plan_fails_when_state_not_execute_or_escalation(self):
+    def test_plan_fails_when_state_left_at_plan(self):
         with TempProject() as p:
             p.patch_project(state="plan")
             failures = inv.check_post_action(p.root, "plan")
             self.assertEqual(len(failures), 1)
-            self.assertIn("must be 'execute'", failures[0])
+            self.assertIn("post-PLAN invariant", failures[0])
+            self.assertIn("(currently 'plan')", failures[0])
+
+    # ---- tests ------------------------------------------------------------
+
+    def test_tests_passes_when_state_is_execute_or_partial(self):
+        for state in ("execute", "tests", "audit_escalation"):
+            with self.subTest(state=state), TempProject() as p:
+                p.patch_project(state=state)
+                self.assertEqual(inv.check_post_action(p.root, "tests"), [])
+
+    def test_tests_fails_when_state_is_review(self):
+        with TempProject() as p:
+            p.patch_project(state="review")
+            self.assertEqual(len(inv.check_post_action(p.root, "tests")), 1)
 
     # ---- execute ----------------------------------------------------------
 

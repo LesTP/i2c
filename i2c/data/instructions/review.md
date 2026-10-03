@@ -179,7 +179,9 @@ Set `project.json.state=close`. The state machine will dispatch CLOSE next.
 i2c state set project.json state=close
 ```
 
-Then emit the exit signal (2-line block, see Worker Contract §4).
+Before emitting the exit signal, run `i2c check` (see the Action Contract
+section of your prompt) and fix anything it reports. Then emit the exit signal
+(2-line block, see Worker Contract §4).
 
 ---
 

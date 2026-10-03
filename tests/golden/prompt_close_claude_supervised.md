@@ -197,11 +197,14 @@ If either is false, the state machine mis-dispatched; **escalate**
 ### 2. Run phase-level tests
 
 Run the full test suite for the phase's module (and any boundary tests
-that exercise the module from outside). For a Build phase this run **includes
-the frozen acceptance suite** under `tests/acceptance/phase_<N>/` (authored by
-the TESTS action) — it must be **green** at close, confirming the
-implementation satisfied the contract it was graded against. All must pass. If
-any fail:
+that exercise the module from outside). For a Build phase that ran a TESTS
+action, this run **includes the frozen acceptance suite** under
+`tests/acceptance/phase_<N>/` — it must be **green** at close, confirming the
+implementation satisfied the contract it was graded against. If no
+`tests/acceptance/phase_<N>/` dir exists, this phase had no TESTS action (e.g. a
+Refine phase, or a project that hasn't adopted the action): run the module's
+other tests, note the absence in the close devlog summary, and **never create
+an acceptance suite here**. All must pass. If any fail:
 
 - Tests broken by something review missed: **stop**, log via devlog
   `outcome: "failed"`, `EXIT 2`.
@@ -385,7 +388,9 @@ i2c state set project.json state=audit_boundary
 `state=audit_boundary` halts the loop; the operator (or wrapper)
 advances from there. **Do not advance `phase`** in this close action.
 
-Then emit the exit signal (2-line block, see Worker Contract §4).
+Before emitting the exit signal, run `i2c check` (see the Action Contract
+section of your prompt) and fix anything it reports. Then emit the exit signal
+(2-line block, see Worker Contract §4).
 Exit code is `0` — close always terminates normally.
 
 ---
@@ -393,6 +398,7 @@ Exit code is `0` — close always terminates normally.
 ## What this action does NOT do
 
 - Implement code (that was EXECUTE)
+- Write or change tests, including acceptance suites (TESTS owns those)
 - Find and apply code review fixes (that was REVIEW)
 - Plan the next phase (that's the next PLAN, after the human audit)
 - Advance `project.json.phase`
@@ -401,3 +407,20 @@ Exit code is `0` — close always terminates normally.
   `.state/` tail) deterministically after you exit
 
 ---
+
+## Action Contract
+
+The runner checks this contract after you exit, before anything is committed. It is generated from the same table the check uses.
+
+**You may change:** `ARCHITECTURE.md`, `ARCH_*.md`, `PROJECT.md` - nothing else outside `.state/`. Other files you change are left uncommitted and reported; `.state/` changes go through `i2c state`.
+
+**Never change:** `tests/acceptance/**`, `i2c.toml`, `CLAUDE.md`, `CODEX.md`, `PIDEV.md`, `.git/**`. Changing one fails the iteration.
+
+**Before `EXIT: 0`, all of these must be true:**
+
+- `project.json.state` is `audit_boundary`
+- phase 2 is marked `complete` in `phases.json`
+- you appended a `close` devlog entry for phase 2 via `i2c state append`
+- the frozen acceptance suite for phase 2 (if one exists) is unchanged
+
+Run `i2c check --action close` before you emit the exit signal. If it reports a failure, fix it; if you cannot, stop and emit `EXIT: 2` with the reason.

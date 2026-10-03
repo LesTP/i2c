@@ -434,12 +434,13 @@ i2c state set project.json state=tests
 i2c state set project.json state=execute
 ```
 
-> Note: the `Next State` line in your prompt reads `execute` regardless — it is
-> advisory only (at plan-dispatch the regime isn't known to the state machine,
-> D-tests-1a). **You** own the real transition here based on the regime.
+> Note: the `Next State` line in your prompt is the Build default (`tests`).
+> **You** own the real transition here based on the regime you chose in step 3.
 
-Then emit the exit signal (2-line block, see Worker Contract §4). Do not
-start the first execute step in this invocation.
+Before emitting the exit signal, run `i2c check` (see the Action Contract
+section of your prompt) and fix anything it reports. Then emit the exit signal
+(2-line block, see Worker Contract §4). Do not start the first execute step in
+this invocation.
 
 ---
 

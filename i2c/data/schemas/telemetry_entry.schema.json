@@ -50,6 +50,11 @@
     "tests_pass": { "type": ["boolean", "null"] },
     "tests_cmd": { "type": ["string", "null"] },
     "drift_flag": { "type": ["boolean", "null"] },
+    "contract_violation": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "Blocking action-contract failures that turned this iteration into exit 2 (DESIGN_action_contracts_v1); null when the contract passed or was not evaluated."
+    },
 
     "review_findings": {
       "type": ["object", "null"],

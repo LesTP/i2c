@@ -88,6 +88,9 @@ in the assembled `Current Phase` section, then follow the matching branch.
 
      Then emit the exit signal. The next invocation will be a REVIEW action.
 
+   Either way, run `i2c check` before emitting the exit signal (see the Action
+   Contract section of your prompt) and fix anything it reports.
+
 ### Refine regime — goal-driven, iteration-driven
 
 Refine work is open-ended toward a stated goal. Steps emerge as you go rather

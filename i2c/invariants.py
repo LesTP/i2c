@@ -13,26 +13,16 @@ This module is reusable: ``check_post_action(project_root, action)``
 returns a list of failure messages (empty list = pass). Supervised
 workflows can call the same function after a manual action.
 
-v1 invariants (per the lifecycle redesign in DESIGN_state_lifecycle_v1.md):
+``check_post_action`` checks the end state only (no baseline). The allowed
+end states per action come from ``contracts.CONTRACTS``; ``close`` also
+requires ``phases.json[id == phase].status == "complete"`` and an unchanged
+frozen acceptance suite. ``audit_escalation`` is a valid post-state for every
+action except ``close``, which always ends at ``audit_boundary`` (D-state-3).
 
-================== =================================================================
-Action             Invariant
-================== =================================================================
-``close``          ``project.json.state == "audit_boundary"`` AND
-                   ``phases.json[id == project.json.phase].status == "complete"``
-``review``         ``project.json.state in {"close", "audit_escalation"}``
-``plan``           ``project.json.state in {"execute", "audit_escalation"}``
-``execute``        ``project.json.state in {"execute", "review", "audit_escalation"}``
-================== =================================================================
-
-``audit_escalation`` is a valid post-state for plan/execute/review because
-any of those actions may halt the loop with an escalation. ``close`` always
-transitions to ``audit_boundary`` — conservative closure per D-state-3: the
-close worker never sets ``done`` directly; the human/wrapper decides at the
-boundary whether to advance to a new phase or terminate.
-
-These are the trivial structural invariants the action procedures lock in.
-The list grows as new patterns emerge from autonomous runs.
+``check_iteration`` is the full per-iteration contract gate the runner and
+``i2c check`` share: end state + iteration-relative postconditions (given a
+baseline) + write scope (given the changed paths). See
+DESIGN_action_contracts_v1.md.
 """
 
 from __future__ import annotations
@@ -45,11 +35,12 @@ from typing import Any
 
 # Sibling package modules.
 from i2c import assemble_context as ac
+from i2c import contracts
 from i2c import state as _state
 from i2c import validate as v
 
 
-ACTIONS = ("plan", "execute", "review", "close")
+ACTIONS = contracts.ACTIONS
 
 
 # ---------------------------------------------------------------------------
@@ -81,13 +72,47 @@ def check_post_action(project_root: Path, action: str) -> list[str]:
     if action == "close":
         failures.extend(_check_close(project, phases))
         failures.extend(_check_acceptance_integrity(project_root, project))
-    elif action == "review":
-        failures.extend(_check_review(project))
-    elif action == "plan":
-        failures.extend(_check_plan(project))
-    elif action == "execute":
-        failures.extend(_check_execute(project))
+    else:
+        msg = contracts.state_failure(action, project, phases)
+        if msg:
+            failures.append(f"post-{action.upper()} invariant: {msg}")
     return failures
+
+
+def check_iteration(
+    project_root: Path,
+    action: str,
+    *,
+    baseline: contracts.Baseline | None = None,
+    changed_paths: list[str] | None = None,
+    worker_exit: int = 0,
+) -> contracts.Verdict:
+    """The per-iteration contract gate (DESIGN_action_contracts_v1 §5.1).
+
+    Schema-invalid state is a blocking failure. CLOSE also verifies the frozen
+    acceptance suite (D-tests-4) whenever the worker claimed success.
+    """
+    if action not in ACTIONS:
+        raise ValueError(f"Unknown action {action!r}; expected one of {ACTIONS}")
+    try:
+        project = v.validate_state_file(project_root / ".state" / "project.json")
+        v.validate_state_file(project_root / ".state" / "phases.json")
+        v.validate_state_file(project_root / ".state" / "steps.json")
+    except ValueError as e:
+        verdict = contracts.Verdict(action=action)
+        verdict.failures.append(f"state file schema-invalid: {e}")
+        return verdict
+    verdict = contracts.evaluate(
+        project_root,
+        action,
+        phase=baseline.phase if baseline else None,
+        before=baseline.before if baseline else None,
+        changed_paths=changed_paths,
+        worker_exit=worker_exit,
+    )
+    if action == "close" and worker_exit == 0:
+        verdict.failures.extend(_check_acceptance_integrity(project_root, project))
+    return verdict
 
 
 # ---------------------------------------------------------------------------
@@ -116,37 +141,6 @@ def _check_close(project: dict[str, Any], phases: list[dict[str, Any]]) -> list[
             f"'complete' (currently {record.get('status')!r})"
         )
     return failures
-
-
-def _check_review(project: dict[str, Any]) -> list[str]:
-    state = project.get("state")
-    if state not in ("close", "audit_escalation"):
-        return [
-            f"post-REVIEW invariant: project.json.state must be 'close' "
-            f"or 'audit_escalation' (currently {state!r})"
-        ]
-    return []
-
-
-def _check_plan(project: dict[str, Any]) -> list[str]:
-    state = project.get("state")
-    if state not in ("execute", "audit_escalation"):
-        return [
-            f"post-PLAN invariant: project.json.state must be 'execute' "
-            f"or 'audit_escalation' (currently {state!r})"
-        ]
-    return []
-
-
-def _check_execute(project: dict[str, Any]) -> list[str]:
-    state = project.get("state")
-    if state not in ("execute", "review", "audit_escalation"):
-        return [
-            f"post-EXECUTE invariant: project.json.state must be 'execute' "
-            f"(more pending steps), 'review' (last step complete), or "
-            f"'audit_escalation' (worker halted); currently {state!r}"
-        ]
-    return []
 
 
 # ---------------------------------------------------------------------------

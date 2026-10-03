@@ -152,7 +152,9 @@ Transition based on the `outcome` you recorded in step 5:
 - **`blocked`** / regime mismatch — set `state=audit_escalation` (per step 5)
   and `EXIT 2`.
 
-Then emit the exit signal (2-line block, see Worker Contract §4). Do not start
+Before emitting the exit signal, run `i2c check` (see the Action Contract
+section of your prompt) and fix anything it reports. Then emit the exit signal
+(2-line block, see Worker Contract §4). Do not start
 implementing against the suite in this invocation — that is EXECUTE.
 
 ---

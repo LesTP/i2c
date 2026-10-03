@@ -36,6 +36,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Callable
 
+from i2c import contracts
 from i2c import validate as v
 
 
@@ -61,17 +62,10 @@ _NO_NEXT_STATE_ACTIONS = RECOVERY_ACTIONS
 SECTIONS = ("architecture", "module")
 MODES = ("autonomous", "supervised")
 
-# NEXT state computation per D-impl-3 (state-transition table used standalone).
-# Maps current `state` value (i.e., the action just dispatched) to the next
-# `state` the worker should set. CLOSE is the terminal action of a phase —
-# `blocked: true` halts the loop until the human clears the gate.
-_NEXT_BY_ACTION: dict[str, str] = {
-    "plan": "execute",
-    "tests": "execute",
-    "execute": "execute",  # loop within execute; transitions to review on last step
-    "review": "close",
-    "close": "plan",
-}
+# NEXT state shown to the worker: the action contract's first success state for
+# the phase's regime (contracts.CONTRACTS), so the prompt can never disagree
+# with the gate. EXECUTE loops on execute; the worker moves to review on the
+# last step.
 
 
 # ---------------------------------------------------------------------------
@@ -693,13 +687,15 @@ def render_action_heading(ctx: AssemblerContext) -> str:
 
 
 def compute_next_state(ctx: AssemblerContext) -> str:
-    """Default NEXT computation per D-impl-3 (Phase 3 may override via --next).
+    """The state the worker sets on success, from the action contract."""
+    if ctx.action not in contracts.CONTRACTS:
+        return "plan"
+    return contracts.get(ctx.action).states_for(_phase_regime(ctx))[0]
 
-    The current state-transition table mirrors what state_machine.py
-    eventually emit. EXECUTE → execute (loop) by default; the worker
-    transitions to review on the last step via state.py.
-    """
-    return _NEXT_BY_ACTION.get(ctx.action or "", "plan")
+
+def _phase_regime(ctx: AssemblerContext) -> str:
+    record = ctx.current_phase_record() or {}
+    return str(record.get("regime") or "build")
 
 
 def render_next_state(ctx: AssemblerContext) -> str:
@@ -771,6 +767,16 @@ def render_instructions(ctx: AssemblerContext) -> str:
     stripped = strip_conditional_sections(text, ctx)
     body = _extract_after_first_h2(stripped)
     return f"## Instructions\n\n{body.rstrip()}"
+
+
+def render_action_contract(ctx: AssemblerContext) -> str:
+    """## Action Contract — generated from contracts.CONTRACTS (lifecycle actions
+    only). The same table the runner gate and `i2c check` evaluate, so the
+    prompt cannot drift from enforcement (DESIGN_action_contracts_v1 §5.3)."""
+    if ctx.action not in contracts.CONTRACTS:
+        return ""
+    return contracts.render_markdown(
+        ctx.action, ctx.current_phase_id(), _phase_regime(ctx))
 
 
 # --- Project Context: Contract (per-module ARCH or single-doc architecture) -
@@ -1237,6 +1243,7 @@ def _volatile_body_parts(ctx: AssemblerContext) -> list[str]:
         render_phase_heading,
         render_step_heading,
         render_instructions,
+        render_action_contract,
     ):
         chunk = renderer(ctx)
         if chunk:

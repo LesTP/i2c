@@ -452,6 +452,70 @@ def cmd_ready(args: argparse.Namespace) -> int:
     return 0 if report.ready() else EXIT_NOT_READY
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    """Evaluate the action contract (DESIGN_action_contracts_v1 §5.2): the same
+    gate the runner applies after the worker exits, so a worker can verify an
+    ``EXIT: 0`` claim before making it."""
+    import json as _json
+    import os
+    from pathlib import Path
+
+    from i2c import assemble_context as ac
+    from i2c import contracts, invariants
+    from i2c.run_iteration import _worker_dirty_paths
+
+    root = ac.find_project_root()
+    baseline = None
+    env_path = os.environ.get(contracts.BASELINE_ENV)
+    if env_path and Path(env_path).is_file():
+        try:
+            baseline = contracts.Baseline.read(Path(env_path))
+        except (OSError, ValueError, KeyError) as e:
+            sys.stderr.write(f"NOTE: ignoring unreadable baseline {env_path} ({e}).\n")
+    action = args.action or (baseline.action if baseline else None)
+    if action is None:
+        sys.stderr.write(
+            "ERROR: pass --action (no runner baseline in "
+            f"${contracts.BASELINE_ENV} to infer it from).\n"
+        )
+        return 2
+    if baseline is not None and baseline.action != action:
+        baseline = None
+    changed = (
+        sorted(_worker_dirty_paths(root) - set(baseline.pre_dirty))
+        if baseline is not None else None
+    )
+    verdict = invariants.check_iteration(
+        root, action, baseline=baseline, changed_paths=changed, worker_exit=0,
+    )
+    if args.json:
+        sys.stdout.write(_json.dumps({
+            "action": action,
+            "ok": verdict.ok,
+            "failures": verdict.failures,
+            "flagged": verdict.flagged,
+            "skipped": verdict.skipped,
+            "baseline": baseline is not None,
+        }, indent=2) + "\n")
+        return 0 if verdict.ok else 1
+    for f in verdict.failures:
+        sys.stdout.write(f"FAIL: {f}\n")
+    if verdict.flagged:
+        sys.stdout.write(
+            "NOTE: outside the write scope, will not be committed: "
+            + ", ".join(verdict.flagged) + "\n"
+        )
+    if verdict.skipped:
+        sys.stdout.write(
+            "NOTE: not checked without a runner baseline: "
+            + ", ".join(verdict.skipped) + "\n"
+        )
+    if verdict.ok:
+        sys.stdout.write(f"OK: {action.upper()} contract satisfied\n")
+        return 0
+    return 1
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     from pathlib import Path
 
@@ -951,6 +1015,20 @@ def build_parser() -> argparse.ArgumentParser:
         "assembles, backend, git trust). Read-only; exit 5 when not ready.",
     )
     p_ready.set_defaults(func=cmd_ready)
+
+    p_check = sub.add_parser(
+        "check",
+        parents=[json_parent],
+        help="Check the action contract (end state, required .state writes, "
+        "write scope) before emitting EXIT 0. Read-only; exit 1 on failure.",
+    )
+    p_check.add_argument(
+        "--action",
+        choices=("plan", "tests", "execute", "review", "close"),
+        help="Action to check. Defaults to the runner baseline's action "
+        "($I2C_CHECK_BASELINE, set during autonomous iterations).",
+    )
+    p_check.set_defaults(func=cmd_check)
 
     p_import = sub.add_parser(
         "import",

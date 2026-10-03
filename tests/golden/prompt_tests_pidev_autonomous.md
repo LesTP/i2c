@@ -350,7 +350,9 @@ Transition based on the `outcome` you recorded in step 5:
 - **`blocked`** / regime mismatch — set `state=audit_escalation` (per step 5)
   and `EXIT 2`.
 
-Then emit the exit signal (2-line block, see Worker Contract §4). Do not start
+Before emitting the exit signal, run `i2c check` (see the Action Contract
+section of your prompt) and fix anything it reports. Then emit the exit signal
+(2-line block, see Worker Contract §4). Do not start
 implementing against the suite in this invocation — that is EXECUTE.
 
 ---
@@ -367,6 +369,22 @@ implementing against the suite in this invocation — that is EXECUTE.
 - Decide the next ACTION — the state machine does that after you exit
 
 ---
+
+## Action Contract
+
+The runner checks this contract after you exit, before anything is committed. It is generated from the same table the check uses.
+
+**You may change:** `tests/acceptance/phase_2/**`, `tests/acceptance/__init__.py`, `tests/__init__.py` - nothing else outside `.state/`. Other files you change are left uncommitted and reported; `.state/` changes go through `i2c state`.
+
+**Never change:** `tests/acceptance/**`, `i2c.toml`, `CLAUDE.md`, `CODEX.md`, `PIDEV.md`, `.git/**` (except `tests/acceptance/phase_2/**`, `tests/acceptance/__init__.py`, which this action owns). Changing one fails the iteration.
+
+**Before `EXIT: 0`, all of these must be true:**
+
+- `project.json.state` is `execute` or `tests`
+- `tests/acceptance/phase_2/` contains at least one test file (unless you leave `state=tests` to finish it next time)
+- you appended a `tests` devlog entry for phase 2 via `i2c state append`
+
+Run `i2c check --action tests` before you emit the exit signal. If it reports a failure, fix it; if you cannot, set `state=audit_escalation` and emit `EXIT: 2`.
 
 ═══════════════════════════════════════════════
 OUTPUT CONTRACT — REMINDER

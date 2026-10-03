@@ -307,6 +307,9 @@ in the assembled `Current Phase` section, then follow the matching branch.
 
      Then emit the exit signal. The next invocation will be a REVIEW action.
 
+   Either way, run `i2c check` before emitting the exit signal (see the Action
+   Contract section of your prompt) and fix anything it reports.
+
 ### Refine regime — goal-driven, iteration-driven
 
 Refine work is open-ended toward a stated goal. Steps emerge as you go rather
@@ -482,6 +485,23 @@ Worker Contract (regime shift, unclear spec, all modules complete, etc.).
 Stay in your lane: do the step, record the result, exit.
 
 ---
+
+## Action Contract
+
+The runner checks this contract after you exit, before anything is committed. It is generated from the same table the check uses.
+
+**You may change:** any project file except the protected paths below. Other files you change are left uncommitted and reported; `.state/` changes go through `i2c state`.
+
+**Never change:** `tests/acceptance/**`, `i2c.toml`, `CLAUDE.md`, `CODEX.md`, `PIDEV.md`, `.git/**`. Changing one fails the iteration.
+
+**Before `EXIT: 0`, all of these must be true:**
+
+- `project.json.state` is `execute` or `review`
+- exactly one pending step is now marked `complete` (`i2c state complete`)
+- `state` is `review` if no steps remain pending, otherwise `execute`
+- you appended a `execute` devlog entry for phase 2 via `i2c state append`
+
+Run `i2c check --action execute` before you emit the exit signal. If it reports a failure, fix it; if you cannot, set `state=audit_escalation` and emit `EXIT: 2`.
 
 ═══════════════════════════════════════════════
 OUTPUT CONTRACT — REMINDER

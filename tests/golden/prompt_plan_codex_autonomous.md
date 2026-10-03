@@ -229,7 +229,7 @@ ACTION CONTEXT
 
 ## Action: PLAN
 
-## Next State: execute
+## Next State: tests
 
 ## Phase: 2 — Core storage (Build)
 
@@ -600,12 +600,13 @@ i2c state set project.json state=tests
 i2c state set project.json state=execute
 ```
 
-> Note: the `Next State` line in your prompt reads `execute` regardless — it is
-> advisory only (at plan-dispatch the regime isn't known to the state machine,
-> D-tests-1a). **You** own the real transition here based on the regime.
+> Note: the `Next State` line in your prompt is the Build default (`tests`).
+> **You** own the real transition here based on the regime you chose in step 3.
 
-Then emit the exit signal (2-line block, see Worker Contract §4). Do not
-start the first execute step in this invocation.
+Before emitting the exit signal, run `i2c check` (see the Action Contract
+section of your prompt) and fix anything it reports. Then emit the exit signal
+(2-line block, see Worker Contract §4). Do not start the first execute step in
+this invocation.
 
 ---
 
@@ -622,6 +623,23 @@ start the first execute step in this invocation.
 - Decide the next ACTION — the state machine does that after you exit
 
 ---
+
+## Action Contract
+
+The runner checks this contract after you exit, before anything is committed. It is generated from the same table the check uses.
+
+**You may change:** nothing outside `.state/`. Other files you change are left uncommitted and reported; `.state/` changes go through `i2c state`.
+
+**Never change:** `tests/acceptance/**`, `i2c.toml`, `CLAUDE.md`, `CODEX.md`, `PIDEV.md`, `.git/**`. Changing one fails the iteration.
+
+**Before `EXIT: 0`, all of these must be true:**
+
+- `project.json.state` is `tests`
+- `phases.json` has a record for phase 2
+- Build phases: `steps.json` lists the phase 2 steps, all `pending`
+- you appended a `plan` devlog entry for phase 2 via `i2c state append`
+
+Run `i2c check --action plan` before you emit the exit signal. If it reports a failure, fix it; if you cannot, set `state=audit_escalation` and emit `EXIT: 2`.
 
 ═══════════════════════════════════════════════
 OUTPUT CONTRACT — REMINDER

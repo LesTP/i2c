@@ -10,6 +10,35 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Added
 
+- **Action contracts: the runner verifies `EXIT: 0` before committing
+  (`DESIGN_action_contracts_v1.md`).** Each lifecycle action (plan, tests,
+  execute, review, close) now has one declarative contract in `i2c/contracts.py`:
+  an allowlist of the paths it may change (default-deny, with a protected set -
+  frozen acceptance suites, `i2c.toml`, adapters, `.git` - that overrides broad
+  scopes), the end states it may leave on success, and required `.state/`
+  writes (e.g. PLAN must record pending steps for a Build phase; EXECUTE must
+  complete exactly one step; every action must append its own devlog entry).
+  The same table is used three ways:
+  - **Runner gate** - after the worker exits and before any commit. A claimed
+    success that fails the contract, or any write to a protected path, becomes
+    **exit 2 with no commit** (reason `post-<ACTION> invariants failed: ...`).
+    Paths outside the scope that are not protected are left uncommitted and
+    reported. Build by-products (`__pycache__/`, `*.pyc`, `.pytest_cache/`,
+    `node_modules/`) are never committed, whatever the project's `.gitignore`
+    says. This replaces the CLOSE-only post-action check.
+  - **`i2c check`** - a new read-only command that evaluates the same contract.
+    The runner writes a pre-iteration baseline and points `$I2C_CHECK_BASELINE`
+    at it, so the worker sees exactly what the gate will check; without a
+    baseline it checks the end state only. Every action's instructions now run
+    it before emitting the exit signal.
+  - **Prompt** - a generated `## Action Contract` section at the end of each
+    lifecycle action's prompt, and a `## Next State` line taken from the
+    contract.
+  - Telemetry rows gain an additive nullable `contract_violation` field.
+  Motivated by FU-70 (pidev on cheap OpenRouter models): three of four
+  iterations claimed or reached success without doing their bookkeeping, and
+  one CLOSE committed a placeholder acceptance suite for the next phase.
+
 - **`i2c ready` — dispatch-readiness preflight (FU-59).** A new read-only
   projection (`control.readiness`, exposed as `i2c ready` and the Telegram
   `/ready`, with `--json`) that catches the causes of a formerly-opaque bare

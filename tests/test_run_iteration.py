@@ -20,6 +20,7 @@ from pathlib import Path
 
 I2C_ROOT = Path(__file__).resolve().parent.parent
 
+from i2c import contracts
 from i2c import run_iteration as ri
 from tests._fixtures import copy_fixture, write_adapters
 
@@ -38,13 +39,22 @@ class TempProject:
     since the runner shells out to ``assemble_context.py`` which needs
     those files. Module contract for the fixture's phase-2 module
     (``event_store``) is also synthesized so the assembler doesn't bail.
+
+    The action-contract gate is stubbed to pass by default: most runner tests
+    drive a no-op fake worker that never writes ``.state/``, and they test
+    dispatch / commits / telemetry, not the contract. Pass
+    ``real_contract=True`` to run the real gate.
     """
 
-    def __init__(self):
+    def __init__(self, *, real_contract: bool = False):
         self._tmp = None
         self.root: Path | None = None
+        self._real_contract = real_contract
 
     def __enter__(self) -> "TempProject":
+        self._orig_check_contract = ri.check_contract
+        if not self._real_contract:
+            ri.check_contract = _passing_contract
         self._tmp = tempfile.TemporaryDirectory(prefix="i2c_run_")
         self.root = Path(self._tmp.name) / "project"
         copy_fixture(self.root)
@@ -63,6 +73,7 @@ class TempProject:
         return self
 
     def __exit__(self, *args):
+        ri.check_contract = self._orig_check_contract
         os.chdir(self._prev_cwd)
         self._tmp.cleanup()
 
@@ -89,6 +100,10 @@ class TempProject:
 # ---------------------------------------------------------------------------
 # Synthetic exit signals (2-line block)
 # ---------------------------------------------------------------------------
+
+
+def _passing_contract(root, action, *, baseline, changed_paths, worker_exit):
+    return contracts.Verdict(action=action)
 
 
 def signal_block(
@@ -305,7 +320,7 @@ class TestCloseInvariantHalt(unittest.TestCase):
     """A CLOSE worker that doesn't set state=audit_boundary must trip FU-22."""
 
     def test_close_without_audit_boundary_halts_with_invariant_error(self):
-        with TempProject() as p:
+        with TempProject(real_contract=True) as p:
             # Drive state to "close" + phase 2 still pending, so the
             # state machine dispatches CLOSE.
             p.patch_project(state="close")

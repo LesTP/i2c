@@ -26,7 +26,8 @@ Pipeline (per the plan):
    HTTP error (e.g. claude's 429 usage cap) is detected structurally and
    surfaced as ``exit_code: 3`` (retryable backend-unavailable) — distinct
    from a worker/code error so operators/scripts can branch on it.
-9. If ``ACTION == CLOSE``, run ``check_post_action(root, "close")``;
+9. For lifecycle actions, run the action contract (``check_contract`` ->
+   ``invariants.check_iteration``): end state, postconditions, write scope.
    failure → halt-and-surface (exit 2).
 10. Write a summary line to ``logs/loop/summary.log`` and exit with the
     worker's exit code.
@@ -57,6 +58,7 @@ from typing import Any
 # Sibling package modules.
 from i2c import assemble_context as ac
 from i2c import config as cfg
+from i2c import contracts
 from i2c import invariants
 from i2c import state
 from i2c import telemetry as tel
@@ -724,6 +726,25 @@ def _worker_dirty_paths(root: Path) -> set[str]:
         return set()
 
 
+def check_contract(
+    root: Path,
+    action: str,
+    *,
+    baseline: contracts.Baseline,
+    changed_paths: list[str],
+    worker_exit: int,
+) -> contracts.Verdict:
+    """The post-worker contract gate (DESIGN_action_contracts_v1 §5.1).
+
+    Module-level so tests driving the runner with a no-op fake worker can stub
+    it; the real gate is ``invariants.check_iteration``.
+    """
+    return invariants.check_iteration(
+        root, action, baseline=baseline, changed_paths=changed_paths,
+        worker_exit=worker_exit,
+    )
+
+
 def _last_devlog(root: Path) -> dict[str, Any] | None:
     """The last ``.state/devlog.jsonl`` entry (best-effort), or None."""
     try:
@@ -949,6 +970,23 @@ def run_iteration(
     start_commit = tel.head_commit(root)
     prev_devlog = tel.count_devlog_lines(root)
     pre_dirty = _worker_dirty_paths(root)  # FU-40: fence the worker commit off operator WIP
+    # Action-contract baseline (DESIGN_action_contracts_v1 §5.1-5.2): what the
+    # gate compares against after the worker exits. Also written to disk and
+    # exposed via I2C_CHECK_BASELINE so the worker's `i2c check` sees the same
+    # before/after view. Lifecycle actions only (recovery is exempt, D-ac-6).
+    lifecycle = action.lower() in contracts.ACTIONS and action_override is None
+    baseline: contracts.Baseline | None = None
+    baseline_path = log_dir / f"iteration_{iteration:03d}_baseline.json"
+    if lifecycle:
+        baseline = contracts.Baseline(
+            action=action.lower(), phase=phase, pre_dirty=sorted(pre_dirty),
+            before=contracts.Snapshot.load(root),
+        )
+        try:
+            baseline.write(baseline_path)
+            os.environ[contracts.BASELINE_ENV] = str(baseline_path)
+        except OSError:
+            os.environ.pop(contracts.BASELINE_ENV, None)
     wall_start = time.monotonic()
 
     # 6. Invoke the chosen backend.
@@ -995,18 +1033,21 @@ def run_iteration(
             f"({iter_timeout:.0f}s)"
         )
     except FileNotFoundError as e:
+        os.environ.pop(contracts.BASELINE_ENV, None)
         cli_name = e.filename or backend
         sys.stderr.write(
             f"ERROR: {backend} CLI not found on PATH "
             f"(`{cli_name}` could not be invoked).\n"
         )
         return 2
+    os.environ.pop(contracts.BASELINE_ENV, None)
     output_path.write_text(captured, encoding="utf-8")
 
     # Telemetry post-invoke snapshot (best-effort).
     wall_clock_s = time.monotonic() - wall_start
     end_commit = tel.head_commit(root)
     drift_flag: bool | None = None
+    contract_failures: list[str] = []
 
     # 6b. Extract per-iter usage telemetry (FU-33). Both backends emit
     # token counts in their JSON output; usage stays None for plain-text
@@ -1088,6 +1129,7 @@ def run_iteration(
                 prompt_text=prompt_for_hash,
                 prev_devlog_count=prev_devlog,
                 drift_flag=drift_flag,
+                contract_violation=contract_failures or None,
                 pricing=pricing,
                 tests_pass=tests_pass,
                 tests_cmd=tests_cmd,
@@ -1127,36 +1169,12 @@ def run_iteration(
         _emit_telemetry(3)
         return 3
 
-    # 8. CLOSE invariants.
-    if action == "CLOSE":
-        failures = invariants.check_post_action(root, "close")
-        if failures:
-            # Halt-and-surface: log a summary line that flags invariant
-            # failure, then return 2 regardless of the worker's claimed
-            # exit code. This is the FU-22 mitigation in action.
-            invariant_reason = (
-                "post-CLOSE invariants failed: " + " | ".join(failures)
-            )
-            line = write_summary_line(
-                log_dir,
-                iteration=iteration,
-                backend=backend,
-                action=action,
-                exit_code=2,
-                reason=invariant_reason,
-                tokens=usage,
-            )
-            sys.stdout.write(line + "\n")
-            sys.stderr.write(f"ERROR: {invariant_reason}\n")
-            _emit_telemetry(2)
-            return 2
-
-    # 8b. Drift advisory (detect-and-surface; archive/DESIGN_recovery_v1.md §C). After a
-    #     lifecycle action, run the cheap pure-.state drift audit alongside the
-    #     CLOSE invariants and surface any *reconcilable* drift so the operator
-    #     can `i2c diagnose` / `i2c reconcile`. Non-fatal: this never changes the
-    #     exit code (human-gated reconcile is the remedy, not an auto-halt).
-    #     Recovery actions are exempt (their whole job is to inspect/fix drift).
+    # 8. Drift advisory (detect-and-surface; archive/DESIGN_recovery_v1.md §C). After a
+    #    lifecycle action, run the cheap pure-.state drift audit and surface any
+    #    *reconcilable* drift so the operator can `i2c diagnose` / `i2c
+    #    reconcile`. Non-fatal: this never changes the exit code. Runs before the
+    #    contract gate so a failed contract still points at the remedy.
+    #    Recovery actions are exempt (their whole job is to inspect/fix drift).
     if action_override is None:
         from i2c import control as _control
         from i2c import recovery as _recovery
@@ -1172,6 +1190,44 @@ def run_iteration(
                 f"({', '.join(f.signal for f in reconcilable)}); "
                 "run `i2c diagnose` then `i2c reconcile`.\n"
             )
+
+    # 8b. Action-contract gate (DESIGN_action_contracts_v1 §5.1; supersedes the
+    #     CLOSE-only FU-22 check). EXIT 0 is a claim: verify the end state, the
+    #     iteration-relative postconditions, and the write scope before anything
+    #     is committed. A blocking failure returns 2 with no commit; flagged
+    #     (out-of-scope) and noise paths are fenced out of every commit below.
+    if baseline is not None:
+        changed = sorted(_worker_dirty_paths(root) - pre_dirty)
+        verdict = check_contract(
+            root, action.lower(), baseline=baseline, changed_paths=changed,
+            worker_exit=worker_exit,
+        )
+        pre_dirty = pre_dirty | set(verdict.excluded)
+        if verdict.flagged:
+            sys.stderr.write(
+                f"NOTE: path(s) outside the {action} write scope left uncommitted: "
+                + ", ".join(verdict.flagged[:10]) + "\n"
+            )
+        contract_failures = verdict.failures
+    if contract_failures:
+        invariant_reason = (
+            f"post-{action} invariants failed: " + " | ".join(contract_failures)
+        )
+        if worker_exit != 0:
+            invariant_reason = f"{reason} | {invariant_reason}"
+        line = write_summary_line(
+            log_dir,
+            iteration=iteration,
+            backend=backend,
+            action=action,
+            exit_code=2,
+            reason=invariant_reason,
+            tokens=usage,
+        )
+        sys.stdout.write(line + "\n")
+        sys.stderr.write(f"ERROR: {invariant_reason}\n")
+        _emit_telemetry(2)
+        return 2
 
     # 8c. Runner-owned EXECUTE code commit (FU-40 Inc 2). The worker edits files
     #     + writes .state via `i2c state`; the deterministic runner commits the

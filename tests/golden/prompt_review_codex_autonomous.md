@@ -396,7 +396,9 @@ Set `project.json.state=close`. The state machine will dispatch CLOSE next.
 i2c state set project.json state=close
 ```
 
-Then emit the exit signal (2-line block, see Worker Contract §4).
+Before emitting the exit signal, run `i2c check` (see the Action Contract
+section of your prompt) and fix anything it reports. Then emit the exit signal
+(2-line block, see Worker Contract §4).
 
 ---
 
@@ -416,6 +418,21 @@ Then emit the exit signal (2-line block, see Worker Contract §4).
   after you exit
 
 ---
+
+## Action Contract
+
+The runner checks this contract after you exit, before anything is committed. It is generated from the same table the check uses.
+
+**You may change:** any project file except the protected paths below. Other files you change are left uncommitted and reported; `.state/` changes go through `i2c state`.
+
+**Never change:** `tests/acceptance/**`, `i2c.toml`, `CLAUDE.md`, `CODEX.md`, `PIDEV.md`, `.git/**`. Changing one fails the iteration.
+
+**Before `EXIT: 0`, all of these must be true:**
+
+- `project.json.state` is `close`
+- you appended a `review` devlog entry for phase 2 via `i2c state append`
+
+Run `i2c check --action review` before you emit the exit signal. If it reports a failure, fix it; if you cannot, set `state=audit_escalation` and emit `EXIT: 2`.
 
 ═══════════════════════════════════════════════
 OUTPUT CONTRACT — REMINDER

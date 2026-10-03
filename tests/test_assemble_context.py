@@ -587,9 +587,10 @@ class TestActionContextRenderers(unittest.TestCase):
             self.assertEqual(ac.render_action_heading(ctx), "## Active Action: PLAN")
 
     def test_next_state_autonomous_present(self):
+        # Fixture phase 2 is Build: PLAN hands off to TESTS (action contract).
         with TempProject():
             ctx = build_ctx(action="plan", phase=2, mode="autonomous")
-            self.assertEqual(ac.render_next_state(ctx), "## Next State: execute")
+            self.assertEqual(ac.render_next_state(ctx), "## Next State: tests")
 
     def test_next_state_supervised_empty(self):
         with TempProject():
