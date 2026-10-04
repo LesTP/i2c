@@ -24,7 +24,7 @@ Phase lifecycle:   plan → tests → execute (×N) → review → close → [hu
                    (tests is Build-only; Refine/Explore go plan → execute)
 State of truth:    .state/project.json + phases.json + steps.json + devlog.jsonl + decisions.json
 Worker prompts:    pre-assembled (the worker reads no governance files)
-Backends:          Claude or Codex (per-backend adapter; the loop contract is universal)
+Backends:          Claude, Codex, or pidev (pi.dev over OpenRouter; built, paused)
 Modes:             autonomous (loop runner) or supervised (human + assistant)
 ```
 
@@ -55,9 +55,10 @@ actions, a static-HTML `dashboard` —
 and an optional **Telegram surface** (see [Chat surface](#chat-surface-telegram)).
 Both are thin, deterministic adapters over the same command API.
 
-Active development: pluggable backends beyond Claude and Codex (e.g. Gemini /
-OpenRouter), a Discord surface and an optional conversational agent layer, and a
-multi-iteration loop.
+Active development: a Discord surface and an optional conversational agent
+layer, and a multi-iteration loop. A third backend, **pidev** (the pi.dev agent
+over OpenRouter, for open/cheap models), is built and verified end to end but
+**paused** until there is a need for it (see Configuration and `STATUS.md`).
 
 ---
 
@@ -290,6 +291,22 @@ warn but don't block. `i2c run` runs the same check first and refuses with
 `--action diagnose|reconcile` — is exempt); the readiness report is also folded
 into `i2c diagnose`. On the Telegram surface: `/ready` (read-only) and the
 `/diagnose` report.
+
+### Action contracts (`i2c check`)
+
+Every lifecycle action has one contract (`i2c/contracts.py`): the paths it may
+change (default-deny, with a protected set — frozen acceptance suites,
+`i2c.toml`, adapters, `.git` — that overrides broad scopes), the end states it
+may leave on success, and the `.state/` writes it must make (e.g. a Build PLAN
+must record pending steps; EXECUTE completes exactly one step; every action
+appends its own devlog entry). The runner checks it after the worker exits and
+**before committing**: a claimed `EXIT: 0` that fails the contract, or any write
+to a protected path, becomes **exit 2 with no commit**; other out-of-scope files
+are left uncommitted and reported. The same table is rendered into each
+action's prompt (`## Action Contract`), and **`i2c check [--action A]`** lets the
+worker (or you) evaluate it before exiting — during autonomous runs it reads
+the runner's pre-iteration baseline via `$I2C_CHECK_BASELINE`. Design and
+rationale: `DESIGN_action_contracts_v1.md`.
 
 ### Frozen acceptance oracle (`i2c tests refreeze`)
 The TESTS action freezes a phase's acceptance suite: it hashes
@@ -605,7 +622,7 @@ settings for `i2c run`, so you don't re-type flags:
 
 ```toml
 [run]
-backend = "claude"      # claude | codex
+backend = "claude"      # claude | codex | pidev
 model = "sonnet"
 max_budget_usd = 5.00
 
@@ -615,6 +632,9 @@ tests = "claude"
 execute = "codex"
 review = "claude"
 close = "codex"
+
+[run.models]            # optional: per-action model (ids are backend-specific)
+plan = "opus"
 ```
 
 Precedence is **CLI flag > `i2c.toml` > built-in default** — e.g. `i2c run
@@ -628,7 +648,19 @@ backends (valid keys: `plan`, `tests`, `execute`, `review`, `close`, plus the
 recovery actions `diagnose` / `reconcile`); `i2c run` and the Telegram `/batch`
 command select the backend per action from it, falling back to `[run].backend`.
 (`tests` is the Build-only acceptance-suite action — pin it to a capable tier,
-D-tests-6.)
+D-tests-6.) `[run.models]` sets a model per action with the same keys;
+precedence is `--model` > `[run.models][action]` > `[run].model` > default.
+
+**pidev backend (paused).** `backend = "pidev"` runs the worker through the
+pi.dev agent CLI (`pi` on `PATH`; npm `@earendil-works/pi-coding-agent`) against an OpenRouter model:
+put an OpenRouter model id in `[run].model` / `[run.models]` and
+`OPENROUTER_API_KEY` in the worker's environment (on pirozhok the bot's
+`i2c-bot.env` already has it). Telemetry records tokens, pi's reported cost and
+tool calls, and each iteration's full event stream is kept as
+`logs/loop/iteration_NNN.jsonl`. It works end to end but is paused — see
+`STATUS.md` (pidev entry) before resuming. To compare models on a fixed task,
+use `examples/bench_calc/` (fresh project per run, hidden reference grader,
+`sweep.py` for k runs per model).
 
 > A consumer project installs the framework (`pip install`) and carries only
 > its own `.state/`, project docs, `i2c.toml`, and filled-in adapters — no

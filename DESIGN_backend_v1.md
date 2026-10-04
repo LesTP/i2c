@@ -9,10 +9,12 @@
 >   shelved** by the operator 2026-06-30. CLI flags unconfirmed (the `gemini`
 >   binary isn't installed in the pirozhok `claude-code` container; Node 22 +
 >   npm 10 are present, `claude`/`codex` live at `/usr/bin`).
-> - **§3 OpenRouter backend (FU-38b)** — **research + plan.** Recommends reusing
->   an existing agent harness over building one. No code yet. **§3.8 = the pi.dev
->   spike protocol (FU-61), now the primary Option-B candidate; §3.7 opencode is
->   the fallback.**
+> - **§3 OpenRouter backend (FU-38b)** — **built as the `pidev` backend
+>   (pi.dev over OpenRouter), verified end to end, then PAUSED 2026-10-04** for
+>   lack of a current need. Shipped: L0 + L1 (FU-65/66), JSON-mode telemetry +
+>   event log (FU-72); verified through the real runner and bot (FU-70). See §3.10
+>   for the pause note and what is parked. §3.7 opencode remains the untried
+>   fallback.
 >
 > Decisions: D-be-* (shared), D-gem-*, D-or-*.
 
@@ -553,14 +555,51 @@ Rationale: YAGNI — build the module when something reads it.
 
 | Layer | What | Tracked / where |
 |---|---|---|
-| **L0 — pidev backend** | `pidev` selectable via `--backend` / `[run.backends]`; single `[run].model`; provider defaults openrouter. The mechanical §1.1 add (§3.8.1). | **FU-65** |
-| **L1 — per-action model** | `[run.models]` table (D-or-6) — the routing lever. | **FU-66** |
-| **L2 — review + curated panel** | `i2c models` review (live OpenRouter `/models` + `pi --list-models`: id, price, context, tool-support) feeding a vetted panel; read-only `/models` on the bot (D-or-7/8). | model-benchmark thread |
+| **L0 — pidev backend** | `pidev` selectable via `--backend` / `[run.backends]`; single `[run].model`; provider defaults openrouter. The mechanical §1.1 add (§3.8.1). | **FU-65** — done |
+| **L1 — per-action model** | `[run.models]` table (D-or-6) — the routing lever. | **FU-66** — done |
+| **L2 — review + curated panel** | `i2c models` review (live OpenRouter `/models` + `pi --list-models`: id, price, context, tool-support) feeding a vetted panel; read-only `/models` on the bot (D-or-7/8). | parked (FU-77) |
 | **L3 — catalog module + router** | only when L2 grows / the benchmark router consumes it (D-or-9). | deferred |
 
 **Sequencing:** L0 + L1 are companions (pidev's routing value is thin without
 per-action model) and are the next work. L2 rides the model-benchmark initiative
 (`DESIGN_benchmark_v1`); L3 is deferred.
+
+---
+
+## 3.10 Pause note (2026-10-04)
+
+**State:** pidev works end to end and is kept ready, but no work is planned.
+The operator has never been limited by Claude Code or Codex usage, so a third
+model source solves a need that hasn't arrived. Everything else built along the
+way (the action contracts, the CLOSE `.state/` commit fix) is fleet-wide and
+stays active.
+
+**What exists:** the `pidev` backend (L0, L1, JSON-mode telemetry and event log);
+`examples/bench_calc/` with `sweep.py` for qualifying models on a fixed task;
+first sweep data in `DESIGN_benchmark_v1.md` §10.1.
+
+**Learned in FU-70 and the sweeps:**
+- Cheap models fail in the *bookkeeping*, not only the code: describing tool
+  calls instead of making them (deepseek-chat), claiming success with nothing
+  recorded, idling on a large attached prompt (gpt-4o-mini, unconfirmed cause),
+  or looping until the time limit (glm-4.7-flash). The action contracts catch
+  the false successes; the per-iteration ceiling bounds the loops.
+- Price per token does not predict price per task: on bench_calc,
+  claude-sonnet-5.5 (most expensive per token) tied for cheapest per phase, and
+  glm-4.7-flash (among the cheapest per token) spent the most tokens and failed.
+- OpenRouter routes each request to one of several providers; behaviour can
+  differ between runs of the same model id. One run per model is a screen.
+
+**Parked (FU-77):** the model-selection process (shortlist from OpenRouter's
+model and endpoint lists, qualify on bench_calc, curated panel per D-or-7,
+assign via `[run.backends]` / `[run.models]`); L2 `i2c models`; per-step routing
+in `sweep.py`; automatic escalation to a stronger model on failure and quota
+fallback on exit 3; `pricing.json` entries for panel models (cost already comes
+from pi); repeat runs; an orchestrator through pidev (pi sessions untested).
+Rate-limit detection for pidev is FU-73 (needs a real sample).
+
+**Resume:** the checklist in `STATUS.md` (2026-10-04 entry). The OpenRouter key
+on the Pi expires **2026-12-01**.
 
 ---
 

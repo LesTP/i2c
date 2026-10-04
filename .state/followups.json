@@ -844,7 +844,7 @@
     "opened": "2026-10-02",
     "context": "detect_rate_limit() only handles claude (codex is FU-42); for pidev it returns None, so an OpenRouter 429 or credit exhaustion surfaces as a generic exit 2 (signal missing/malformed) instead of the retryable exit 3, and could be mistaken for a worker failure. pidev is likely to hit this first: cheap/free OpenRouter models are heavily rate-limited and the account is prepaid credit. Same safety rule as FU-42: never string-match model content (429/rate appear in normal output); match only a protocol-level anchor, i.e. a pi error event in --mode json output or a distinct process rc, verified from a real sample.",
     "trigger": "Capture a real pidev rate-limit or out-of-credit sample (an OpenRouter :free model hits 429 quickly). Best done together with FU-72, since both depend on the pi --mode json stream.",
-    "priority": "next",
+    "priority": "icebox",
     "files": [
       "i2c/run_iteration.py"
     ],
@@ -921,5 +921,33 @@
     ],
     "closed": "2026-10-03",
     "resolution": "Option (a): installed python-is-python3 (3.11.2-1+deb12u1, 16 KB; /usr/bin/python -> python3, /usr/bin/pydoc -> pydoc3) in the claude-code container on 2026-10-03. Verified as user claude: command -v python -> /usr/bin/python, Python 3.11.2, imports the shared i2c checkout. Recorded in the pirozhok README Infrastructure list with a note that it is not in the fully-provisioned snapshot, so a container rebuilt from that snapshot needs the install re-run. The i2c.toml template example was left as `python`, which now works on both hosts."
+  },
+  {
+    "id": "FU-77",
+    "title": "pidev / model routing: parked ideas (resume from STATUS 2026-10-04)",
+    "kind": "other",
+    "status": "open",
+    "opened": "2026-10-03",
+    "context": "pidev (pi.dev over OpenRouter) is built and verified end to end (FU-65/66/70/72) but paused 2026-10-04: Claude Code + Codex limits have never been the bottleneck, so a third model source has no current need. Parked, in rough order of usefulness if a need appears: (1) Model-selection process: shortlist from OpenRouter /api/v1/models (tool support, price, context) and /models/<id>/endpoints (providers, uptime); qualify on examples/bench_calc with sweep.py, k>=2 runs; keep a curated panel (D-or-7); assign per project via [run.backends] + [run.models]; review telemetry at phase gates. (2) Per-step routing in sweep.py (e.g. --route plan=...,execute=...) to test mixed setups such as Sonnet for PLAN/TESTS/REVIEW + deepseek-v4-flash for EXECUTE/CLOSE. (3) Automatic escalation: rerun a failed EXECUTE on a stronger model; quota fallback to pidev on Claude exit 3 (FU-42). (4) L2 `i2c models` review command + read-only /models on the bot (DESIGN_backend_v1 3.9). (5) pricing.json entries for panel models (only for tier; cost already comes from pi). (6) Open questions from FU-70: deepseek-v4.1-flash one-off EXECUTE hang (pre-event-log, did not reproduce); gpt-4o-mini idle EXECUTE reply (unconfirmed guess: prompt delivered only as an attached file). (7) An orchestrator / /ask through pidev (pi sessions untested; needs a strong model and admin gating). First data: DESIGN_benchmark_v1 10.1.",
+    "trigger": "A real need: Claude/Codex quota pressure, a project that wants cheap or open models, or the benchmark thread resuming. Start with the STATUS.md 2026-10-04 resume checklist (OpenRouter key expires 2026-12-01).",
+    "priority": "icebox",
+    "files": [
+      "examples/bench_calc/sweep.py",
+      "i2c/run_iteration.py",
+      "i2c/data/pricing.json",
+      "DESIGN_backend_v1.md",
+      "DESIGN_benchmark_v1.md"
+    ],
+    "refs": [
+      "FU-65",
+      "FU-66",
+      "FU-70",
+      "FU-72",
+      "FU-73",
+      "FU-42",
+      "FU-62",
+      "DESIGN_backend_v1.md",
+      "DESIGN_benchmark_v1.md"
+    ]
   }
 ]

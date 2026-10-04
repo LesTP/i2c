@@ -83,11 +83,53 @@ gracefully when absent). FU-50 iceboxed. D-tests-4 integrity is fully in place (
 prose layer + hard mechanical layer). **Next thread: the benchmark replay harness +
 routing v0** (on pirozhok — laptop cross-mount).
 
+**Update (2026-10-04) — pidev backend + action contracts + bench_calc; pidev PAUSED.**
+Built and verified end to end, then deliberately paused: no current need (Claude
+Code + Codex limits have never been the bottleneck), so this is a proof of
+concept kept ready, not an active track.
+- **pidev backend** (pi.dev agent over OpenRouter): selectable per action
+  (`[run.backends]`), per-action model (`[run.models]`, FU-66), tokens + cost +
+  tool calls in telemetry and a streamed per-iteration event log (FU-72).
+  FU-70 verified it through the real runner and the bot (archive + iteration
+  index: `p:\shared\pidev-samples\ARCHIVE.md`).
+- **Action contracts** (`DESIGN_action_contracts_v1.md`, shipped, *fleet-wide* —
+  not paused): the runner verifies every `EXIT: 0` against a per-action contract
+  (write allowlist + protected set, end states, required `.state/` writes) before
+  committing; `i2c check` and a generated prompt section use the same table.
+  Born from FU-70's weak-model false successes. Also fixed along the way: CLOSE's
+  `.state/` commit now includes new files (`tests_manifest.json`), PLAN no
+  longer told to `git commit`, readiness probes `pi` not `pidev`.
+- **`examples/bench_calc/`**: a fixed one-phase task, hidden 65-test reference
+  grader, `new_project.py` / `grade.py` / `sweep.py` (k fresh runs per model,
+  results table, spend cap). First data in `DESIGN_benchmark_v1.md` §10.1:
+  5/6 models completed the full loop at 65/65; claude-sonnet-5.5 was cheapest
+  and fastest per task ($0.09, 2.3 min), deepseek-v4-flash matched its cost
+  ($0.08, slower), glm-4.7-flash failed (looped to the time limit).
+- **Parked ideas** (model-selection process, `i2c models`, per-step routing in
+  the sweep, auto-escalation / quota fallback, an orchestrator via pidev):
+  **FU-77**. Rate-limit detection for pidev: **FU-73** (needs a real sample).
+
+**Resume checklist (pidev / model routing).**
+1. Read this entry, FU-77, `DESIGN_backend_v1.md` §3.8–3.10,
+   `DESIGN_benchmark_v1.md` §10.1, and `examples/bench_calc/README.md`.
+2. **OpenRouter key expires 2026-12-01** (no spend limit; $16.31 of $20 credit
+   left at pause). Renew it and update `OPENROUTER_API_KEY` in the Pi's
+   `/home/claude/.config/i2c-bot.env` (mode 600), then
+   `systemctl restart i2c-bot` in the `claude-code` container.
+3. Environment on pirozhok: `pi` 0.84.2 at `/usr/bin/pi`; `python` →
+   `python3` via `python-is-python3` (FU-76, not in the `fully-provisioned`
+   snapshot); git trust for sweep runs is handled per run by `sweep.py`.
+4. Smoke test (≈$0.35, ≈4 min): from `~/workspace/i2c`, with the key exported,
+   `python3 examples/bench_calc/sweep.py --out ~/workspace/bench/<name>
+   --models deepseek/deepseek-v4.1-flash --runs 1 --budget-usd 1`.
+5. Sweep data from this round (not in any repo): `p:\shared\bench\sweep-live-1`,
+   `p:\shared\bench\sweep-panel-1` (each run's project, event logs, results.md).
+
 **What's next.** The dominant thread is the **model-benchmark initiative**
 (telemetry → a phase-level `tests` action as a real oracle → benchmark + routing). **tests_action is SHIPPED** (2026-07-06, `a110138`; validated on clankercourts Phase 17 — oracle integrity held, acceptance suite frozen at the `N.tests` commit). The next benchmark step is the **replay harness on clankercourts + routing v0**.
 See **Active Roadmap** below for tracks, priorities, and the current recommendation.
 
-**Next session (planned order).** (1) **FU-20** (ship `templates/.llms/commands/` for Devmate + the loading check) — *maybe*. (2) then the **benchmark replay harness + routing v0** (tests_action shipped 2026-07-06 — the oracle is now real; **FU-44** scopes `tests_pass` to the acceptance suite and rides the harness). Proposal B (the `i2c refine` loop + the `/refine` bot) was removed unused on 2026-08-07 (see CHANGELOG); the fix/bugfix consolidation that would have built on it is unblocked only if that loop is first revived.
+**Next session (planned order).** *(2026-10-04: pidev / model routing and the benchmark thread are paused — see the update above; FU-20 closed 2026-07-06.)* (1) **FU-20** (ship `templates/.llms/commands/` for Devmate + the loading check) — *maybe*. (2) then the **benchmark replay harness + routing v0** (tests_action shipped 2026-07-06 — the oracle is now real; **FU-44** scopes `tests_pass` to the acceptance suite and rides the harness). Proposal B (the `i2c refine` loop + the `/refine` bot) was removed unused on 2026-08-07 (see CHANGELOG); the fix/bugfix consolidation that would have built on it is unblocked only if that loop is first revived.
 
 **Quick orientation** (from a project root with `.state/`, package installed):
 
@@ -122,7 +164,7 @@ historical memos → `archive/`.
 - **Security paragraph — mandatory before public.** Half a page in the README: what the worker can touch, why the gates exist, recommended container setup. Table stakes before strangers run auto-approving agents.
 
 ### 2. Parallel medium tracks
-- **Backend abstraction (FU-38)** — *see `DESIGN_backend_v1.md`.* **(a) Gemini** agentic-CLI backend — **spec'd, shelved** (run Gemini/Gemma as OpenRouter **model-ids** for the benchmark; native CLI only later as a free/subscription **prod** cost-opt). **(b) OpenRouter** — **Option C (reuse codex) is BLOCKED on codex 0.124** (live smoke 2026-06-30): codex dropped `wire_api="chat"`, now requires `"responses"` (OpenAI Responses API); OpenRouter is Chat-Completions-native and hung on the responses wire. **Re-ranked:** **B** = a chat-completions agent CLI (aider/opencode/OpenHands/…) → OpenRouter, used as a §1.1 CLI backend (now preferred); **A** = in-house harness over toolkit's `OpenRouterProvider` (diplomat-proven, but bigger + toolkit dep / `i2c[openrouter]`). Salvage C only via OpenRouter adding a Responses endpoint, a Responses↔Chat proxy (LiteLLM), or an older codex (conflicts with the 0.124 bot). **Decide via a time-boxed spike:** point aider or opencode at OpenRouter as a §1.1 CLI backend (Option B); if it slots into the table, "backend-agnostic" is demonstrably true (three backends) and D-pkg-12's protocol design unblocks — if not, you learn where the contract leaks before a user does.
+- **Backend abstraction (FU-38)** — *see `DESIGN_backend_v1.md`.* **2026-10-04: (b) is built as the `pidev` backend (pi.dev → OpenRouter, the §3.8 Option B spike adopted 2026-08-17), verified end to end, and PAUSED — see the 2026-10-04 Status entry and FU-77.** The history below is kept for context. **(a) Gemini** agentic-CLI backend — **spec'd, shelved** (run Gemini/Gemma as OpenRouter **model-ids** for the benchmark; native CLI only later as a free/subscription **prod** cost-opt). **(b) OpenRouter** — **Option C (reuse codex) is BLOCKED on codex 0.124** (live smoke 2026-06-30): codex dropped `wire_api="chat"`, now requires `"responses"` (OpenAI Responses API); OpenRouter is Chat-Completions-native and hung on the responses wire. **Re-ranked:** **B** = a chat-completions agent CLI (aider/opencode/OpenHands/…) → OpenRouter, used as a §1.1 CLI backend (now preferred); **A** = in-house harness over toolkit's `OpenRouterProvider` (diplomat-proven, but bigger + toolkit dep / `i2c[openrouter]`). Salvage C only via OpenRouter adding a Responses endpoint, a Responses↔Chat proxy (LiteLLM), or an older codex (conflicts with the 0.124 bot). **Decide via a time-boxed spike:** point aider or opencode at OpenRouter as a §1.1 CLI backend (Option B); if it slots into the table, "backend-agnostic" is demonstrably true (three backends) and D-pkg-12's protocol design unblocks — if not, you learn where the contract leaks before a user does.
 - **Multi-iteration loop (Phase 3.C / FU-32 #2)** - **RESOLVED 2026-07-05 (D-run-1/D-run-2): single-iteration-per-invocation is the design.** Cross-action multi-step is incompatible with per-action backend routing; batched-EXECUTE (the only coherent unit) is deferred pending model-benchmark evidence. The --step-budget flag + multi_step_only machinery were removed and WORKER_SPEC / assembler / contract docs simplified.
 
 ### 3. Fleet migration
@@ -155,7 +197,7 @@ Strategic thread: **find the cheapest model that still succeeds per kind of step
 
 - **Telemetry sidecar — SHIPPED.** `.state/telemetry.jsonl`: runner-authored, schema-validated, git-tracked execution envelope (model, tokens, cost, timing, git deltas, prompt hash, phase meta, drift, outcome) per autonomous iteration. Observational only; never control state; never fatal. *Increment 1* (data plane: schema, `telemetry.py`, runner capture, scaffold seed, tests) committed `707aec8`; *Increment 2* (cost/tier from bundled `pricing.json` + `[telemetry.pricing]`; opt-in `tests_pass` oracle via `[telemetry].test_cmd`) committed `636a192` (548 green). *Deferred* (schema already nullable, additive later): structured `review_findings`, exact cache-aware cost, `tool_calls`, codex model capture. Spec: `archive/DESIGN_telemetry_v1.md`.
 - **Test isolation — SHIPPED (2026-07-06, `a110138`; `archive/DESIGN_tests_action_v1.md`).** Regime-conditional, phase-level `tests` action (`plan → tests → execute → review → close`, Build only): freezes a contract-derived acceptance suite **before** EXECUTE so the implementation is graded against tests it didn't author — turning `tests_pass` from self-graded into a **real oracle** (the linchpin the whole benchmark rests on). Full surface landed (state enum, `state_machine` `VALID_STATES`+`decide`, `instructions/tests.md`, assembler `ACTIONS`+recipe, `config._RUN_ACTIONS`, WORKER_SPEC, goldens, no-op schema-version bump 1→2, **plus** a runner `N.tests:` commit block — the FU-40 correction to §8's original "runner: no change"). Suite identity = path convention `tests/acceptance/phase_<N>/`; integrity is **soft** in v1 (EXECUTE must not weaken the frozen suite; REVIEW flags weakening as a Must-fix). **Validated end-to-end on clankercourts Phase 17**: oracle held (suite byte-frozen at the `17.tests` commit, 57 contract tests green, review integrity check confirmed it unchanged). Deferred (benchmark-era): **FU-43** hard CLOSE integrity invariant, **FU-44** scope `tests_pass` to the acceptance suite, **FU-45** supervised phase-plan folding.
-- **Benchmark + routing — SPEC'D (`DESIGN_benchmark_v1.md`).** Measure success vs model tier per `(action × regime × size)` bucket; find the saturation knee. **Substrates:** clankercourts = proven hermetic replay substrate (689/692 offline; 62 commit-linked EXECUTE steps); diplomat = forward data firehose post-migration; phosphene/diplomat prose = labeling only (not replay). **Next:** replay harness on clankercourts (run on **pirozhok** — cross-mount path bug on the laptop), e2e prose normalizer (labeling), **routing v0** (top tier for PLAN/REVIEW/TESTS by blast radius; cheap-first-with-escalation for EXECUTE/CLOSE). **Deps:** model panel rides FU-38 (OpenRouter Option C blocked, see §2). Oracle building blocks = toolkit `prompt_regression` + `edit_classifier`. **Clean-room rule:** for benchmark-generator projects the operator runs the loops; the assistant authors only spec/arch (`DESIGN_benchmark` §7.3).
+- **Benchmark + routing — SPEC'D (`DESIGN_benchmark_v1.md`); PAUSED 2026-10-04.** Built since: the `examples/bench_calc/` fixture + `sweep.py`, first panel data in `DESIGN_benchmark_v1.md` §10.1; the replay harness and routing are not built. Measure success vs model tier per `(action × regime × size)` bucket; find the saturation knee. **Substrates:** clankercourts = proven hermetic replay substrate (689/692 offline; 62 commit-linked EXECUTE steps); diplomat = forward data firehose post-migration; phosphene/diplomat prose = labeling only (not replay). **Next:** replay harness on clankercourts (run on **pirozhok** — cross-mount path bug on the laptop), e2e prose normalizer (labeling), **routing v0** (top tier for PLAN/REVIEW/TESTS by blast radius; cheap-first-with-escalation for EXECUTE/CLOSE). **Deps:** model panel = the pidev backend (built, paused; see §2). Oracle building blocks = toolkit `prompt_regression` + `edit_classifier`. **Clean-room rule:** for benchmark-generator projects the operator runs the loops; the assistant authors only spec/arch (`DESIGN_benchmark` §7.3).
 - **Content (ready now):** the "agentic coding evals are self-graded" finding (oracle contamination; analysis done in `DESIGN_benchmark_v1`) is a standalone essay/talk section — it markets i2c without marketing it.
 
 ### Recommendation (updated 2026-07-03)

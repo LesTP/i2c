@@ -1,7 +1,11 @@
 # DESIGN — Model Benchmark & Step-Complexity Routing (v1)
 
 > **Status:** Draft / proposed. Captures the design discussion of 2026-06-30.
-> No code yet. Decisions below are proposals (D-bench-*) pending ratification.
+> Decisions below are proposals (D-bench-*) pending ratification.
+> **2026-10-04: paused** with the pidev backend (`DESIGN_backend_v1.md` §3.10).
+> Built so far: telemetry, the `tests` oracle, and the `examples/bench_calc/`
+> fixture with a sweep runner; first data in §10.1. The replay harness and
+> routing are not built.
 >
 > **One-line goal:** Find, per kind of step, the *cheapest model that still
 > succeeds* — and route work to it automatically — using data i2c generates as
@@ -319,6 +323,33 @@ clean roles:
 | **phosphene** | Labeling only — **avoid for oracle** | Non-hermetic (embeddings, live LLM APIs, real corpus). Prose archive good for difficulty labels. |
 | i2c itself | The instrumentation home — **not a data source** | Telemetry lives here; benchmarking is dogfooded i2c tooling. But i2c is **not self-hosted** (no `.state/`; developed supervised via `DECISIONS.md`/`FOLLOWUPS.md` — bootstrap paradox), so its own development emits no clean governed-loop data. |
 | **`examples/bench_calc/`** (i2c repo) | **Controlled comparison fixture** (added 2026-10-03) | A fixed one-phase task run fresh per model/backend through the full loop, graded by a hidden 65-test reference suite the worker never sees (`grade.py`, plus a telemetry summary). Small and synthetic, so it screens "can this model complete a governed phase" and compares models from an identical start; it does not replace replay on real projects. Born from the FU-70 pidev run (see its README, Provenance). |
+
+### 10.1 First data: bench_calc panel sweep (2026-10-04)
+
+One run per model, every action on that model, backend pidev (pi 0.84.2 →
+OpenRouter), 3 runs in parallel on pirozhok, i2c `4d8ebc0`. Cost is pi's
+reported cost; time includes provider latency. Raw results:
+`p:\shared\bench\sweep-panel-1\results.md` (not in a repo).
+
+| Model | Reached gate | Reference /65 | Iterations | Cost | Time | Tokens in / out |
+|---|---|---|---|---|---|---|
+| anthropic/claude-sonnet-5.5 | yes | 65 | 8 | $0.09 | 138 s | 368k / 10k |
+| deepseek/deepseek-v4-flash | yes | 65 | 9 | $0.08 | 514 s | 1.8M / 50k |
+| moonshotai/kimi-k2.5 | yes | 65 | 7 | $0.19 | 1,199 s | 817k / 32k |
+| qwen/qwen3-coder | yes | 65 | 9 | $0.31 | 345 s | 2.5M / 34k |
+| deepseek/deepseek-v4.1-flash | yes | 65 | 8 | $0.34 | 216 s | 884k / 31k |
+| z-ai/glm-4.7-flash | no: EXECUTE hit the 1,200 s limit | 63 | 7 | $0.29 | 1,462 s | 4.9M / 46k |
+
+No contract violations in any run. An earlier single run of
+deepseek-v4.1-flash (`p:\shared\bench\sweep-live-1`) also reached the gate at
+65/65 for $0.42.
+
+**Takeaways (provisional, n=1 each):** completing the governed loop is not
+limited to frontier models; price per token is a poor proxy for price per task
+(Sonnet's caching and low token use made it the cheapest and fastest here);
+failures show up as long tool loops, which the per-iteration time limit bounds
+and the event log makes visible. Before routing on this: repeat runs (k≥2),
+try mixed per-step routing, and test a task harder than bench_calc.
 
 ---
 
