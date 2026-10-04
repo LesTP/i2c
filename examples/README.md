@@ -9,6 +9,10 @@ below is deterministic and runs locally.
   `.state/` directory.
 - **`smoke_test.py`** — an end-to-end script that copies the fixture to a
   temp dir and exercises the whole `state.py` write surface.
+- **`bench_calc/`** — a fixed one-phase task for comparing models and
+  backends on the full loop, with a hidden reference grader. Unlike the rest
+  of this tour it needs a backend CLI and API access; see its
+  [README](bench_calc/README.md).
 
 All paths below are written from the repository root. The `i2c` commands
 assume the package is installed (`pip install -e .` from the repo root); if the

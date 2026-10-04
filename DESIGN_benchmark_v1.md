@@ -318,6 +318,7 @@ clean roles:
 | **toolkit** | Secondary replay (small) | 8 commit-linked steps; also *provides* `prompt_regression`/`edit_classifier` as harness deps. |
 | **phosphene** | Labeling only — **avoid for oracle** | Non-hermetic (embeddings, live LLM APIs, real corpus). Prose archive good for difficulty labels. |
 | i2c itself | The instrumentation home — **not a data source** | Telemetry lives here; benchmarking is dogfooded i2c tooling. But i2c is **not self-hosted** (no `.state/`; developed supervised via `DECISIONS.md`/`FOLLOWUPS.md` — bootstrap paradox), so its own development emits no clean governed-loop data. |
+| **`examples/bench_calc/`** (i2c repo) | **Controlled comparison fixture** (added 2026-10-03) | A fixed one-phase task run fresh per model/backend through the full loop, graded by a hidden 65-test reference suite the worker never sees (`grade.py`, plus a telemetry summary). Small and synthetic, so it screens "can this model complete a governed phase" and compares models from an identical start; it does not replace replay on real projects. Born from the FU-70 pidev run (see its README, Provenance). |
 
 ---
 

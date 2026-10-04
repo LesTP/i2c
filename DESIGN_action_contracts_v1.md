@@ -41,7 +41,7 @@ self-check and the runner's gate can never disagree:
 
 ## 1. Problem
 
-### 1.1 Evidence - FU-70 (pidev-spike, 2026-10-02)
+### 1.1 Evidence - FU-70 (pidev-spike, 2026-10-02; archived at `p:\shared\pidev-samples\pidev-spike`)
 
 The first end-to-end runs through the real runner on cheap OpenRouter models
 (`pidev` backend) produced four worker failures in four iterations. The runner
@@ -400,7 +400,8 @@ real runs on day one.
 - Assembler `## Action Contract` section; final self-check step in every
   action's instructions; the `close.md` step 2 conditional; goldens
   regenerated.
-- Re-run FU-70 on pidev-spike to compare cheap-model pass rates before/after.
+- Re-run the weak-model loop on the `examples/bench_calc/` fixture to compare
+  cheap-model pass rates before/after.
 
 **Increment 3 (optional) - backend tool limits** (section 5.4).
 
@@ -457,7 +458,9 @@ self-check in place.
 ## 10. References
 
 - FU-70 evidence: pidev-spike iterations 1-4 (`logs/loop/`), commits `da7b577`
-  (CLOSE stub suite) and `4f5608e` (manual removal).
+  (CLOSE stub suite) and `4f5608e` (manual removal), archived with full git
+  history at `p:\shared\pidev-samples\pidev-spike` (index:
+  `p:\shared\pidev-samples\ARCHIVE.md`).
 - `i2c/invariants.py` (`check_post_action`, `_check_*`,
   `_check_acceptance_integrity`); `i2c/run_iteration.py` (`_worker_dirty_paths`,
   `commit_execute`, CLOSE invariant block); `i2c/state_machine.py` (`decide`).

@@ -486,7 +486,10 @@ assembled prompt as the sole context (no `AGENTS.md`/`CLAUDE.md` auto-read).
 Stage-2 / bot runs that route an action to `pidev` need the key in the worker's
 env (add it to `i2c-bot.env` or source it).
 
-**Spike artifacts** (on the share): `pidev-spike/` (driver inside), delete when FU-70 closes.
+**Spike artifacts:** archived 2026-10-03 to `p:\shared\pidev-samples\pidev-spike\`
+(git history, `.state/`, every iteration log; index in
+`p:\shared\pidev-samples\ARCHIVE.md`). FU-70 closed; the calc task continues as
+the i2c fixture `examples/bench_calc/`.
 
 ---
 

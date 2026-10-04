@@ -10,6 +10,16 @@ This is the public counterpart to `STATUS.md` (internal tracking).
 
 ### Added
 
+- **`examples/bench_calc/`: a fixed task for comparing models and backends.**
+  A one-phase calculator task that drives the full loop, with a hidden 65-test
+  reference suite that grades the result independently of the worker's own
+  tests. `new_project.py` creates a fresh project at phase 1 PLAN (through
+  `i2c init` and `i2c state`, with an initial git commit); `grade.py` runs the
+  hidden suite against the project's `calc.py` and summarises its telemetry
+  (iterations, exits, contract violations, tokens, cost). Repo-only; not part
+  of the installed package. Built from the FU-70 pidev test project, which is
+  archived at `p:\shared\pidev-samples\pidev-spike`.
+
 - **pidev records tokens, cost and tool calls (FU-72).**
   runs pi with `--mode json`. The runner adds up the token usage and pi's own
   cost across the assistant messages, so pidev telemetry rows have
