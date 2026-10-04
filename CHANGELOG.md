@@ -16,7 +16,9 @@ This is the public counterpart to `STATUS.md` (internal tracking).
   tests. `new_project.py` creates a fresh project at phase 1 PLAN (through
   `i2c init` and `i2c state`, with an initial git commit); `grade.py` runs the
   hidden suite against the project's `calc.py` and summarises its telemetry
-  (iterations, exits, contract violations, tokens, cost). Repo-only; not part
+  (iterations, exits, contract violations, tokens, cost); `sweep.py` runs k
+  fresh projects per model through the whole loop and writes a per-model and
+  per-run results table, with an optional spending cap. Repo-only; not part
   of the installed package. Built from the FU-70 pidev test project, which is
   archived at `p:\shared\pidev-samples\pidev-spike`.
 

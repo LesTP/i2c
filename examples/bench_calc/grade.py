@@ -53,8 +53,11 @@ def summarise(project: Path) -> dict:
     rows = []
     tele = st / "telemetry.jsonl"
     if tele.is_file():
-        rows = [json.loads(ln) for ln in tele.read_text(encoding="utf-8").splitlines()
-                if ln.strip()]
+        for ln in tele.read_text(encoding="utf-8").splitlines():
+            try:
+                rows.append(json.loads(ln))
+            except ValueError:
+                continue  # blank, or a line still being written by a live run
     costs = [r["cost_usd"] for r in rows if r.get("cost_usd") is not None]
     return {
         "phase": state.get("phase"),

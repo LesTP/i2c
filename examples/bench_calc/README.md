@@ -18,6 +18,7 @@ Repo-only: `examples/` is not part of the installed i2c package.
 | `reference/calc_reference.py` | A reference implementation; i2c's tests check the grader against it. |
 | `new_project.py` | Creates a fresh project at phase 1 PLAN. |
 | `grade.py` | Runs the hidden grader against a project's `calc.py` and summarises its telemetry. |
+| `sweep.py` | k fresh runs per model through the full loop, graded, in one table. |
 
 ## Use
 
@@ -46,6 +47,35 @@ phase reached `audit_boundary`, iterations, exit codes, contract violations,
 tokens, cost (from the backend where it reports one) and time, plus one line
 per iteration. `--json` prints the same as JSON. Full per-step detail (every
 message and tool call) is in the project's `logs/loop/iteration_NNN.jsonl`.
+
+## Sweep: k runs per model, one table
+
+`sweep.py` does the three steps above for a list of models, `--runs` times
+each, every run from a fresh project:
+
+```bash
+# On the run host, with OPENROUTER_API_KEY in the environment for pidev.
+python ~/workspace/i2c/examples/bench_calc/sweep.py --out ~/workspace/bench/sweep-1 \
+    --models deepseek/deepseek-v4.1-flash,qwen/qwen3-coder,z-ai/glm-4.7-flash \
+    --runs 2 --parallel 3 --budget-usd 3
+```
+
+- Each run calls `i2c run` until a halt state (normally `audit_boundary`), the
+  first non-zero exit, `--max-iterations` (default 12; a clean phase takes
+  about 8), or the sweep's recorded spend reaching `--budget-usd`. The budget
+  is checked between iterations, so one in-flight iteration can overshoot it.
+- Each model is used for every action (`[run].model`). For per-action routing,
+  edit a run's `i2c.toml` and drive it by hand.
+- Output: `<out>/results.md` (a per-model table: runs reaching the gate, mean
+  and full reference scores, iterations, cost, time, contract violations, the
+  action each failed run stopped at; then one row per run) and
+  `<out>/results.json` (everything, including each run's per-iteration rows).
+- Each run's project stays in `<out>/<model>-r<N>/` (its event logs are in
+  `logs/loop/`), and its `i2c run` console output in `<out>/<model>-r<N>.log`.
+- `--report-only` rebuilds the tables from the run folders already in `--out`
+  (after an interrupted sweep, or after driving a run further by hand).
+- Runs that fail setup, or are skipped by the budget, appear in the per-run
+  table with the reason.
 
 ## Provenance of the reference suite
 
