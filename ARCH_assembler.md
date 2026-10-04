@@ -1,7 +1,7 @@
 # ARCH: Context Assembler (`assemble_context.py`)
 
-**Status:** Contract spec. Implementation deferred to Phase 1.3.
-**Lives at:** `tools/assemble_context.py`
+**Status:** Implemented — the live assembler contract, byte-locked by `tests/test_prompt_golden.py` (header refreshed 2026-10-04). Not yet folded into the body: the generated `## Action Contract` section and the contract-derived `Next State` (`DESIGN_action_contracts_v1.md` §5.3).
+**Lives at:** `i2c/assemble_context.py` (was `tools/assemble_context.py` before packaging)
 **Supersedes:** Scattered specifications in `archive/DESIGN_governance_v3.md` §3 / §7.5 / Appendix B, `WORKFLOW.md`, instruction files, `README.md`. Where this contract and any earlier file disagree, this contract wins for assembler behavior. The earlier files remain useful as design rationale.
 
 ---

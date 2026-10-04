@@ -5,7 +5,7 @@ dynamic **Status** (session entry point), and the **Active Roadmap** (strategic
 tracks + priorities). The fine-grained open backlog itself is the **`i2c fu`
 command** (`.state/followups.json`) — not a table in this file.
 
-Distinct from `FUTURE_waymark.md` / `FUTURE_recovery.md` (each a roadmap for one
+Distinct from the per-initiative roadmaps (`archive/FUTURE_waymark.md` / `archive/FUTURE_recovery.md`, both archived 2026-10-04; each a roadmap for one
 deferred initiative); this is the catch-all orientation + tracker.
 
 ## How to use
@@ -39,7 +39,7 @@ have landed. **FU-40 is complete (2026-07-04)** — the runner now owns *all* gi
 The **refine tier** shipped — the ad-hoc backlog is now the `i2c fu` command.
 **Proposal B (the autonomous `i2c refine <fu-id>` single-shot loop + the
 admin-gated `/refine` Telegram command) shipped and was then REMOVED unused on
-2026-08-07** — see the i2c CHANGELOG (Removed) and DESIGN_refine_v1.md (marked
+2026-08-07** — see the i2c CHANGELOG (Removed) and archive/DESIGN_refine_v1.md (marked
 historical). The FU backlog (Proposal A) + `/audit fu` are retained; refine items
 are worked by hand in a session. followups-only-repo dogfooding (FU-55) is moot
 while the loop is gone.
@@ -173,7 +173,7 @@ historical memos → `archive/`.
 
 - **toolkit** - done (migrated).
 - **diplomat** — **migrated & live (2026-07-01)**: fully on i2c at **phase 51 / plan**, driven autonomously via the i2c bot with a `[run.backends]` split (plan=claude, execute=codex, review=claude, close=codex); Stage 0+1 import committed `1c5014c` (49 phases + snapshot history serialized into `.state/`). Residual: normalize the 13 flagged decision statuses; converter FU — handle `Closed (…)` / `Superseded by` / `| Priority:` status suffixes.
-- **phosphene** — blocked on **Q-mig-7 / D-mig-4** (integer phase-id schema vs `MVP.4d`); needs a schema/renumber decision.
+- **phosphene** — blocked on **Q-mig-7 / D-mig-4** (integer phase-id schema vs `MVP.4d`); needs a schema/renumber decision. **PoP_port** (e2e, `phase: 16e`, never audited) has the same blocker. No migration planned; the how-to is `archive/DESIGN_migration_v1.md` (§5.2–5.3).
 - **codexbot + others** — audit not yet done.
 - **Ratify D-mig-2..7** — paper-only (toolkit + diplomat are the evidence).
 
@@ -183,8 +183,8 @@ historical memos → `archive/`.
 
 ### 5. Larger net-new initiatives (deferred, well-specified)
 - **Discovery/Architecture interview kit — highest *adoption* lever; pre-release.** Package the browser-chat Discovery + Architecture prompts as shippable assets — `i2c init --interview` emitting a guided prompt to paste into any assistant, or a `docs/bootstrap/` prompt kit. i2c needs ARCH files authored *before* autonomous PLAN works (cf. FU-32 / FU-15), so a new user is otherwise "installed, then stuck." Nothing else on the backlog moves adoption as much.
-- **Recovery `fix` agent (`FUTURE_recovery.md`)** — code-class sibling to reconcile: `diagnose`(code) → `.state/diagnoses.json` + `fix.md` worker → human-gated repair; later self-healing. Held until recovery v1 is exercised in anger.
-- **Waymark VS Code extension (`FUTURE_waymark.md`)** — **deferred indefinitely** (2026-07-01): the read-only web dashboard (below) subsumes its Scope A; a VS Code plugin re-enters only as the future *control* surface (Scope B), if ever.
+- **Recovery `fix` agent (`archive/FUTURE_recovery.md`, archived 2026-10-04: not buildable since the refine loop was removed)** — code-class sibling to reconcile: `diagnose`(code) → `.state/diagnoses.json` + `fix.md` worker → human-gated repair; later self-healing. Held until recovery v1 is exercised in anger.
+- **Waymark VS Code extension (`archive/FUTURE_waymark.md`)** — **deferred indefinitely** (2026-07-01): the read-only web dashboard (below) subsumes its Scope A; a VS Code plugin re-enters only as the future *control* surface (Scope B), if ever.
 - **Portfolio dashboard — SPEC'D (`DESIGN_dashboard_v1.md`, committed `21b339c`).** Read-only, browser-viewable view over `i2c.control` + `.state/` + telemetry + `doctor`; panels: portfolio / project drill / telemetry / health / topology (the "what runs where" conceptual aid). **Read = web (portable); control = local/trusted** (CLI/Telegram now, VS Code plugin later). Stages: **v0 static HTML generator** (no server/auth) → v1 local read-only server (`i2c[web]`) → v2 remote (WireGuard/tunnel + auth) → v3 control (separate). Future-proofed now: no-secrets allowlist + single auth choke point.
 - **Explicit brownfield path** — Reverse Architecture → CODEBASE.md → scoped discovery, plus the brownfield-archaeology skill. i2c's README is greenfield-focused.
 
@@ -201,7 +201,7 @@ Strategic thread: **find the cheapest model that still succeeds per kind of step
 - **Content (ready now):** the "agentic coding evals are self-graded" finding (oracle contamination; analysis done in `DESIGN_benchmark_v1`) is a standalone essay/talk section — it markets i2c without marketing it.
 
 ### Recommendation (updated 2026-07-03)
-0. **Refine tier — ✅ backlog shipped** (Proposal A: the `i2c fu` backlog + `/audit fu`). **Proposal B (the `i2c refine <fu-id>` single-shot loop + the `/refine` bot command) was removed unused on 2026-08-07** (see CHANGELOG / DESIGN_refine_v1.md). The drift class it targeted is closed; refine items are worked by hand in a session.
+0. **Refine tier — ✅ backlog shipped** (Proposal A: the `i2c fu` backlog + `/audit fu`). **Proposal B (the `i2c refine <fu-id>` single-shot loop + the `/refine` bot command) was removed unused on 2026-08-07** (see CHANGELOG / archive/DESIGN_refine_v1.md). The drift class it targeted is closed; refine items are worked by hand in a session.
 1. **Benchmark thread (§7) is the highest-leverage line.** Test isolation (the `tests` action) **is shipped** (2026-07-06) — the oracle linchpin. Next: the **replay harness on clankercourts + routing v0** (run on pirozhok — laptop cross-mount path bug), with **FU-44** (scope `tests_pass` to the acceptance suite) riding it. Diplomat is the forward telemetry firehose; the model panel rides FU-38.
 2. In parallel, **decide the backend via the §2 spike** (aider/opencode → OpenRouter) — it validates "backend-agnostic" and picks Option A vs B empirically. The **multi-iteration loop** is the alternate big track (after a cache-hit check).
 3. **Sleeper: the Discovery/Architecture interview kit (§5)** — the top *adoption* lever and a pre-release gate; don't leave it in the TBD bucket if public release is near-term.

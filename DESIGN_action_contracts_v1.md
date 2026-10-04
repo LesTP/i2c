@@ -1,7 +1,8 @@
 # DESIGN: Action Contracts v1
 
 **Status:** Accepted, v1 implemented - 2026-10-02 (increments 1 + 2; see §7.1
-for what shipped and how the audit changed the draft).
+for what shipped and how the audit changed the draft). Increment 3, v2 (§8) and
+open questions Q5–Q8 are tracked as **FU-78** (icebox, to revisit).
 **Scope:** new `i2c/contracts.py`; `run_iteration.py` (post-worker gate);
 `invariants.py` (per-action checks folded in); new `i2c check` command;
 `assemble_context.py` (render the contract into the prompt); per-action

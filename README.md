@@ -276,7 +276,7 @@ human judgment).
 This extends i2c's detect-and-halt post-action invariants into
 *detect-and-reconcile*. Full design:
 [`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md). The deferred
-`fix` code-repair agent is tracked in [`FUTURE_recovery.md`](FUTURE_recovery.md).
+`fix` code-repair agent is tracked in [`archive/FUTURE_recovery.md`](archive/FUTURE_recovery.md) (archived: not buildable since the refine loop was removed).
 
 ### Dispatch readiness (`i2c ready`)
 
@@ -340,7 +340,7 @@ oracle to make itself pass.** When CLOSE hits this, there are two branches:
 
 Alongside the phase lifecycle (Build), i2c has a low-ceremony **Refine tier** for
 opportunistic, sub-phase work — prose passes, dead-surface removal, doc
-reconciliation, small ergonomics (`DESIGN_refine_v1.md`). It is a **backlog**:
+reconciliation, small ergonomics (`archive/DESIGN_refine_v1.md`). It is a **backlog**:
 
 - **The backlog** — `i2c fu add|list|show|close|reopen|prioritize|render` over a
   schema-validated `.state/followups.json`. It gates nothing; it's a queryable,
@@ -348,7 +348,7 @@ reconciliation, small ergonomics (`DESIGN_refine_v1.md`). It is a **backlog**:
 
 Backlog items are worked **by hand in a session** — pick one up, make the change,
 then `i2c fu close <fu-id>`. (An autonomous single-shot `i2c refine` loop was
-prototyped and removed unused — see `CHANGELOG.md` / `DESIGN_refine_v1.md`.)
+prototyped and removed unused — see `CHANGELOG.md` / `archive/DESIGN_refine_v1.md`.)
 
 ---
 

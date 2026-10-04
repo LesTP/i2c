@@ -12,6 +12,10 @@
 > exit reminder, pre-FU-7) before anyone noticed, surfaced 2026-06-21 while
 > porting FU-35.
 >
+> **Refreshed 2026-10-04:** Phases 1–3 shipped except the deferred tail —
+> Discord surface, the `/ask` agent layer, and the orchestrator protocol. §6 now
+> has three backends (claude, codex, pidev; pidev paused, `DESIGN_backend_v1.md` §3.10).
+>
 > Status: **partially implemented** (updated 2026-06-26). Phase 1 shipped
 > 2026-06-21 (shareable demo) and Phase 2 shipped 2026-06-22 (the real
 > package — §5 + `i2c.control`, plus §8 versioning/migration pulled forward).
@@ -76,7 +80,7 @@ not installable.
 - Open-source-ready: clean public docs, license, examples, CI.
 
 **Non-goals (v1)**
-- A GUI / VS Code extension (that is `FUTURE_waymark.md`).
+- A GUI / VS Code extension (that is `archive/FUTURE_waymark.md`, deferred indefinitely).
 - Hosting a managed service. i2c stays a local tool.
 - Migrating existing internal consumers off the copy model in lockstep —
   the package and the legacy copy model can coexist during transition.
@@ -569,7 +573,7 @@ precisely so we don't lay another duplicated brick.
 - **Q-pkg-5:** *(resolved 2026-06-29)* transition plan for the existing
   internal consumers — clankercourts (the sole predecessor) adopted the
   package via a one-off hand migration; the broader e2e → i2c fleet
-  migration is scoped in `DESIGN_migration_v1.md`.
+  migration is scoped in `archive/DESIGN_migration_v1.md`.
 - **Q-pkg-6:** ~~authentication / permission model for public chat surfaces —
   who may issue mutating commands vs read-only ones? Per-surface (TG admin
   list) or in `i2c.control`?~~ — **resolved (shipped 2026-06):**
@@ -589,7 +593,7 @@ precisely so we don't lay another duplicated brick.
   §7.4) rather than a separate orchestrator-diagnoser? **Resolved (reconcile-first
   v1, built):** yes — recovery rides the existing loop as out-of-band worker
   actions plus a deterministic core. The empirical sweep
-  ([`FUTURE_recovery.md`](FUTURE_recovery.md) §"Phase 0 findings") confirmed a
+  ([`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md) Appendix, "Phase 0 - empirical sweep") confirmed a
   large share of recovery is *workflow/state reconciliation* (the one class
   recovery can own; ~7–8% of iterations across e2e and i2c), so v1 ships a
   deterministic drift audit (`i2c/recovery.py`), a `diagnose` entry point

@@ -1,12 +1,12 @@
 # DESIGN — Recovery v1 (reconcile-first)
 
 > **Status: built (v1), archived.** This is the recovery v1 design *as
-> implemented* (graduated from [`FUTURE_recovery.md`](../FUTURE_recovery.md)).
+> implemented* (graduated from [`FUTURE_recovery.md`](FUTURE_recovery.md)).
 > The Phase-0 empirical sweep that grounds it is in the Appendix below. The
 > current "what" lives in [`../README.md`](../README.md) (Recovery section) +
 > [`../DECISIONS.md`](../DECISIONS.md) (D-recovery-*); the deferred `fix`
 > code-repair agent (§8) is tracked in
-> [`../FUTURE_recovery.md`](../FUTURE_recovery.md).
+> [`FUTURE_recovery.md`](FUTURE_recovery.md) (also archived).
 
 ## 1. Problem & scope
 

@@ -1,5 +1,9 @@
 # Recovery — code-class capture (`diagnose(code)` → `bugfix` FU) (FUTURE)
 
+> **ARCHIVED (2026-10-04).** Not buildable as written (its executor, the refine
+> loop, was removed 2026-08-07). Live recovery is reconcile-first v1:
+> [`../README.md`](../README.md) (Recovery) and [`DESIGN_recovery_v1.md`](DESIGN_recovery_v1.md).
+
 > **⚠️ Dependency removed (2026-08-07).** This design's *executor* half is the
 > refine loop (`i2c refine <fu-id>`, DESIGN_refine_v1 Proposal B), which was
 > **removed unused** on 2026-08-07 (see the i2c CHANGELOG). Everything below that
@@ -12,9 +16,9 @@
 > **Status: FUTURE — not scheduled.** The reconcile-first recovery **v1**
 > (deterministic drift audit + `diagnose` + human-gated `reconcile` + out-of-band
 > dispatch) shipped 2026-06-29 — see
-> [`archive/DESIGN_recovery_v1.md`](archive/DESIGN_recovery_v1.md) for the design
+> [`DESIGN_recovery_v1.md`](DESIGN_recovery_v1.md) for the design
 > *and* the Phase-0 empirical sweep that grounds it (Appendix), plus
-> [`README.md`](README.md) (Recovery) and [`DECISIONS.md`](DECISIONS.md)
+> [`../README.md`](../README.md) (Recovery) and [`../DECISIONS.md`](../DECISIONS.md)
 > (D-recovery-*).
 >
 > **Scope decided (D-recovery-7, 2026-07-07).** The old "`fix` code-repair agent"

@@ -1,5 +1,9 @@
 # Future Work — Waymark Refit for i2c
 
+> **ARCHIVED (2026-10-04).** Deferred indefinitely since 2026-07-01: the read-only
+> dashboard ([`../DESIGN_dashboard_v1.md`](../DESIGN_dashboard_v1.md), `i2c dashboard`)
+> covers its read-only scope; a VS Code extension would return only as a *control* surface.
+
 **Status:** Roadmap. Implementation deferred until i2c is built and used on a real project.
 **Date:** 2026-05-30
 **Predecessor:** [waymark v1](https://github.com/LesTP/waymark) — VS Code extension that parses e2e governance files (DEVPLAN.md, DEVLOG.md, ARCHITECTURE.md) into a tree view.

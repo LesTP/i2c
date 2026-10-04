@@ -1,5 +1,12 @@
 # e2e → i2c Migration & the `import` Converter — v1
 
+> **ARCHIVED (2026-10-04)** — no migration is planned, but this is still the
+> **how-to** if one is: run `i2c import` (`i2c import --help`), then follow the
+> staged cut-over in §5.3 and the end-state checks in §5.2. **Blocker for the
+> remaining e2e projects:** both phosphene (`phase: MVP.4d`) and PoP_port
+> (`phase: 16e`, never audited) use non-integer phase ids, which i2c's schemas
+> and the converter reject — decide Q-mig-7 (§7) first.
+
 > Design memo. Scopes a tool (`i2c import`) that migrates existing
 > e2e-lineage projects onto installed i2c. Motivated by a fleet of
 > consumers built on the framework's ancestor ("e2e"), most done but some
@@ -7,11 +14,10 @@
 > than N hand-ports — **if** the per-project drift is small enough to
 > automate.
 >
-> Status: **audit in progress.** This memo records the e2e prose-state
-> starting point and the converter design that follows from it; the
-> per-project audit table (§4) is being filled in as real implementations
-> are inspected. Three consumers audited (toolkit, diplomat, phosphene);
-> **toolkit** is migrated onto the package.
+> Status (refreshed 2026-10-04): **converter shipped** (`i2c import`); toolkit
+> and diplomat (2026-07-01) migrated with it. Still on e2e: phosphene (blocked
+> on Q-mig-7 / D-mig-4, integer phase ids vs `MVP.4d`) and e2e itself; codexbot
+> not audited. The §4 audit table below is the record as of 2026-06-26.
 >
 > Authors: operator + assistant, 2026-06-26.
 

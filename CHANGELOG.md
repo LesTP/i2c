@@ -169,7 +169,7 @@ This is the public counterpart to `STATUS.md` (internal tracking).
   `.state/followups.json`, plus the `/audit fu` bot facet — as is the
   `devlog_entry.schema.json` `action:"refine"` value (data-compat for existing
   devlogs). The removed design is preserved in git history and in
-  `DESIGN_refine_v1.md` (Proposal B, marked historical) for a possible future
+  `archive/DESIGN_refine_v1.md` (Proposal B, marked historical) for a possible future
   revival (e.g. an agent tool).
 
 - **Multi-step / `--step-budget` machinery (D-run-1/D-run-2).** Declared

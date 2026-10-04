@@ -1,6 +1,7 @@
 # DESIGN — Portfolio Dashboard (read-only web view) v1
 
-> **Status:** Draft / proposed (spec only; no code). A **read-only**, browser-
+> **Status:** **v0 shipped 2026-07-07** (`i2c dashboard`, tables-only); v0.1
+> (telemetry aggregator + charts) is not built (header refreshed 2026-10-04). A **read-only**, browser-
 > viewable view over the i2c portfolio, built as a thin adapter over
 > `i2c.control` + `.state/*.json` + `telemetry.jsonl` + `i2c doctor`. Confirmed
 > scope (operator, 2026-07-01): read-only; static-first; LAN-sufficient now, but
@@ -138,7 +139,7 @@ is safe **by construction**, not by later rework:
 
 ## 8. Relationship to existing work
 
-- **Waymark (FUTURE_waymark):** **deferred indefinitely.** This subsumes its
+- **Waymark (archive/FUTURE_waymark.md):** **deferred indefinitely.** This subsumes its
   read-only Scope A. Its distinct value (in-editor control) re-enters only as the
   v3 VS Code control surface, if ever.
 - **Telegram bot:** unchanged — remains the remote *control* driver; the

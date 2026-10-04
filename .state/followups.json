@@ -949,5 +949,30 @@
       "DESIGN_backend_v1.md",
       "DESIGN_benchmark_v1.md"
     ]
+  },
+  {
+    "id": "FU-78",
+    "title": "Revisit action contracts: increment 3 (backend tool limits) + v2 (runner-owned bookkeeping) + open Q5-Q8",
+    "kind": "structural-refactor",
+    "status": "open",
+    "opened": "2026-10-03",
+    "context": "DESIGN_action_contracts_v1 shipped increments 1+2 on 2026-10-02 (runner gate before every commit, i2c check, generated prompt section; live fleet-wide). Not built, and to be revisited: (a) Increment 3 (doc 5.4/7.2): map each action contract to the backend CLI tool limits where supported, e.g. read-only or no-edit tools for PLAN (write_scope empty), narrow scopes for TESTS/CLOSE (claude tool permissions, codex sandbox modes; pi.dev unverified). Defense in depth only; the runner gate stays the guarantee. (b) v2 (doc 8): take bookkeeping away from the model - the worker returns a structured result (PLAN: steps; EXECUTE: step id + summary; REVIEW/CLOSE: summary + findings) and the runner validates it and performs the .state/ writes and the state transition itself (same direction as FU-40 commits and FU-69 timestamps). Evidence: FU-70 iterations 4-5, where deepseek-chat wrote a correct six-step plan in its reply but never called i2c state; a result block would have advanced the phase. Cost: every instruction file, the adapters, goldens, supervised mode. Decide on data from v1 (D-ac-7). (c) Open questions doc 9: Q5 what i2c check can evaluate in supervised mode without a runner baseline; Q6 writes to gitignored paths are invisible to the gate; Q7 whether a contract failure should set audit_escalation instead of leaving the state for a rerun; Q8 per-step file plans to flag EXECUTE edits outside a step.",
+    "trigger": "Revisit: weak-model false successes or bookkeeping misses recur despite the gate and i2c check, cheap models get routed to real projects, or supervised mode needs i2c check without a baseline.",
+    "priority": "icebox",
+    "files": [
+      "DESIGN_action_contracts_v1.md",
+      "i2c/contracts.py",
+      "i2c/run_iteration.py",
+      "i2c/invariants.py",
+      "i2c/data/instructions"
+    ],
+    "refs": [
+      "DESIGN_action_contracts_v1.md",
+      "FU-70",
+      "FU-40",
+      "FU-69",
+      "FU-77",
+      "D-ac-7"
+    ]
   }
 ]

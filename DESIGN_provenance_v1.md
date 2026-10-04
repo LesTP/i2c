@@ -1,8 +1,10 @@
 # DESIGN: Prompt Provenance v1
 
-**Status:** Accepted (scoped) — 2026-08-16. See §0 (Decision & scoping) for what
-is actually being built, in which order, and what is deferred or folded. §§1–7
+**Status:** Accepted (scoped) - 2026-08-16. See §0 (Decision & scoping) for what
+is actually being built, in which order, and what is deferred or folded. §1-§7
 below are the original proposal, retained as the design rationale.
+**2026-10-04:** Tier 1 shipped (FU-63). Tier 2 (FU-64) waits on the benchmark
+replay harness, so it is **paused with the benchmark** (`DESIGN_benchmark_v1.md`).
 **Scope:** `assemble_context.py`, `run_iteration.py`, `.state/`, new `i2c provenance` / `i2c replay` / `i2c fork` commands
 **Depends on:** existing state model, invariants, recovery subsystem
 **Anchored to:** the model-benchmark thread — `DESIGN_benchmark_v1.md` §8

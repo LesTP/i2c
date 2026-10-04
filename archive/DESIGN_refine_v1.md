@@ -1,5 +1,10 @@
 # DESIGN — Formalizing Refine / ad-hoc work v1
 
+> **ARCHIVED (2026-10-04).** Proposal A is live and documented in
+> [`../README.md`](../README.md) (Refine tier) and `i2c fu --help`; Proposal B (the
+> refine loop) was removed 2026-08-07 ([`../CHANGELOG.md`](../CHANGELOG.md)). Kept as
+> the *why*, and as a record if the loop is ever revived.
+
 > **Status:** Proposal A **shipped and live** (the `i2c fu` backlog + the
 > read-only `/audit fu` bot facet, §4.4). Proposal B (this doc §12 — the
 > autonomous refine *loop*) was **shipped and then REMOVED on 2026-08-07**,
