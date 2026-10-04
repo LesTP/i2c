@@ -870,6 +870,46 @@ class TestCommitState(unittest.TestCase):
             self.assertFalse(committed)
             self.assertIn("nothing to commit", note)
 
+    def test_commits_new_untracked_state_file(self):
+        # tests_manifest.json is first written at TESTS; a path-limited commit
+        # alone skipped it, leaving the frozen-suite digest uncommitted.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._init_repo(root)
+            (root / ".state" / "tests_manifest.json").write_text('{"suites":[]}\n',
+                                                                  encoding="utf-8")
+            committed, note = ri.commit_state(root, phase=1)
+            self.assertTrue(committed, note)
+            names = self._git(["log", "-1", "--name-only", "--format="], root).stdout
+            self.assertIn(".state/tests_manifest.json", names)
+            self.assertEqual(self._git(["status", "--porcelain", "--", ".state"], root).stdout, "")
+
+    def test_hidden_temp_files_are_never_committed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._init_repo(root)
+            st = root / ".state"
+            (st / "project.json").write_text('{"phase":2}\n', encoding="utf-8")
+            (st / ".project.json.ab12.tmp").write_text("partial", encoding="utf-8")
+            (st / ".fuse_hidden000123").write_text("x", encoding="utf-8")
+            committed, note = ri.commit_state(root, phase=2)
+            self.assertTrue(committed, note)
+            names = self._git(["log", "-1", "--name-only", "--format="], root).stdout
+            self.assertIn(".state/project.json", names)
+            self.assertNotIn(".tmp", names)
+            self.assertNotIn("fuse_hidden", names)
+            self.assertIn("?? .state/.fuse_hidden000123",
+                          self._git(["status", "--porcelain", "-uall"], root).stdout)
+
+    def test_only_hidden_junk_is_nothing_to_commit(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            self._init_repo(root)
+            (root / ".state" / ".fuse_hidden000999").write_text("x", encoding="utf-8")
+            committed, note = ri.commit_state(root, phase=1)
+            self.assertFalse(committed)
+            self.assertIn("nothing to commit", note)
+
     def test_non_git_dir_is_safe(self):
         with tempfile.TemporaryDirectory() as d:
             committed, _ = ri.commit_state(Path(d), phase=1)

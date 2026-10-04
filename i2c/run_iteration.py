@@ -734,15 +734,27 @@ def commit_state(root: Path, *, phase: int) -> tuple[bool, str]:
     own close commit, so the worker can never commit a complete .state/.
     Scoped to .state/ so worker code/doc commits and operator working-tree
     changes are untouched. Best-effort: returns (committed, note); never raises.
+
+    New state files (e.g. tests_manifest.json, first written at TESTS) are
+    staged explicitly: a path-limited commit alone only takes files git
+    already tracks. Dotfiles are left out - i2c's atomic-write temps
+    (``.<name>.XXXX.tmp``) and network-mount leftovers (``.fuse_hidden*``) are
+    the only hidden files that appear there.
     """
     try:
-        st = subprocess.run(
-            ["git", "status", "--porcelain", "--", ".state"],
+        add = subprocess.run(
+            ["git", "add", "-A", "--", ".state", ":(exclude).state/.*"],
             cwd=str(root), capture_output=True, text=True,
         )
-        if st.returncode != 0:
+        if add.returncode != 0:
             return False, "not a git repo / git error"
-        if not st.stdout.strip():
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only", "--", ".state"],
+            cwd=str(root), capture_output=True, text=True,
+        )
+        if staged.returncode != 0:
+            return False, "not a git repo / git error"
+        if not staged.stdout.strip():
             return False, "nothing to commit"
         msg = f"{phase}: close - persist .state/ + telemetry"
         cm = subprocess.run(
